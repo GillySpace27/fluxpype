@@ -1,0 +1,45 @@
+Perltidy version is 20230701
+
+<stdin>: Begin Error Output Stream
+
+241: phb  => squeeze( $bph ( 0, 0 ) ),   # Phi at the base
+                      ---- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$bph->(' ?
+
+242: thb  => squeeze( $bth ( 0, 0 ) ),   # Theta at the base
+                      ---- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$bth->(' ?
+
+243: phe  => squeeze( $bph ( 0, 1 ) ),   # Phi at the end
+                      ---- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$bph->(' ?
+
+244: the  => squeeze( $bth ( 0, 1 ) ),   # Theta at the end
+                      ---- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$bth->(' ?
+
+245: vrb  => $farr ( 1, 0 ),             # Radial velocity at the base
+             ----- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$farr->(' ?
+
+246: vre  => $farr ( 1, -1 ),            # Radial velocity at the end
+             ----- ^
+found ( where operator expected (previous token underlined)
+
+Do you mean '$farr->(' ?
+
+Do you mean '$fr->(' ?
+
+Do you mean '$fr->(' ?
+
+Do you mean '$fr->(' ?
