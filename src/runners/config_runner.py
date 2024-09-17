@@ -30,10 +30,9 @@ Gilly <gilly@swri.org> (and others!)
 import subprocess
 from tqdm import tqdm
 from fluxpipe.helpers.pipe_helper import configurations
+import timeout_decorator
 
-configs = configurations(debug=True)
-
-
+configs = configurations(debug=False)
 def run():
     # Initialize a progress bar with the total number of jobs to run
     with tqdm(total=int(configs["n_jobs"]), unit="runs") as pbar:
@@ -47,23 +46,15 @@ def run():
 
                     # Update the progress bar description
                     pbar.set_description(f"Rotation {rot}, n_fluxon {nflux}")
+                    try:
+                        # Execute the PDL script with the current parameters
+                        result = subprocess.run(["perl", configs["run_script"],
+                                                str(rot), str(nflux), str(adapt)], check=False)
 
-                    # Execute the PDL script with the current parameters
-
-                    result = subprocess.run(
-                        [
-                            configs["perl_dir"],
-                            configs["run_script"],
-                            str(rot),
-                            str(nflux),
-                            str(adapt),
-                        ],
-                        check=False,
-                    )
-
+                    except timeout_decorator.TimeoutError:
+                        timeout_num += 1
                     # Update the progress bar
                     pbar.update(1)
-
 
 if __name__ == "__main__":
 
@@ -71,5 +62,6 @@ if __name__ == "__main__":
     # import sys
     # sys.exec(open(os.path.expanduser('~/.zshrc')).read())
     # print(os.environ.get('PERL5LIB'))
+
 
     run()

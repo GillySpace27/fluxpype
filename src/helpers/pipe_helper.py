@@ -70,7 +70,6 @@ Dependencies:
     sunpy, sunpy.coordinates, sunpy.io, sunpy.net.Fido, attrs as a, pandas
 """
 
-
 # Import libraries
 import os
 import os.path
@@ -79,12 +78,15 @@ import ast
 from pathlib import PosixPath, Path
 
 import pandas as pd
+import re
+
 # from pipe_helper import convert_value
 import numpy as np
 import matplotlib.pyplot as plt
 
 from astropy.io import fits
-from astropy.nddata import block_reduce
+
+# from astropy.nddata import block_reduce
 
 import sunpy
 import sunpy.coordinates
@@ -95,7 +97,10 @@ import configparser
 
 # CONFIGURATION MANAGEMENT #######################################################
 
-def configurations(config_name=None, config_filename="config.ini", args=None, debug=False):
+
+def configurations(
+    config_name=None, config_filename="config.ini", args=None, debug=False
+):
     """
     Reads and sanitizes configuration settings from a specified config file.
 
@@ -110,14 +115,13 @@ def configurations(config_name=None, config_filename="config.ini", args=None, de
         dict: Configuration settings as key-value pairs.
     """
     config_obj = configparser.ConfigParser()
-    fl_prefix = os.environ.get("FL_PREFIX", "")
-    config_path = f"{fl_prefix}/fluxpipe/fluxpipe/config/{config_filename}"
-    config_path = os.path.abspath(config_path)
-
+    # config_path = os.path.join(os.environ.get("FL_MHDLIB"), "fluxpipe", config_filename)
+    # config_path = "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/config.ini"
+    config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/src/config/config.ini"
     # Search for the configuration file in the current directory and subdirectories
     if not os.path.exists(config_path):
         found = False
-        for root, dirs, files in os.walk(os.getcwd()):
+        for root, dirs, files in os.walk(os.path.join(os.getcwd())):
             if config_filename in files:
                 config_path = os.path.join(root, config_filename)
                 found = True
@@ -135,7 +139,7 @@ def configurations(config_name=None, config_filename="config.ini", args=None, de
     config_obj.read_string(clean_content)
 
     # Fallback to section defined in the DEFAULT section if no specific section is provided
-    config_name = config_name or config_obj["DEFAULT"]['config_name']
+    config_name = config_name or config_obj["DEFAULT"]["config_name"]
 
     # Create the configuration dictionary
     the_config = dict(config_obj[config_name])
@@ -162,9 +166,8 @@ def configurations(config_name=None, config_filename="config.ini", args=None, de
             print(f"{key}: \t{value}")
         print("--------------------------------\n\n")
 
-
-
     return the_config
+
 
 def assimilate_args(configs, args=None):
     if args is not None:
@@ -173,62 +176,101 @@ def assimilate_args(configs, args=None):
             if value is not None:
                 configs[arg] = value
 
+
 def compute_configs(the_config):
-    the_config['abs_rc_path']   = os.path.expanduser(the_config['rc_path'])
-    the_config["run_script"]    = os.path.join(the_config['fl_prefix'], the_config["run_script"])
+    the_config["abs_rc_path"] = os.path.expanduser(the_config["rc_path"])
+    the_config["abs_fl_mhdlib"] = os.path.expanduser(the_config["fl_mhdlib"])
 
-    the_config["rotations"]     = ast.literal_eval(the_config["rotations"])
-    the_config["fluxon_count"]  = ast.literal_eval(the_config["fluxon_count"])
-    the_config["adapts"]        = ast.literal_eval(the_config["adapts"])
+    if not the_config["abs_fl_mhdlib"] in the_config["run_script"]:
+        the_config["run_script"] = os.path.join(
+            the_config["abs_fl_mhdlib"], the_config["run_script"]
+        )
+    # the_config["run_script"]    = the_config["run_script"]
 
-    the_config["n_jobs"] = str(len(the_config["rotations"]) * len(the_config["fluxon_count"])*len(the_config["adapts"]))
+    if the_config["rotations"][0] == "[":
+        the_config["rotations"] = ast.literal_eval(the_config["rotations"])
+    elif the_config["rotations"][0] == "(":
+        (start, stop, step) = ast.literal_eval(the_config["rotations"])
+        the_config["rotations"] = list(np.arange(start, stop, step))
+
+    if the_config["flow_method"][0] == "[":
+        the_config["flow_method"] = the_config["flow_method"].strip("[]").split(", ")
+    else:
+        the_config["flow_method"] = [the_config["flow_method"]]
+
+    the_config["fluxon_count"] = ast.literal_eval(the_config["fluxon_count"])
+    the_config["adapts"] = ast.literal_eval(the_config["adapts"])
+
+    the_config["cr"] = the_config["rotations"][0]
+    the_config["nwant"] = the_config["fluxon_count"][0]
+    the_config["n_jobs"] = str(
+        len(the_config["rotations"])
+        * len(the_config["fluxon_count"])
+        * len(the_config["adapts"])
+        * len(the_config["flow_method"])
+    )
+
+
 import os
+
 
 def update_magdir_paths(the_config):
     # for key, val in sorted(the_config.items()):
     #     print(f"\t{key}: \t", the_config.get(key, None))
-    CR = the_config.get('cr', None)
-    if not CR:
-        # print("Preloaded Configs")
-        return
-    CR = the_config['cr']
-    adapt_select = the_config['adapt_select']
-    n_fluxons_wanted = the_config['nwant']
-    reduction = the_config['mag_reduce']
-    batchdir = the_config['batch_dir']
+    CR = the_config.get("cr", None)
+    n_fluxons_wanted = the_config.get("nwant", None)
+    if not CR or not n_fluxons_wanted:
+        raise ValueError("Instance Values not Found!")
+    adapt_select = the_config["adapt_select"]
+    reduction = the_config["mag_reduce"]
+    batchdir = the_config["batch_dir"]
 
-    if the_config.get('adapt', False):
-        the_config['magfile'] = f"CR{CR}_rf{adapt_select}_adapt.fits"
-        the_config['flocfile'] = f"floc_cr{CR}_rf{adapt_select}_f{n_fluxons_wanted}_adapt.dat"
+    if the_config.get("adapt", False):
+        the_config["magfile"] = f"CR{CR}_rf{adapt_select}_adapt.fits"
+        the_config["flocfile"] = (
+            f"floc_cr{CR}_rf{adapt_select}_f{n_fluxons_wanted}_adapt.dat"
+        )
     else:
-        the_config['magfile'] = f"CR{CR}_r{reduction}_hmi.fits"
-        the_config['flocfile'] = f"floc_cr{CR}_r{reduction}_f{n_fluxons_wanted}_hmi.dat"
+        the_config["magfile"] = f"CR{CR}_r{reduction}_hmi.fits"
+        the_config["flocfile"] = f"floc_cr{CR}_r{reduction}_f{n_fluxons_wanted}_hmi.dat"
 
-    the_config['flocdir'] = os.path.join(batchdir, f"cr{CR}/floc")
-    the_config['magpath'] = os.path.join(the_config['mag_dir'], the_config['magfile'])
-    the_config['flocpath'] = os.path.join(the_config['flocdir'], the_config['flocfile'])
+    the_config["flocdir"] = os.path.join(batchdir, f"cr{CR}/floc")
+    the_config["magpath"] = os.path.join(the_config["mag_dir"], the_config["magfile"])
+    the_config["flocpath"] = os.path.join(the_config["flocdir"], the_config["flocfile"])
+    return the_config
+
 
 def calculate_directories(the_config):
     # Helper function to calculate directories
-    basedir = the_config['base_dir'].strip()
-    batch_name = the_config['batch_name'].strip()
-    dat_dir = the_config.get('data_dir', None)
+    basedir = the_config["fl_mhdlib"].strip()
+    batch_name = the_config["batch_name"].strip()
+    dat_dir = the_config.get("data_dir", None)
 
-    the_config['pipe_dir'] = os.path.join(basedir, "fluxon-mhd", "fluxpipe", "fluxpipe")
-    the_config['pdl_dir'] = os.path.join(basedir, "fluxon-mhd", "pdl", "PDL")
-    the_config['datdir'] = dat_dir if dat_dir else os.path.join(basedir, "fluxon-data")
-    the_config['mag_dir'] = os.path.join(the_config['datdir'], "magnetograms")
-    the_config['batch_dir'] = os.path.join(the_config['datdir'], "batches", batch_name)
-    the_config['logfile'] = os.path.join(the_config['batch_dir'], "pipe_log.txt")
+    the_config["pipe_dir"] = os.path.join(basedir, "fluxpipe", "fluxpipe")
+    the_config["pdl_dir"] = os.path.join(basedir, "pdl", "PDL")
+    the_config["datdir"] = dat_dir if dat_dir else os.path.join(basedir, "fluxon-data")
+    the_config["data_dir"] = the_config["datdir"]
+    the_config["mag_dir"] = os.path.join(the_config["datdir"], "magnetograms")
+    the_config["batch_dir"] = os.path.join(the_config["datdir"], "batches", batch_name)
+    the_config["logfile"] = os.path.join(the_config["batch_dir"], "pipe_log.txt")
+
+    the_config["pipe_dir"] = os.path.expanduser(the_config["pipe_dir"])
+    the_config["pdl_dir"] = os.path.expanduser(the_config["pdl_dir"])
+    the_config["datdir"] = os.path.expanduser(the_config["datdir"])
+    the_config["data_dir"] = os.path.expanduser(the_config["data_dir"])
+    the_config["mag_dir"] = os.path.expanduser(the_config["mag_dir"])
+    the_config["batch_dir"] = os.path.expanduser(the_config["batch_dir"])
+    the_config["logfile"] = os.path.expanduser(the_config["logfile"])
 
     # If 'adapt' isn't set in the_config, default to False
-    the_config.setdefault('adapt', False)
+    the_config.setdefault("adapt", False)
 
-    # Update magdir paths
-    update_magdir_paths(the_config)
+    # # Update magdir paths
+    # update_magdir_paths(the_config)
+
 
 def convert_value(value):
-    """ Convert a string to an int or float if possible, otherwise return the string.
+    """Convert a string to an int or float if possible, otherwise return the string.
 
     Parameters
     ----------
@@ -255,13 +297,14 @@ def convert_value(value):
         except ValueError:
             return value.strip()
 
+
 # configs = configurations()
 # dat_dir = configs["data_dir"]
 # default_email = configs["jsoc_email"]
 
 
-
 # PATH MANAGEMENT ################################################################
+
 
 def add_dir_to_path(root_dir=None):
     """Adds a directory and all subdirectories to the PATH environment variable.
@@ -276,7 +319,7 @@ def add_dir_to_path(root_dir=None):
         root_dir = os.environ("FL_PREFIX", None) or "fluxon-mhd/"
 
     # Get the current PATH
-    current_path = os.environ.get('PATH', '')
+    current_path = os.environ.get("PATH", "")
 
     # Initialize a set with the current PATH elements to avoid duplicates
     path_set = set(current_path.split(os.pathsep))
@@ -290,7 +333,7 @@ def add_dir_to_path(root_dir=None):
     new_path = os.pathsep.join(path_set)
 
     # Update the PATH
-    os.environ['PATH'] = new_path
+    os.environ["PATH"] = new_path
 
 
 def add_top_level_dirs_to_path(root_dir):
@@ -303,14 +346,17 @@ def add_top_level_dirs_to_path(root_dir):
     """
 
     # Get the current PATH
-    current_path = os.environ.get('PATH', '')
+    current_path = os.environ.get("PATH", "")
 
     # Initialize a set with the current PATH elements to avoid duplicates
     path_set = set(current_path.split(os.pathsep))
 
     # List the top-level directories under the root directory
-    top_level_dirs = [os.path.join(root_dir, d) for d in os.listdir(root_dir) \
-                      if os.path.isdir(os.path.join(root_dir, d))]
+    top_level_dirs = [
+        os.path.join(root_dir, d)
+        for d in os.listdir(root_dir)
+        if os.path.isdir(os.path.join(root_dir, d))
+    ]
     top_level_dirs.append(f"{root_dir}:")
 
     # Add each top-level directory to the set
@@ -320,7 +366,7 @@ def add_top_level_dirs_to_path(root_dir):
     new_path = os.pathsep.join(path_set)
 
     # Update the PATH
-    os.environ['PATH'] = new_path
+    os.environ["PATH"] = new_path
 
     # news = os.environ.get('PATH', '')
     # news_list = news.split(os.pathsep)
@@ -340,10 +386,10 @@ def set_paths(do_plot=False):
         None
     """
 
-    fl_prefix = os.environ.get('FL_PREFIX')
+    fl_prefix = os.environ.get("FL_PREFIX")
 
     if fl_prefix:
-        envpath = os.path.join(fl_prefix, 'python_paths.py')
+        envpath = os.path.join(fl_prefix, "python_paths.py")
 
         # Check if the file exists and is readable
         if os.path.exists(envpath) and os.access(envpath, os.R_OK):
@@ -413,7 +459,7 @@ def find_file_with_string(directory, search_string):
     return None
 
 
-def shorten_path(string):
+def shorten_path(string, do=False):
     """Removes the DATAPATH environment variable from a string.
     This makes it much more readable when printing paths.
 
@@ -428,8 +474,8 @@ def shorten_path(string):
         Shortened string
     """
     datapath = os.getenv("DATAPATH")
-    if datapath:
-        return string.replace(datapath, "$DATAPATH ")
+    if datapath and do:
+        return string.replace(datapath, "$DATAPATH")
     else:
         return string
 
@@ -559,22 +605,26 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
     # reduce the FITS image
     print(f"\tReducing image size by a factor of {reduction}...", end="")
     if not os.path.exists(small_file) or force:
-        small_file = reduce_fits_image(mag_file, small_file,
-                                       target_resolution=None, reduction_amount=reduction)
+        small_file = reduce_fits_image(
+            mag_file, small_file, target_resolution=None, reduction_amount=reduction
+        )
         # print("Success!\n")
     else:
         print("Skipped! Reduced file already exists:")
         # print("\t\t", shorten_path(str(small_file), 2))
         ### WORKING HERE
-        print(f"\t\tFound '{os.path.basename(small_file)}' in '\
-              {shorten_path(os.path.dirname(small_file))}'")
+        print(
+            f"\t\tFound '{os.path.basename(small_file)}' in '\
+              {shorten_path(os.path.dirname(small_file))}'"
+        )
         print("\n\t\t\t```````````````````````````````\n \n\n")
 
     return small_file
 
 
-def reduce_fits_image(fits_path, small_file, target_resolution=None,
-                      reduction_amount=None, func=np.nansum):
+def reduce_fits_image(
+    fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum
+):
     """
     Open a FITS file, reduce the size of the image using astropy's block_reduce
     function, and save a new copy of the FITS file with the smaller image in the
@@ -595,7 +645,7 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None,
     print(f"\n\tReducing {fits_path}...")
     # Open the FITS file and read the data
     with fits.open(fits_path, ignore_missing_simple=True) as hdul:
-        hdul.verify('silentfix')
+        hdul.verify("silentfix")
         data = hdul[0].data
         if data is None:
             data = hdul[1].data
@@ -609,29 +659,36 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None,
 
         # Raise an error if neither target_resolution nor reduction_amount is specified
         elif reduction_amount is None:
-            raise ValueError("Either target_resolution or reduction_amount must be specified.")
-
+            raise ValueError(
+                "Either target_resolution or reduction_amount must be specified."
+            )
 
         before_sum = np.sum(data)
         small_image = block_reduce(data, reduction_amount, func)
         after_sum = np.sum(small_image)
         if not np.isclose(before_sum, after_sum):
-            print("\tREDUCTION WARNING: \n\tSum before:    ",
-                  before_sum, "\n\tSum after:     ", after_sum)
+            print(
+                "\tREDUCTION WARNING: \n\tSum before:    ",
+                before_sum,
+                "\n\tSum after:     ",
+                after_sum,
+            )
         try:
-            date_check =hdul[0].header["DATE"]
+            date_check = hdul[0].header["DATE"]
             useheader = hdul[0].header
         except KeyError:
             useheader = hdul[1].header
 
-        del useheader['BLANK']
-        useheader['DATAMIN'] = np.min(small_image)
-        useheader['DATAMAX'] = np.max(small_image)
-        useheader['BZERO'] = 0
-        useheader['BSCALE'] = 1
+        del useheader["BLANK"]
+        useheader["DATAMIN"] = np.min(small_image)
+        useheader["DATAMAX"] = np.max(small_image)
+        useheader["BZERO"] = 0
+        useheader["BSCALE"] = 1
 
-        useheader['CDELT1'] = 360 / small_image.shape[1]  ## DEGREES
-        useheader['CDELT2'] = np.deg2rad(360 / (small_image.shape[0] * np.pi)) #RADIANS
+        useheader["CDELT1"] = 360 / small_image.shape[1]  ## DEGREES
+        useheader["CDELT2"] = np.deg2rad(
+            360 / (small_image.shape[0] * np.pi)
+        )  # RADIANS
 
         print("\t\tFinal Shape:    ", small_image.shape)
 
@@ -660,37 +717,37 @@ def plot_raw_magnetogram(fits_path, data, small_image):
     """
 
     # Save the high resolution image as a grayscale PNG
-    plt.axis('off')
-    high_res_output_path = fits_path.replace('.fits', '.png')
+    plt.axis("off")
+    high_res_output_path = fits_path.replace(".fits", ".png")
     fig = plt.gcf()
     shp = data.shape
     dmean = np.nanmean(data)
     dsig = np.nanstd(data)
     thresh = 3
-    vmin = dmean - thresh*dsig
-    vmax = dmean + thresh*dsig
-    plt.imshow(data, cmap='gray', vmin=vmin, vmax=vmax)
+    vmin = dmean - thresh * dsig
+    vmax = dmean + thresh * dsig
+    plt.imshow(data, cmap="gray", vmin=vmin, vmax=vmax)
 
-    ratio = shp[1]/shp[0]
-    sz0=6 #inches
-    sz1=sz0*ratio #inches
-    DPI = shp[1] / sz1 #pixels/inch
+    ratio = shp[1] / shp[0]
+    sz0 = 6  # inches
+    sz1 = sz0 * ratio  # inches
+    DPI = shp[1] / sz1  # pixels/inch
     fig.set_size_inches((sz1, sz0))
-    plt.savefig(high_res_output_path, bbox_inches='tight', dpi=4*DPI)
+    plt.savefig(high_res_output_path, bbox_inches="tight", dpi=4 * DPI)
     plt.close()
 
     # Save the low resolution image as a grayscale PNG
-    plt.imshow(small_image, cmap='gray', vmin=vmin, vmax=vmax)
-    plt.axis('off')
-    low_res_output_path = fits_path.replace('.fits', '_small.png')
+    plt.imshow(small_image, cmap="gray", vmin=vmin, vmax=vmax)
+    plt.axis("off")
+    low_res_output_path = fits_path.replace(".fits", "_small.png")
     fig = plt.gcf()
     shp = small_image.shape
-    ratio = shp[1]/shp[0]
-    sz0=6 #inches
-    sz1=sz0*ratio #inches
-    DPI = shp[1] / sz1 #pixels/inch
+    ratio = shp[1] / shp[0]
+    sz0 = 6  # inches
+    sz1 = sz0 * ratio  # inches
+    DPI = shp[1] / sz1  # pixels/inch
     fig.set_size_inches((sz1, sz0))
-    plt.savefig(low_res_output_path, bbox_inches='tight', dpi=4*DPI)
+    plt.savefig(low_res_output_path, bbox_inches="tight", dpi=4 * DPI)
     plt.close()
 
 
@@ -710,13 +767,13 @@ def write_magnetogram_params(datdir, cr, file_path, reduction):
     """
 
     # write the parameter file
-    params_path = os.path.join(datdir,"magnetic_target.params")
-    with open(params_path, 'w', encoding="utf-8") as fp:
+    params_path = os.path.join(datdir, "magnetic_target.params")
+    with open(params_path, "w", encoding="utf-8") as fp:
         fp.write("## CR_int, Filename_str, Adapt_bool, Doplot_bool, reduction ##\n")
-        fp.write(str(cr)+"\n")
-        fp.write(str(file_path)+"\n")
-        fp.write(str(0)+"\n")
-        fp.write(str(0)+"\n")
+        fp.write(str(cr) + "\n")
+        fp.write(str(file_path) + "\n")
+        fp.write(str(0) + "\n")
+        fp.write(str(0) + "\n")
         fp.write(str(reduction))
 
 
@@ -744,8 +801,8 @@ def load_magnetogram_params(datdir):
         Reduction factor
     """
 
-    params_path = os.path.join(datdir,"magnetic_target.params")
-    with open(params_path, 'r', encoding="utf-8") as fp:
+    params_path = os.path.join(datdir, "magnetic_target.params")
+    with open(params_path, "r", encoding="utf-8") as fp:
         hdr = fp.readline().rstrip()
         cr = fp.readline().rstrip()
         fname = fp.readline().rstrip()
@@ -769,7 +826,7 @@ def read_fits_data(fname):
         HDU list read from FITS file
     """
     hdulist = fits.open(fname, ignore_missing_simple=True)
-    hdulist.verify('silentfix+warn')
+    hdulist.verify("silentfix+warn")
     return hdulist
 
 
@@ -790,19 +847,15 @@ def get_fixed_coords(phi0, theta0):
     theta0: np.ndarray
         Corrected array of theta coordinates
     """
-    ph0, th0 = phi0+np.pi, np.sin(-(theta0-(np.pi/2)))
+    ph0, th0 = phi0 + np.pi, np.sin(-(theta0 - (np.pi / 2)))
     return ph0, th0
-
-
-
 
 
 ## Helper functions to parse the output file
 
 
-
 def parse_line(line):
-    """ Parse a line of the output file into a dictionary.
+    """Parse a line of the output file into a dictionary.
 
     Parameters
     ----------
@@ -815,12 +868,12 @@ def parse_line(line):
         a dictionary of the key:value pairs
     """
 
-    key_values = line.strip().split(',')
+    key_values = line.strip().split(",")
     # print(key_values)
     parsed_dict = {}
     for key_value in key_values:
-        if ':' in key_value:
-            key, value = key_value.split(':')
+        if ":" in key_value:
+            key, value = key_value.split(":")
             parsed_dict[key.strip()] = convert_value(value)
     return parsed_dict
 
@@ -840,15 +893,15 @@ def load_data(the_path):
     """
 
     data = []
-    print("\n", the_path, '\n')
-    with open(the_path, 'r', encoding="utf-8") as file:
+    print("\n", the_path, "\n")
+    with open(the_path, "r", encoding="utf-8") as file:
         for line in file.readlines():
             data.append(parse_line(line))
     return pd.DataFrame(data)
 
 
 def get_ax(ax=None):
-    """ Get the fig and ax. If None, create a new fig and ax.
+    """Get the fig and ax. If None, create a new fig and ax.
     Otherwise, return the given ax.
 
     Parameters
@@ -869,7 +922,7 @@ def get_ax(ax=None):
 
 
 def add_fluxon_dirs_to_path(do_print=False):
-    """ Add the fluxon directories to the system path.
+    """Add the fluxon directories to the system path.
 
     Parameters
     ----------
@@ -905,14 +958,18 @@ def add_fluxon_dirs_to_path(do_print=False):
 
     return dirlist
 
-def path_add(dirlist, do_print=False):    # Add the parent directory to the module search path
+
+def path_add(
+    dirlist, do_print=False
+):  # Add the parent directory to the module search path
     for path in dirlist:
         sys.path.append(path)
         if do_print:
             print(path)
 
+
 def list_directories(path):
-    """ List the directories in the given path.
+    """List the directories in the given path.
 
     Parameters
     ----------
@@ -936,16 +993,20 @@ def list_directories(path):
 import sunpy
 import sunpy.io
 import sunpy.coordinates
+
 # import sunpy.net
 from sunpy.net import Fido, attrs as a
+
 # Fido = sunpy.net.Fido
 import drms
 import os
 import glob
 import sunpy.coordinates.frames as frames
 import astropy.units as u
+
 default_email = "chris.gilly@colorado.edu"
 from pathlib import PosixPath
+
 # import subprocess
 from astropy.nddata import block_reduce
 from astropy.io import fits
@@ -953,10 +1014,13 @@ import numpy as np
 import os
 import os.path
 import sys
+
 # import ADAPTClient
 import matplotlib as mpl
+
 # mpl.use('qt5agg')
-import matplotlib.pyplot as plt # Import libraries
+import matplotlib.pyplot as plt  # Import libraries
+
 # from sunpy.net.dataretriever import GenericClient
 
 
@@ -969,7 +1033,9 @@ def add_paths(flux_pipe_dir):
     sys.path.append(plot_dir)
     return pdl_script_path
 
+
 # Magnetogram things
+
 
 def make_mag_dir(datdir):
     mag_dir = os.path.join(datdir, "magnetograms")
@@ -978,7 +1044,16 @@ def make_mag_dir(datdir):
         os.makedirs(mag_dir)
     return mag_dir
 
-def get_magnetogram_file(cr=None, date=None, datdir=None, email=None, force_download=False, reduce = False, args=None):
+
+def get_magnetogram_file(
+    cr=None,
+    date=None,
+    datdir=None,
+    email=None,
+    force_download=False,
+    reduce=False,
+    args=None,
+):
     """
     Function to grab HMI data.
 
@@ -998,7 +1073,6 @@ def get_magnetogram_file(cr=None, date=None, datdir=None, email=None, force_down
     except KeyError:
         jsoc_email = default_email
 
-
     # Set the Carrington rotation number
     if cr is not None:
         CR = cr
@@ -1015,13 +1089,14 @@ def get_magnetogram_file(cr=None, date=None, datdir=None, email=None, force_down
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
 
     import pathlib
+
     hmi_object = pathlib.Path(mag_dir)
     file_list = list(hmi_object.iterdir())
     print("\tSearching for file...")
     found_file = False
-    inst='hmi'
+    inst = "hmi"
     for file in file_list:
-        if str(CR)+"_r1_" in str(file) and inst in str(file).casefold():
+        if str(CR) + "_r1_" in str(file) and inst in str(file).casefold():
             print(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
             found_file = True
             break
@@ -1033,17 +1108,16 @@ def get_magnetogram_file(cr=None, date=None, datdir=None, email=None, force_down
             small_path = reduce_mag_file(file, reduce, force=force_download)
             return file, small_path
 
-
     c = drms.Client()
     # Generate a search
-    crot = a.jsoc.PrimeKey('CAR_ROT', str(CR))
-    res = Fido.search(a.jsoc.Series('hmi.Synoptic_Mr_polfil_720s'), crot,
-                    a.jsoc.Notify(jsoc_email))
+    crot = a.jsoc.PrimeKey("CAR_ROT", str(CR))
+    res = Fido.search(
+        a.jsoc.Series("hmi.Synoptic_Mr_polfil_720s"), crot, a.jsoc.Notify(jsoc_email)
+    )
 
     # Once the query is made and trimmed down...
     big_path = os.path.join(mag_dir, f"CR{CR}_r1_hmi.fits")
     # hmi_path = hmidat+'/{file}.fits'
-
 
     print("\tDownloading HMI from JSOC...")
     out = Fido.fetch(res, path=mag_dir)
@@ -1051,12 +1125,19 @@ def get_magnetogram_file(cr=None, date=None, datdir=None, email=None, force_down
     os.rename(hmi_path_out, big_path)
     print(f"\n\tSaved to {big_path}\n")
 
-
     small_path = reduce_mag_file(big_path, reduce, force=force_download)
     return big_path, small_path
 
 
-def get_ADAPT_file(cr=None, date=None, datdir=None, email=None, force_download=False, reduce = False, method=2):
+def get_ADAPT_file(
+    cr=None,
+    date=None,
+    datdir=None,
+    email=None,
+    force_download=False,
+    reduce=False,
+    method=2,
+):
     """
     Function to grab ADAPT data.
 
@@ -1085,21 +1166,27 @@ def get_ADAPT_file(cr=None, date=None, datdir=None, email=None, force_download=F
     date_end = date + (1.9999999 * u.hour)
 
     # Format the Display Dates
-    tstring_display =r"%H:%M:%S %m-%d-%Y"
-    display_date    = date.strftime(tstring_display)
+    tstring_display = r"%H:%M:%S %m-%d-%Y"
+    display_date = date.strftime(tstring_display)
     display_date_end = date_end.strftime(tstring_display)
 
     # Format the Search Dates
     tstring = r"%Y-%m-%dT%H:%M:%S"
-    get_date    =date.strftime(tstring)
-    get_date_end=date_end.strftime(tstring)
+    get_date = date.strftime(tstring)
+    get_date_end = date_end.strftime(tstring)
 
     # Make the directory
     mag_dir = make_mag_dir(datdir)
 
-    print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    print(f"(py) Getting ADAPT Magnetogram(s) for CR{CR}, from {display_date} to {display_date_end}...")
-    print(  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+    print(
+        "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+    )
+    print(
+        f"(py) Getting ADAPT Magnetogram(s) for CR{CR}, from {display_date} to {display_date_end}..."
+    )
+    print(
+        "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+    )
 
     print("\tChecking for file...")
     found_file = False
@@ -1109,18 +1196,21 @@ def get_ADAPT_file(cr=None, date=None, datdir=None, email=None, force_download=F
     dates = [xx.strftime("%Y%m%d") for xx in date_obs]
 
     import pathlib
+
     path_obj = pathlib.Path(mag_dir)
     file_list = list(path_obj.iterdir())
 
     for file in file_list:
-        look = str(CR)+"_r1_"
+        look = str(CR) + "_r1_"
         file_string = str(file)
         if look in file_string and "adapt" in file_string:
             found_file = file
             break
             for ii, dt in enumerate(dates):
                 if dt in str(file):
-                    print(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
+                    print(
+                        f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'"
+                    )
                     print("\t\tDate: ", date_obs[ii].strftime(tstring_display))
                     found_file = True
                     break
@@ -1141,22 +1231,24 @@ def get_ADAPT_file(cr=None, date=None, datdir=None, email=None, force_download=F
 
     print("\n\tSearching FIDO for ADAPT Map...\n")
     from fluxpipe.fidoclients.ADAPTClient import ADAPTLngType
-    LngType = '0' # 0 is carrington, 1 is central meridian
+
+    LngType = "0"  # 0 is carrington, 1 is central meridian
     print("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV")
-    res = Fido.search(a.Instrument('adapt'), a.Time(get_date, get_date_end), ADAPTLngType(LngType))
+    res = Fido.search(
+        a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType)
+    )
     print(res)
     print("\tDownloading ADAPT map...\n")
     out = Fido.fetch(res, path=mag_dir)
     assert len(out) == 1, f"More than one file found! {out}"
-    if len(out) ==1: print("\tSuccess!")
+    if len(out) == 1:
+        print("\tSuccess!")
     print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
-
 
     file_all = str(out[0])
     # file_end = file_all.split('adapt')[1].split('.')
     # file_end = file_all.split('adapt')[1].split('.')[1:]
     big_path = os.path.join(mag_dir, f"CR{CR}_r1_adapt.fts.gz")
-
 
     os.rename(file_all, big_path)
     print(f"\n\t\tSaved to {big_path}")
@@ -1166,40 +1258,48 @@ def get_ADAPT_file(cr=None, date=None, datdir=None, email=None, force_download=F
 
     return big_path, the_path
 
+
 def expose_adapt_fits(adapt_fits):
-    return  [print(x, " : ", adapt_fits[0].header[x]) for x in adapt_fits[0].header if not 'KEYCOMMENTS' in x]
+    return [
+        print(x, " : ", adapt_fits[0].header[x])
+        for x in adapt_fits[0].header
+        if not "KEYCOMMENTS" in x
+    ]
+
 
 def print_adapt_maps(adapt_maps):
     for map in adapt_maps:
         print(map)
 
+
 def plot_all_adapt(adapt_maps):
     from matplotlib import gridspec
+
     fig = plt.figure(figsize=(7, 8))
     gs = gridspec.GridSpec(4, 3, figure=fig)
     for i, a_map in enumerate(adapt_maps):
         ax = fig.add_subplot(gs[i], projection=a_map)
-        a_map.plot(axes=ax, cmap='bwr', vmin=-2, vmax=2,
-                title=f"Realization {1+i:02d}")
+        a_map.plot(axes=ax, cmap="bwr", vmin=-2, vmax=2, title=f"Realization {1+i:02d}")
 
     # adapt_maps.plot()
     plt.tight_layout(pad=5, h_pad=2)
     plt.show(block=True)
 
+
 def plot_mean_adapt(mean_adapt):
     map_mean = np.nanmean(mean_adapt)
     map_std = np.std(mean_adapt)
-    plt.imshow(mean_adapt, vmin = map_mean - 2*map_std, vmax=map_mean + 2*map_std)
+    plt.imshow(mean_adapt, vmin=map_mean - 2 * map_std, vmax=map_mean + 2 * map_std)
     plt.show(block=True)
 
-def format_ADAPT_file(filename, method='mean', force=False, configs=None):
+
+def format_ADAPT_file(filename, method="mean", force=False, configs=None):
     import sunpy.io
     import sunpy.map
 
     print(filename)
 
-
-    if method == 'mean':
+    if method == "mean":
         out_file_name = str(filename).replace("_r1_", "_rmean_")
     else:
         out_file_name = str(filename).replace("_r1_", f"_rf{method}_")
@@ -1214,7 +1314,7 @@ def format_ADAPT_file(filename, method='mean', force=False, configs=None):
 
         return out_file_name
 
-    print("\n\tFormatting ADAPT file...", end='')
+    print("\n\tFormatting ADAPT file...", end="")
     adapt_fits = sunpy.io.read_file(filename)
     main_data = adapt_fits[0].data
     main_header = adapt_fits[0].header
@@ -1226,15 +1326,12 @@ def format_ADAPT_file(filename, method='mean', force=False, configs=None):
     # a = [print(x, main_header[x]) for x in main_header.keys()]
     # a = [print(x, main_header["KEYCOMMENTS"][x]) for x in main_header["KEYCOMMENTS"].keys()]
 
-
     # main_header['DATE-AVG'] = main_header['MAPTIME']
     with fits.open(filename, ignore_missing_simple=True) as hdul:
-        hdul.verify('silentfix')
+        hdul.verify("silentfix")
         header2 = hdul[0].header
 
-
-
-    if method == 'mean':
+    if method == "mean":
         data_header_pairs = [(map_slice, main_header) for map_slice in main_data]
         adapt_maps = sunpy.map.Map(data_header_pairs, sequence=True)
         adapt_cube = np.asarray([the_map.data for the_map in adapt_maps])
@@ -1260,7 +1357,6 @@ def format_ADAPT_file(filename, method='mean', force=False, configs=None):
     print("Success!")
     print("\t\tSaved to", out_file_name, "\n")
 
-
     return out_file_name
 
 
@@ -1270,24 +1366,32 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
     # reduce the FITS image
     print(f"\tReducing image size by a factor of {reduction}...", end="")
     if not os.path.exists(small_file) or force:
-        small_file = reduce_fits_image(mag_file, small_file, target_resolution=None, reduction_amount=reduction)
+        small_file = reduce_fits_image(
+            mag_file, small_file, target_resolution=None, reduction_amount=reduction
+        )
         # print("Success!\n")
     else:
         print("Skipped! Reduced file already exists:")
         # print("\t\t", shorten_path(str(small_file), 2))
         ### WORKING HERE
-        print(f"\t\tFound '{os.path.basename(small_file)}' in '{shorten_path(os.path.dirname(small_file))}'")
+        print(
+            f"\t\tFound '{os.path.basename(small_file)}' in '{shorten_path(os.path.dirname(small_file))}'"
+        )
         print("\n\t\t\t```````````````````````````````\n \n\n")
 
     return small_file
 
+
 def read_fits_data(fname):
     """Reads FITS data and fixes/ignores any non-standard FITS keywords."""
     hdulist = fits.open(fname, ignore_missing_simple=True)
-    hdulist.verify('silentfix+warn')
+    hdulist.verify("silentfix+warn")
     return hdulist
 
-def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum):
+
+def reduce_fits_image(
+    fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum
+):
     """
     Open a FITS file, reduce the size of the image using astropy's block_reduce
     function, and save a new copy of the FITS file with the smaller image in the
@@ -1304,7 +1408,7 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_a
     print(f"\n\tReducing {fits_path}...")
     # Open the FITS file and read the data
     with fits.open(fits_path, ignore_missing_simple=True) as hdul:
-        hdul.verify('silentfix')
+        hdul.verify("silentfix")
         data = hdul[0].data
         if data is None:
             data = hdul[1].data
@@ -1318,14 +1422,20 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_a
 
         # Raise an error if neither target_resolution nor reduction_amount is specified
         elif reduction_amount is None:
-            raise ValueError("Either target_resolution or reduction_amount must be specified.")
-
+            raise ValueError(
+                "Either target_resolution or reduction_amount must be specified."
+            )
 
         before_sum = np.sum(data)
         small_image = block_reduce(data, reduction_amount, func)
         after_sum = np.sum(small_image)
         if not np.isclose(before_sum, after_sum):
-            print("\tREDUCTION WARNING: \n\tSum before:    ", before_sum, "\n\tSum after:     ", after_sum)
+            print(
+                "\tREDUCTION WARNING: \n\tSum before:    ",
+                before_sum,
+                "\n\tSum after:     ",
+                after_sum,
+            )
 
         try:
             hdul[0].header["DATE"]
@@ -1334,7 +1444,7 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_a
             useheader = hdul[1].header
 
         try:
-            del useheader['BLANK']
+            del useheader["BLANK"]
         except KeyError:
             print("No BLANK keyword found!")
 
@@ -1362,33 +1472,35 @@ def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_a
 
     return small_file
 
+
 def fix_header(useheader, image):
 
-    useheader['DATAMIN'] = np.min(image)
-    useheader['DATAMAX'] = np.max(image)
-    useheader['BZERO'] = 0
-    useheader['BSCALE'] = 1
+    useheader["DATAMIN"] = np.min(image)
+    useheader["DATAMAX"] = np.max(image)
+    useheader["BZERO"] = 0
+    useheader["BSCALE"] = 1
 
-    useheader['CDELT1'] = 360 / image.shape[1]  ## DEGREES
-    useheader['CDELT2'] = np.deg2rad(360 / (image.shape[0] * np.pi)) #RADIANS
+    useheader["CDELT1"] = 360 / image.shape[1]  ## DEGREES
+    useheader["CDELT2"] = np.deg2rad(360 / (image.shape[0] * np.pi))  # RADIANS
     return useheader
 
 
 def fix_header_ADAPT(useheader, image):
-    useheader['DATAMIN'] = np.min(image)
-    useheader['DATAMAX'] = np.max(image)
-    useheader['BZERO'] = 0
-    useheader['BSCALE'] = 1
+    useheader["DATAMIN"] = np.min(image)
+    useheader["DATAMAX"] = np.max(image)
+    useheader["BZERO"] = 0
+    useheader["BSCALE"] = 1
 
     # import pdb; pdb.set_trace()
-    useheader['CDELT1'] = 360 / image.shape[1]  ## DEGREES
-    useheader['CDELT2'] = 360 / (image.shape[0] * np.pi) ## DEGREES
+    useheader["CDELT1"] = 360 / image.shape[1]  ## DEGREES
+    useheader["CDELT2"] = 360 / (image.shape[0] * np.pi)  ## DEGREES
     return useheader
+
 
 def plot_raw_magnetogram(fits_path, data, small_image):
     # Save the high resolution image as a grayscale PNG
-    plt.axis('off')
-    high_res_output_path = fits_path.replace('.fits', '.png')
+    plt.axis("off")
+    high_res_output_path = fits_path.replace(".fits", ".png")
     fig = plt.gcf()
     shp = data.shape
     dmin = np.nanmin(data)
@@ -1396,31 +1508,32 @@ def plot_raw_magnetogram(fits_path, data, small_image):
     dmean = np.nanmean(data)
     dsig = np.nanstd(data)
     thresh = 3
-    vmin = dmean - thresh*dsig
-    vmax = dmean + thresh*dsig
-    plt.imshow(data, cmap='gray', vmin=vmin, vmax=vmax)
+    vmin = dmean - thresh * dsig
+    vmax = dmean + thresh * dsig
+    plt.imshow(data, cmap="gray", vmin=vmin, vmax=vmax)
 
-    ratio = shp[1]/shp[0]
-    sz0=6 #inches
-    sz1=sz0*ratio #inches
-    DPI = shp[1] / sz1 #pixels/inch
+    ratio = shp[1] / shp[0]
+    sz0 = 6  # inches
+    sz1 = sz0 * ratio  # inches
+    DPI = shp[1] / sz1  # pixels/inch
     fig.set_size_inches((sz1, sz0))
-    plt.savefig(high_res_output_path, bbox_inches='tight', dpi=4*DPI)
+    plt.savefig(high_res_output_path, bbox_inches="tight", dpi=4 * DPI)
     plt.close()
 
     # Save the low resolution image as a grayscale PNG
-    plt.imshow(small_image, cmap='gray', vmin=vmin, vmax=vmax)
-    plt.axis('off')
-    low_res_output_path = fits_path.replace('.fits', '_small.png')
+    plt.imshow(small_image, cmap="gray", vmin=vmin, vmax=vmax)
+    plt.axis("off")
+    low_res_output_path = fits_path.replace(".fits", "_small.png")
     fig = plt.gcf()
     shp = small_image.shape
-    ratio = shp[1]/shp[0]
-    sz0=6 #inches
-    sz1=sz0*ratio #inches
-    DPI = shp[1] / sz1 #pixels/inch
+    ratio = shp[1] / shp[0]
+    sz0 = 6  # inches
+    sz1 = sz0 * ratio  # inches
+    DPI = shp[1] / sz1  # pixels/inch
     fig.set_size_inches((sz1, sz0))
-    plt.savefig(low_res_output_path, bbox_inches='tight', dpi=4*DPI)
+    plt.savefig(low_res_output_path, bbox_inches="tight", dpi=4 * DPI)
     plt.close()
+
 
 # def load_fits_magnetogram(datdir = "/Users/cgilbert/vscode/fluxon-data/", batch="fluxon", bo=2, bn=2, ret_all=False):
 #     """Loads a magnetogram from a FITS file."""
@@ -1438,7 +1551,17 @@ def plot_raw_magnetogram(fits_path, data, small_image):
 #     else:
 #         return brdat
 
-def load_fits_magnetogram(datdir=None, batch=None, bo=2, bn=2, ret_all=False, fname=None, configs=None):
+
+def load_fits_magnetogram(
+    datdir=None,
+    batch=None,
+    bo=2,
+    bn=2,
+    ret_all=False,
+    fname=None,
+    configs=None,
+    cr=None,
+):
     """Loads a magnetogram from a FITS file.
 
     Parameters
@@ -1462,9 +1585,14 @@ def load_fits_magnetogram(datdir=None, batch=None, bo=2, bn=2, ret_all=False, fn
         Magnetogram header object
     """
     configs = configs or configurations()
-    cr = configs.get("cr", None)
-    assert cr is not None, "Must specify a Carrington rotation number!"
+    if cr is None:
+        cr = configs.get("cr", None)
+    else:
+        # TODO : This is a hack to get around the fact that the configs are not being updated
+        configs["cr"] = cr
 
+    assert cr is not None, "Must specify a Carrington rotation number!"
+    update_magdir_paths(configs)
     fname = fname or configs["magpath"].format(cr)
     batch = batch or configs["batch_name"]
     datdir = datdir or configs["data_dir"]
@@ -1477,12 +1605,16 @@ def load_fits_magnetogram(datdir=None, batch=None, bo=2, bn=2, ret_all=False, fn
     #     hdulist = read_fits_data(fits_path)
     # except FileNotFoundError:
     brdat = hdulist[0].data
-    header= hdulist[0].header
+    header = hdulist[0].header
     brdat = brdat - np.mean(brdat)
+    header["CUNIT2"] = "rad"
+
     if ret_all:
         return brdat, header
     else:
         return brdat
+
+
 # File I/O and pathing
 def find_file_with_string(directory, search_string):
     """Searches a directory for a file containing a given string."""
@@ -1491,13 +1623,181 @@ def find_file_with_string(directory, search_string):
             return os.path.join(directory, file_name)
     return None
 
-def shorten_path(string, __=None):
+
+def shorten_path(string, __=None, do=False):
     datapath = os.getenv("DATAPATH")
-    if datapath:
+    if datapath and do:
         return string.replace(datapath, "$DATAPATH ")
     else:
         return string
 
-def get_fixed_coords(phi0, theta0):
-    ph0, th0 = phi0+np.pi, np.sin(-(theta0-(np.pi/2)))
+
+def get_fixed_coords(phi0, theta0, do=True):
+    if do:
+        ph0, th0 = phi0 + np.pi, np.sin(-(theta0 - (np.pi / 2)))
+    else:
+        ph0, th0 = phi0, theta0
     return ph0, th0
+
+
+fields = ["ph0", "th0", "fr0", "vel0", "ph1", "th1", "fr1", "vel1", "polarity"]
+
+
+def load_wind_files(directory):
+    """
+    Load wind files into a nested dictionary based on CR and data fields.
+
+    Parameters:
+    - directory: Path to the directory containing the files.
+
+    Returns:
+    A nested dictionary {CR: {field: data, ...}, ...}.
+    """
+    # Define the fields based on the order in the saved array
+    big_dict = {}
+
+    # Regex to extract details from filename
+    pattern = re.compile(r"cr(\d+)_f(\d+)_op(\d+)_radial_wind_(\w+).npy")
+
+    for filename in os.listdir(directory):
+        match = pattern.match(filename)
+        if match:
+            CR, nwant, n_open, method = match.groups()
+            CR = int(CR)  # Convert CR to integer for use as a dictionary key
+
+            # Ensure the CR key exists in the dictionary
+            if CR not in big_dict:
+                big_dict[CR] = {}
+
+            file_path = os.path.join(directory, filename)
+            data = np.load(file_path)
+
+            # Assume data is saved in the order specified above
+            for i, field in enumerate(fields):
+                big_dict[CR][field] = data[i]
+
+    return big_dict
+
+
+from datetime import datetime, timedelta
+
+
+def decimal_years_to_datetimes(decimal_years):
+    def convert(decimal_year):
+        year = int(decimal_year)
+        remainder = decimal_year - year
+        start_of_year = datetime(year, 1, 1)
+        # Check if it's a leap year
+        if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
+            days_in_year = 366
+        else:
+            days_in_year = 365
+        days = remainder * days_in_year
+        return start_of_year + timedelta(days=days)
+
+    return [convert(year) for year in decimal_years]
+
+
+def sunspotplot(carr_ax, cr=None, use_years=False):
+    # Plot the Sunspot Number
+    carrington = np.loadtxt(
+        "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/fluxpipe/plotting/SN_m_tot_V2.0.txt"
+    ).T
+    ## https://sidc.be/SILSO/datafiles#total ##
+    from sunpy.coordinates.sun import (
+        carrington_rotation_time as crt,
+        carrington_rotation_number as crn,
+    )
+
+    # import pdb; pdb.set_trace()
+    date = carrington[2]
+    sunspots = carrington[3]
+
+    if cr is not None:
+        this_date = crt(cr)
+        if use_years:
+            carr_ax.axvline(this_date.decimalyear, ls=":", c="k", zorder=1000000)
+        else:
+            carr_ax.axvline(cr, ls=":", c="k", zorder=1000000)
+    # fig, ax = plt.subplots()
+    if use_years:
+        carr_ax.plot(date, sunspots, label="Sunspots", color="b", lw=2)
+        carr_ax.set_xlim(crt(2095).decimalyear, crt(2282).decimalyear)
+
+    else:
+        datetimes = decimal_years_to_datetimes(date)
+        CR = crn(datetimes)
+        carr_ax.plot(CR, sunspots, label="Sunspots", color="b", lw=2)
+        carr_ax.set_xlim(2095, 2282)
+    # carr_ax.set_xlabel("Year")
+    carr_ax.set_ylabel("Sunspots")
+    carr_ax.set_title("Solar Cycle Phase")
+    # carr_ax.axhline(100, c='k', ls="--")
+    # set the major tick formatter to display integers
+    from matplotlib.ticker import MaxNLocator
+
+    carr_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    # carr_ax.set_ylim(0, 200)
+
+
+VMIN, VMAX = 450, 700
+
+
+def parse_big_dict(big_dict, field="vel1", vmin=VMIN, vmax=VMAX):
+    # Prepare data for interpolation and plotting
+    all_phi = []
+    all_theta = []
+    all_vel = []
+    all_hist = []
+    all_cr = []
+    all_mean = []
+    all_std = []
+    all_count = []
+    the_phi = "ph1" if "1" in field else "ph0"
+    the_theta = "th1" if "1" in field else "th0"
+
+    # Collect data from all CRs
+    for ii, CR in enumerate(sorted(big_dict.keys())):
+
+        phi1 = big_dict[CR][the_phi] / (2 * np.pi) + ((CR - 0.5))
+        theta1 = big_dict[CR][the_theta]
+        vel1_data = big_dict[CR][field]
+        hist, bins = np.histogram(vel1_data, range=(vmin, vmax), bins=20, density=True)
+
+        all_phi.extend(phi1)
+        all_theta.extend(theta1)
+        all_vel.extend(vel1_data)
+
+        all_hist.append(hist)
+        all_mean.append(np.mean(vel1_data))
+        all_std.append(np.std(vel1_data))
+        all_cr.append(CR)
+        all_count.append(len(vel1_data))
+
+    # Convert lists to numpy arrays for griddata
+    all_phi = np.array(all_phi)
+    all_theta = np.array(all_theta)
+    all_vel = np.array(all_vel)
+    all_hist = np.array(all_hist)
+    all_cr = np.array(all_cr)
+    all_mean = np.array(all_mean)
+    all_std = np.array(all_std)
+
+    total_mean = np.mean(all_mean)
+    total_std = np.mean(all_std)
+    all_count = np.array(all_count)
+
+    clip = total_mean + 2 * total_std
+    all_hist[all_hist > clip] = clip
+    return (
+        all_phi,
+        all_theta,
+        all_vel,
+        all_hist,
+        all_cr,
+        all_mean,
+        all_std,
+        total_mean,
+        total_std,
+        all_count,
+    )
