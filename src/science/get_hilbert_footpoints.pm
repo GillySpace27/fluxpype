@@ -77,7 +77,9 @@ use strict;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_hilbert_footpoints);
-use pipe_helper qw(shorten_path);
+use lib 'src/science';
+
+# use pipe_helper qw(shorten_path);
 use File::Path  qw(mkpath);
 
 use fluxon_placement_hilbert qw(fluxon_placement_hilbert);

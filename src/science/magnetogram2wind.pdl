@@ -90,7 +90,7 @@ use lib 'src/helpers';
 use lib 'src/science';
 use lib 'src/plotting';
 use lib 'src/runners';
-# print @INC;
+print @INC;
 
 use pipe_helper qw(shorten_path set_paths configurations);
 use pipe_helper
@@ -106,9 +106,10 @@ use make_world_from_pfss   qw(make_world_from_pfss);
 use plot_world qw(plot_world);
 
 use relax_pfss_world qw(relax_pfss_world);
-use get_wind         qw(get_wind);
 
-# use pipe_helper qw(shorten_path);
+# use get_wind         qw(get_wind);
+
+# use pipe_helper qw(shorten_path);x
 
 # get_hilbert_footpoints();
 

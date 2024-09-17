@@ -686,7 +686,7 @@ sub set_paths {
 }
 
 use File::Spec;
-use List::Util qw(max);
+# use List::Util qw(max);
 
 
 sub load_highest_numbered_world {

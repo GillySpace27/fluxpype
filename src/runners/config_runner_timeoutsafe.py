@@ -37,6 +37,11 @@ configs = configurations(debug=False)
 # Initialize timeout_num
 timeout_num = 0
 
+import os
+
+os.chdir("/Users/cgilbert/vscode/fluxons/fluxpype")
+
+
 @timeout_decorator.timeout(1000)  # Set a timeout for each subprocess call
 def run_pdl_script(rot, nflux, adapt, method):
     """
@@ -47,7 +52,19 @@ def run_pdl_script(rot, nflux, adapt, method):
     - nflux: Fluxon count
     - adapt: Adaptation parameter
     """
-    subprocess.run(["perl", configs["run_script"], str(rot), str(nflux), str(adapt), str(method)], check=False)
+
+    subprocess.run(
+        [
+            configs["perl_dir"],
+            configs["run_script"],
+            str(rot),
+            str(nflux),
+            str(adapt),
+            str(method),
+        ],
+        check=False,
+    )
+
 
 def run():
     global timeout_num
@@ -68,6 +85,6 @@ def run():
 
     print(f"Total timeouts: {timeout_num}")
 
+
 if __name__ == "__main__":
     run()
-

@@ -41,7 +41,36 @@ use PDL;
 use PDL::NiceSlice;
 use PDL::ImageND;
 use POSIX qw(isfinite);
-use hilbert qw(hilbert);
+
+use PDL;
+use PDL::Core qw(pdl);
+use PDL::NiceSlice;
+
+sub fl_hi_helper {
+    my ($a) = @_;
+
+    my $err = 0;
+    my $n = $a->nelem;  # Get the number of elements in $a
+    my @indices = ();
+
+    for my $i (0 .. $n - 1) {
+        $err += $a->at($i);
+
+        if ($err > 0.667) {
+            push @indices, $i;
+            $err -= 1;
+        } elsif ($err < -0.667) {
+            push @indices, -$i;
+            $err += 1;
+        }
+
+        # Set the value in $a
+        $a->set($i, $err);
+    }
+
+    return \@indices;
+}
+
 
 sub fluxon_placement_hilbert {
     my $bgram        = shift;
@@ -110,32 +139,32 @@ sub fluxon_placement_hilbert {
 1;
 
 
-no PDL::NiceSlice;
-use Inline Config => CLEAN_AFTER_BUILD => 0;
-use Inline Pdlpp=><<'EOF'
-pp_def('fl_hi_helper',
-       Pars=>'a(n)[o];',
-       OtherPars=>'SV *plsvr;',
-       Code=>q{
-	   int i;
-	   double err = 0;
-	   AV *pl= (AV *)SvRV($COMP(plsvr));
+# no PDL::NiceSlice;
+# use Inline Config => CLEAN_AFTER_BUILD => 0;
+# use Inline Pdlpp=><<'EOF'
+# pp_def('fl_hi_helper',
+#        Pars=>'a(n)[o];',
+#        OtherPars=>'SV *plsvr;',
+#        Code=>q{
+# 	   int i;
+# 	   double err = 0;
+# 	   AV *pl= (AV *)SvRV($COMP(plsvr));
 
-	   av_clear(pl);
+# 	   av_clear(pl);
 
-	   for(i=0;i<$SIZE(n);i++) {
-	       err += $a(n=>i);
-	       if(err > 0.667) {
-		   av_push(pl, newSViv(i));
-		   err -= 1;
-	       } else if(err < -0.667) {
-		   av_push(pl, newSViv(-i));
-		   err += 1;
-	       }
-	       $a(n=>i) = err;
-	   }
-       }
-       );
-EOF
+# 	   for(i=0;i<$SIZE(n);i++) {
+# 	       err += $a(n=>i);
+# 	       if(err > 0.667) {
+# 		   av_push(pl, newSViv(i));
+# 		   err -= 1;
+# 	       } else if(err < -0.667) {
+# 		   av_push(pl, newSViv(-i));
+# 		   err += 1;
+# 	       }
+# 	       $a(n=>i) = err;
+# 	   }
+#        }
+#        );
+# EOF
 
 
