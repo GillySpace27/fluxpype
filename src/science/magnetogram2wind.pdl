@@ -1,4 +1,4 @@
-
+print "HELLO WORLD";
 =head1 NAME
 
 magnetogram2wind - FLUX Main Pipeline Script
@@ -60,19 +60,33 @@ use File::Find;
 use Time::HiRes    qw(clock_gettime sleep);
 use File::Basename qw(fileparse);
 
-# Ensure the current directory is always in the path
+# # Ensure the current directory is always in the path
 use FindBin qw($RealBin);
 use lib $RealBin;
+print $RealBin;
+
+# Change the current directory to be at the src level
+
 use lib "$RealBin/..";
 use lib ".";
+use lib "..";
+print $RealBin;
+# use lib '/Users/cgilbert/vscode/fluxons/fluxpype/src/helpers';
+# use lib '/Users/cgilbert/vscode/fluxons/fluxpype/src/science';
+use lib 'src/helpers';
+use lib 'src/science';
+use lib 'src/plotting';
+use lib 'src/runners';
+# print @INC;
+
 use pipe_helper qw(shorten_path set_paths configurations);
 use pipe_helper
   qw(print_banner search_files_in_directory configs_update_magdir);
 
-# set_paths();
+set_paths();
 
-# print @INC;
-use get_hilbert_footpoints qw(get_hilbert_footpoints);
+print @INC;
+# use get_hilbert_footpoints qw(get_hilbert_footpoints);
 use make_world_from_pfss   qw(make_world_from_pfss);
 
 # use relax_ qw(shorten_path);

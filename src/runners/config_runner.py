@@ -31,7 +31,9 @@ import subprocess
 from tqdm import tqdm
 from fluxpipe.helpers.pipe_helper import configurations
 
-configs = configurations(debug=False)
+configs = configurations(debug=True)
+
+
 def run():
     # Initialize a progress bar with the total number of jobs to run
     with tqdm(total=int(configs["n_jobs"]), unit="runs") as pbar:
@@ -47,11 +49,21 @@ def run():
                     pbar.set_description(f"Rotation {rot}, n_fluxon {nflux}")
 
                     # Execute the PDL script with the current parameters
-                    result = subprocess.run(["perl", configs["run_script"],
-                                            str(rot), str(nflux), str(adapt)], check=False)
+
+                    result = subprocess.run(
+                        [
+                            configs["perl_dir"],
+                            configs["run_script"],
+                            str(rot),
+                            str(nflux),
+                            str(adapt),
+                        ],
+                        check=False,
+                    )
 
                     # Update the progress bar
                     pbar.update(1)
+
 
 if __name__ == "__main__":
 
@@ -59,6 +71,5 @@ if __name__ == "__main__":
     # import sys
     # sys.exec(open(os.path.expanduser('~/.zshrc')).read())
     # print(os.environ.get('PERL5LIB'))
-
 
     run()
