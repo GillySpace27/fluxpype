@@ -28,11 +28,12 @@ Gilly <gilly@swri.org> (and others!)
 """
 import subprocess
 from tqdm import tqdm
-# import fluxpype
+import fluxpype
 from fluxpype.helpers.pipe_helper import configurations
 import timeout_decorator
 
 configs = configurations(debug=False)
+print(fluxpype.helpers.pipe_helper.__file__)
 
 # Initialize timeout_num
 timeout_num = 0
@@ -49,7 +50,7 @@ def run_pdl_script(rot, nflux, adapt, method):
 
     Parameters:
     - rot: Carrington Rotation
-    - nflux: Fluxon count
+    - nflux: Fluxon countA
     - adapt: Adaptation parameter
     """
 

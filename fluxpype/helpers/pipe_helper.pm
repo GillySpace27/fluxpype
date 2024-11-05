@@ -154,7 +154,7 @@ sub configurations {
     use File::Spec::Functions qw(catfile rel2abs);
 
     # Define the absolute path of the configuration file directly
-    my $config_path = rel2abs(catfile("config", "config.ini" ));
+    my $config_path = rel2abs(catfile("fluxpype","fluxpype", "config", "config.ini" ));
 
     # Print the configuration path for debugging
     print "Configuration path (absolute): $config_path\n";
