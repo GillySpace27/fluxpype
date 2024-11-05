@@ -73,10 +73,7 @@ use File::Find;
 use Time::HiRes    qw(clock_gettime sleep);
 use File::Basename qw(fileparse);
 
-# Ensure the current directory is always in the path
-use FindBin qw($RealBin);
-use lib $RealBin;
-# print $RealBin;
+# Ensure the directories are always in the path
 
 use FindBin qw($RealBin);
 use lib $RealBin;                 # Add the current script directory to @INC
@@ -104,7 +101,7 @@ use get_hilbert_footpoints qw(get_hilbert_footpoints);
 use make_world_from_pfss   qw(make_world_from_pfss);
 
 # use relax_ qw(shorten_path);
-use plot_world qw(plot_world);
+use plot_world qw(plot_worlds);
 
 use relax_pfss_world qw(relax_pfss_world);
 
@@ -294,6 +291,7 @@ if (1-$configs{wind_only}){
 my $fmap_command =
 "$configs{python_dir} $pipedir/plotting/plot_fieldmap.py --cr $CR --open $open_file"
   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
+  print $fmap_command;
 system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 
 

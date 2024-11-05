@@ -77,9 +77,9 @@ use strict;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_hilbert_footpoints);
-use lib '.';
-
-# use pipe_helper qw(shorten_path);
+use lib "fluxpype/fluxpype/helpers";
+use lib "fluxpype/fluxpype/science";
+use pipe_helper qw(shorten_path);
 use File::Path  qw(mkpath);
 
 use fluxon_placement_hilbert qw(fluxon_placement_hilbert);
@@ -178,7 +178,7 @@ sub get_hilbert_footpoints {
                 }
 
                 $iterate = 1;
-                print "Retrying!\n";
+                print "Retrying! Pype\n";
             }
             else {
                 print "Success!\n";

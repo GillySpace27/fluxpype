@@ -472,9 +472,9 @@ sub calculate_directories {
 
 
 
-    my $fluxdir = $config_ref->{'fl_mhdlib'};
-    my $pipedir = catdir( $fluxdir, "fluxpipe", "fluxpipe" );
-    my $pdldir  = catdir( $fluxdir, "pdl",      "PDL" );
+    my $fluxdir = $config_ref->{'fluxons'};
+    my $pipedir = catdir( "fluxpype", "fluxpype" );
+    my $pdldir  = catdir("pdl",      "PDL" );
 
     # # Use the provided data_dir if defined, otherwise calculate it
     # my $datdir =
