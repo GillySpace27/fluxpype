@@ -83,6 +83,7 @@ use lib "$RealBin/../science";    # Add the science directory to @INC
 use lib "$RealBin/../plotting";   # Add the plotting directory to @INC
 use lib "$RealBin/../runners";    # Add the runners directory to @INC
 use lib '$RealBin/../../../fluxon-mhd/pdl/PDL'; # Add the PDL directory to @INC
+use lib "/Users/cgilbert/perl5";
 
 # Printing to check paths
 print "\nCurrent Directory: $RealBin\n";
@@ -90,7 +91,7 @@ print "\nCurrent Directory: $RealBin\n";
 
 # print @INC;
 
-use pipe_helper qw(shorten_path set_paths configurations);
+use pipe_helper qw(shorten_path set_paths configurations load_highest_numbered_world);
 use pipe_helper
   qw(print_banner search_files_in_directory configs_update_magdir);
 
@@ -105,7 +106,7 @@ use plot_world qw(plot_worlds);
 
 use relax_pfss_world qw(relax_pfss_world);
 
-# use get_wind         qw(get_wind);
+use get_wind         qw(get_wind);
 
 # use pipe_helper qw(shorten_path);x
 

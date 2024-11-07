@@ -15,6 +15,8 @@ package get_wind;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_wind);
+use lib "fluxpype/fluxpype/helpers/";
+use lib "fluxpype/fluxpype/science/";
 use pipe_helper                     qw(shorten_path configurations find_highest_numbered_file_with_string);
 use File::Path                      qw(mkpath);
 use map_fluxon_b                    qw(map_fluxon_b);

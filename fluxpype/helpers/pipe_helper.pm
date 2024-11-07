@@ -472,7 +472,7 @@ sub calculate_directories {
 
 
 
-    my $fluxdir = $config_ref->{'fluxons'};
+    # my $fluxdir = $config_ref->{'fluxons'};
     my $pipedir = catdir( "fluxpype", "fluxpype" );
     my $pdldir  = catdir("pdl",      "PDL" );
 
@@ -489,7 +489,7 @@ sub calculate_directories {
     use File::HomeDir;
     my $home_dir = $ENV{'HOME'};
     $data_dir =~ s{^~}{$home_dir};
-    $fluxdir =~ s{^~}{$home_dir};
+    # $fluxdir =~ s{^~}{$home_dir};
     $pdldir =~ s{^~}{$home_dir};
     $magdir =~ s{^~}{$home_dir};
     $batchdir =~ s{^~}{$home_dir};

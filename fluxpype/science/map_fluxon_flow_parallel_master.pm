@@ -18,6 +18,7 @@ use File::Path qw(make_path);
 use Time::HiRes qw(clock_gettime);
 use Data::Dumper;
 use Chart::Gnuplot;
+use lib "fluxpype/fluxpype/science";
 use gen_fluxon_tflow qw(gen_fluxon_tflow);
 use gen_fluxon_schonflow qw(gen_fluxon_schonflow);
 use gen_fluxon_wsaflow qw(gen_fluxon_wsaflow do_image_plot);
