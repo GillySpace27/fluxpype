@@ -45,6 +45,25 @@ package magnetogram2wind;
 # Import required modules
 use strict;
 use warnings;
+
+use FindBin qw($RealBin);
+use lib "$RealBin";                 # Add the current script directory to @INC
+use lib ".";                 # Add the current script directory to @INC
+use lib "..";            # Add the parent directory to @INC
+# use lib "helpers";    # Add the helpers directory to @INC
+# use lib "science";    # Add the science directory to @INC
+# use lib "plotting";   # Add the plotting directory to @INC
+# use lib "runners";    # Add the runners directory to @INC
+# use lib '../../../fluxon-mhd/pdl/PDL'; # Add the PDL directory to @INC
+# use lib "/Users/cgilbert/perl5/bin";
+use lib "fluxpype/fluxpype/helpers";
+use lib "fluxpype/fluxpype/runners";
+use lib "fluxpype/fluxpype/science";
+use lib "fluxpype/fluxpype/plotting";
+# use lib "/Users/cgilbert/perl5";
+
+print "LIBS ARE LOADED\n";
+
 use PDL;
 use PDL::AutoLoader;
 use PDL::Transform;
@@ -52,18 +71,14 @@ use PDL::NiceSlice;
 use PDL::Options;
 
 # print "Loading Flux...\n";
-# use Fluxpipe;
+# use Fluxpype;
 # use Flux;
-
-use strict;
-use warnings;
 
 # Load the module
 use Flux;
 
 # Get the path of the loaded module
-my $module_path = $INC{'Flux.pm'};
-
+my $module_path = $INC{'Flux.pm'} || "Undefined";
 print "FLUX is located at: $module_path\n";
 
 
@@ -75,15 +90,7 @@ use File::Basename qw(fileparse);
 
 # Ensure the directories are always in the path
 
-use FindBin qw($RealBin);
-use lib $RealBin;                 # Add the current script directory to @INC
-use lib "$RealBin/..";            # Add the parent directory to @INC
-use lib "$RealBin/../helpers";    # Add the helpers directory to @INC
-use lib "$RealBin/../science";    # Add the science directory to @INC
-use lib "$RealBin/../plotting";   # Add the plotting directory to @INC
-use lib "$RealBin/../runners";    # Add the runners directory to @INC
-use lib '$RealBin/../../../fluxon-mhd/pdl/PDL'; # Add the PDL directory to @INC
-use lib "/Users/cgilbert/perl5";
+
 
 # Printing to check paths
 print "\nCurrent Directory: $RealBin\n";

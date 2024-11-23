@@ -1,5 +1,5 @@
 """
-Manually Run FLUXpipe as a script in a loop
+Manually Run FLUXpype as a script in a loop
 =============================================
 
 This module is used to automate the execution of the `magnetogram2wind.pdl` script.
@@ -10,7 +10,7 @@ rather than putting them in a configuration file.
 Attributes
 ----------
 flux_dir : str
-    The directory where the FLUXpipe project is located.
+    The directory where the FLUXpype project is located.
 pdl_run_script_path : str
     The path to the `magnetogram2wind.pdl` script.
 batch_name : str
@@ -53,7 +53,7 @@ from tqdm import tqdm
 # Initialize variables and options
 flux_dir = os.environ.get("FL_PREFIX")
 chdir(flux_dir)
-pdl_run_script_path = f"{flux_dir}/fluxpipe/fluxpipe/magnetogram2wind.pdl"
+pdl_run_script_path = f"{flux_dir}/fluxpype/fluxpype/magnetogram2wind.pdl"
 
 
 batch_name = "new_test"

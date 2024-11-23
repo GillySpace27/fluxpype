@@ -474,7 +474,7 @@ def trace_lines(output, f_vars, open_path, closed_path, adapt):
     fl_closed = np.zeros([1, 5])
     flnum_closed = 0
 
-    r0 = 1.001 * const.R_sun
+    r0 = 1.01 * const.R_sun
     tracer = tracing.PythonTracer()
     # tracer = tracing.FortranTracer(max_steps=3000)
 
@@ -511,7 +511,7 @@ def trace_lines(output, f_vars, open_path, closed_path, adapt):
     return fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed
 
 
-# @timeout_decorator.timeout(5)
+@timeout_decorator.timeout(5)
 def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt):
     # import pdb; pdb.set_trace()
     """Fieldline tracer for each fieldline

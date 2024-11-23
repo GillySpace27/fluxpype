@@ -1,9 +1,9 @@
 """
-pipe_helper: Comprehensive Library for FLUXpipe Algorithm and Fluxon Simulations
+pipe_helper: Comprehensive Library for FLUXpype Algorithm and Fluxon Simulations
 ===============================================================================
 
 This library provides a collection of utility functions to assist with the
-FLUXpipe algorithm and Fluxon simulations. It offers functionalities for managing directories,
+FLUXpype algorithm and Fluxon simulations. It offers functionalities for managing directories,
 handling FITS files, manipulating magnetogram data, parsing and plotting data generated from fluxon simulations.
 
 Modules:
@@ -115,8 +115,8 @@ def configurations(
         dict: Configuration settings as key-value pairs.
     """
     config_obj = configparser.ConfigParser()
-    # config_path = os.path.join(os.environ.get("FL_MHDLIB"), "fluxpipe", config_filename)
-    # config_path = "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/config.ini"
+    # config_path = os.path.join(os.environ.get("FL_MHDLIB"), "fluxpype", config_filename)
+    # config_path = "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/config.ini"
     config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/config/config.ini"
     # Search for the configuration file in the current directory and subdirectories
     if not os.path.exists(config_path):
@@ -246,7 +246,7 @@ def calculate_directories(the_config):
     batch_name = the_config["batch_name"].strip()
     dat_dir = the_config.get("data_dir", None)
 
-    the_config["pipe_dir"] = os.path.join(basedir, "fluxpipe", "fluxpipe")
+    the_config["pipe_dir"] = os.path.join(basedir, "fluxpype", "fluxpype")
     the_config["pdl_dir"] = os.path.join(basedir, "pdl", "PDL")
     the_config["datdir"] = dat_dir if dat_dir else os.path.join(basedir, "fluxon-data")
     the_config["data_dir"] = the_config["datdir"]
@@ -420,7 +420,7 @@ def add_paths(flux_pipe_dir):
     Parameters
     ----------
     flux_pipe_dir : str
-        FLUXpipe directory path
+        FLUXpype directory path
 
     Returns
     -------
@@ -941,9 +941,9 @@ def add_fluxon_dirs_to_path(do_print=False):
     # Add the pipe and plotting directories to the path
     for thepath in dirlist:
         if "mhd" in thepath:
-            dirlist.append(os.path.join(thepath, "fluxpipe"))
-            dirlist.append(os.path.join(thepath, "fluxpipe", "plotting"))
-            dirlist.append(os.path.join(thepath, "fluxpipe", "helpers"))
+            dirlist.append(os.path.join(thepath, "fluxpype"))
+            dirlist.append(os.path.join(thepath, "fluxpype", "plotting"))
+            dirlist.append(os.path.join(thepath, "fluxpype", "helpers"))
             break
 
     # Get the pipedir environment variable and add it to the path
@@ -1701,7 +1701,7 @@ def decimal_years_to_datetimes(decimal_years):
 def sunspotplot(carr_ax, cr=None, use_years=False):
     # Plot the Sunspot Number
     carrington = np.loadtxt(
-        "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/fluxpipe/plotting/SN_m_tot_V2.0.txt"
+        "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/fluxpype/plotting/SN_m_tot_V2.0.txt"
     ).T
     ## https://sidc.be/SILSO/datafiles#total ##
     from sunpy.coordinates.sun import (

@@ -199,8 +199,8 @@ sub get_wind {
         # print "\n\tRadial Magnetic Field (B) Calculation...";
         map_fluxon_b( $out_b, \@fluxons );
         map_fluxon_b_all( $out_b_all, \@fluxons );
-        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/fluxpipe/plotting/plot_bmag_fill.py");
-        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/fluxpipe/plotting/plot_bmag_all.py");
+        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/fluxpype/plotting/plot_bmag_fill.py");
+        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/fluxpype/plotting/plot_bmag_all.py");
 
         # print "Done!\n";
 
@@ -236,7 +236,7 @@ sub get_wind {
         else { print $skipstring;}
 
         # #run the python script to plot the angles
-        # system("python3 fluxon-mhd/fluxpipe/fluxpipe/plotting/plot_angles.py");
+        # system("python3 fluxon-mhd/fluxpype/fluxpype/plotting/plot_angles.py");
 
 
     }

@@ -103,7 +103,7 @@ sub map_fluxon_b_all {
 
 
     # # Call a Python script
-    # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpipe/fluxpipe/plotting/plot_bmag_all.py");
+    # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/fluxpype/plotting/plot_bmag_all.py");
 
 
 }

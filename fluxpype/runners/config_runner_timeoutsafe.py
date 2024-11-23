@@ -1,8 +1,8 @@
 """
-Config Runner: Automate the FLUXpipe Workflow for Multiple Carrington Rotations
+Config Runner: Automate the FLUXpype Workflow for Multiple Carrington Rotations
 ===============================================================================
 
-This module serves as a workflow automation tool for the FLUXpipe project. It runs
+This module serves as a workflow automation tool for the FLUXpype project. It runs
 the `magnetogram2wind.pdl` script for various Carrington Rotations (CRs) specified
 in an external 'config.ini' file. The script leverages Python's subprocess module to
 invoke the PDL script and uses the tqdm library for tracking progress.
@@ -50,13 +50,14 @@ def run_pdl_script(rot, nflux, adapt, method):
 
     Parameters:
     - rot: Carrington Rotation
-    - nflux: Fluxon countA
+    - nflux: Fluxon count
     - adapt: Adaptation parameter
     """
 
     subprocess.run(
         [
-            configs["perl_dir"],
+            "perl",
+            # "-f",
             configs["run_script"],
             str(rot),
             str(nflux),

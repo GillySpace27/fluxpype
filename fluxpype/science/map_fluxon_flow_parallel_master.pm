@@ -252,18 +252,18 @@ sub map_fluxon_flow_parallel_master {
     if ($flow_method eq "tempest"){
         # # Make the tempest file
         my $fmap_command =
-        "$configs{python_dir} fluxon-mhd/fluxpipe/fluxpipe/science/tempest.py --cr $CR --nwant $n_want";
+        "$configs{python_dir} fluxon-mhd/fluxpype/fluxpype/science/tempest.py --cr $CR --nwant $n_want";
         # print "\n\n$fmap_command\n\n";
         system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
     } elsif ($flow_method eq "cranmer"){
         my $fmap_command =
-        "$configs{python_dir} fluxon-mhd/fluxpipe/fluxpipe/science/cranmer_wind.py --cr $CR --nwant $n_want";
+        "$configs{python_dir} fluxon-mhd/fluxpype/fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
         # print "\n\n$fmap_command\n\n";
         system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 
     } elsif ($flow_method eq "wsa"){
         # run the python file footpoint_distances.py
-        system("$configs{python_dir}  fluxon-mhd/fluxpipe/fluxpipe/science/footpoint_distances_2.py --cr $CR");
+        system("$configs{python_dir}  fluxpype/fluxpype/science/footpoint_distances_2.py --cr $CR");
         my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/distances.csv";
         open my $fh, '<', $distance_file or die "Could not open '$distance_file': $!";
         # Read the file line by line and split each line

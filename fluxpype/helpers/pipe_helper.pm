@@ -545,7 +545,7 @@ sub print_banner {
     print
 "--------------------------------------------------------------------------------------------------\n";
     print
-"FLUXPipe: Indicate a Carrington Rotation and this script will run the entire Flux Pipeline for it.\n";
+"FLUXPype: Indicate a Carrington Rotation and this script will run the entire Flux Pipeline for it.\n";
     print
 "--------------------------------------------------------------------------------------------------\n";
     print "\n\n";
@@ -560,7 +560,7 @@ sub print_banner {
     print "\n\n";
     print
 "\t>>>>>>>>>>>>>>>>>>>>> Recompute = $recompute_string <<<<<<<<<<<<<<<<<<<<<<";
-    print "\n\tStarting FLUXPipe at $ftime ";
+    print "\n\tStarting FLUXPype at $ftime ";
     print
       "\n\t>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n";
     print "\n\n";
@@ -636,7 +636,7 @@ sub set_paths {
     my ($do_plot) = @_;
     if ( defined $ENV{'FL_PREFIX'} ) {
         my $envpath =
-          "$ENV{'FL_PREFIX'}/fluxpipe/fluxpipe/helpers/perl_paths.pm";
+          "$ENV{'FL_PREFIX'}/fluxpype/fluxpype/helpers/perl_paths.pm";
 
         # Check if the file exists and is readable
         if ( -e $envpath && -r _ ) {

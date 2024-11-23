@@ -2,7 +2,7 @@ from fluxpype.science.read_world import rdworld
 from fluxpype.helpers.pipe_helper import configurations
 configs = configurations()
 
-# Path: fluxon-mhd/fluxpipe/fluxpipe/plotting/plot_flux_mag.py
+# Path: fluxon-mhd/fluxpype/fluxpype/plotting/plot_flux_mag.py
 
 world_path = "fluxon-data/batches/tempest7/data/cr2150/world/cr2150_f1000_hmi.flux"
 world = rdworld(world_path)

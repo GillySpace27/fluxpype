@@ -2,7 +2,7 @@
 #TEMPEST: The Efficient Modified-Parker-Equation-Solving Tool
 #   17 Sep 2014 - Documented version 1.3.7 for public use
 #               Cite Woolsey & Cranmer (2014) ApJ 787, 2, 160
-# copied into fluxpipe on 4/24/24 by Gilly
+# copied into fluxpype on 4/24/24 by Gilly
 
 import numpy as np
 from scipy import interpolate

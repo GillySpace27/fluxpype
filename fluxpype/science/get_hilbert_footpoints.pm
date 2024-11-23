@@ -77,6 +77,8 @@ use strict;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_hilbert_footpoints);
+# use lib "helpers";
+# use lib "science";
 use lib "fluxpype/fluxpype/helpers";
 use lib "fluxpype/fluxpype/science";
 use pipe_helper qw(shorten_path);
