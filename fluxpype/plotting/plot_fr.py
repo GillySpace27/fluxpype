@@ -52,13 +52,14 @@ def plot_fr(args):
     """
     batch = args.batch
     filename = args.file or f'{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_fr.dat'
+    # print("THIS: ", filename)
     imagename = os.path.basename(filename.replace(".dat", ".png"))
     imagedir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(filename))))
     frdir = os.path.join(imagedir, "imgs", "fr")
     if not os.path.exists(frdir):
         os.makedirs(frdir)
     frname = os.path.join(frdir, imagename)
-    print(frname)
+    # print(frname)
     # import pdb; pdb.set_trace()
     # Load the dat file
     arr = np.loadtxt(filename).T
@@ -80,6 +81,8 @@ def plot_fr(args):
         # $r($i), $th($i), $ph($i), $A($i), $fr($i);
 
         floc = np.where(arr[0,:] == i)[0]
+        if len(floc) == 0:
+            continue
 
         th0[i] = -1 * arr[5, floc[0]] + np.pi/2
         th1[i] = -1 * arr[5, floc[-1]] + np.pi/2

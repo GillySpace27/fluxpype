@@ -38,11 +38,6 @@ print(fluxpype.helpers.pipe_helper.__file__)
 # Initialize timeout_num
 timeout_num = 0
 
-import os
-
-# os.chdir("/Users/cgilbert/vscode/fluxons/fluxpype")
-
-
 @timeout_decorator.timeout(1000)  # Set a timeout for each subprocess call
 def run_pdl_script(rot, nflux, adapt, method):
     """

@@ -18,7 +18,10 @@ use File::Path qw(make_path);
 use Time::HiRes qw(clock_gettime);
 use Data::Dumper;
 use Chart::Gnuplot;
-use lib "fluxpype/fluxpype/science";
+use lib "fluxpype/science";
+use lib "fluxpype/helpers";
+use lib ".";
+use local::lib;
 use gen_fluxon_tflow qw(gen_fluxon_tflow);
 use gen_fluxon_schonflow qw(gen_fluxon_schonflow);
 use gen_fluxon_wsaflow qw(gen_fluxon_wsaflow do_image_plot);
@@ -63,7 +66,7 @@ Given a world and list of fluxons, generates a mapping of the solar wind flow al
 # Subroutine to save full velocity profiles
 sub save_full_velocity_profiles {
     my ($results, $file_path) = @_;
-
+    print($results);
     # Ensure results are sorted by fluxon_position
     my @sorted_results = sort { $a->{fluxon_position} <=> $b->{fluxon_position} } @$results;
 
@@ -252,12 +255,12 @@ sub map_fluxon_flow_parallel_master {
     if ($flow_method eq "tempest"){
         # # Make the tempest file
         my $fmap_command =
-        "$configs{python_dir} fluxon-mhd/fluxpype/fluxpype/science/tempest.py --cr $CR --nwant $n_want";
+        "$configs{python_dir} fluxpype/fluxpype/science/tempest.py --cr $CR --nwant $n_want";
         # print "\n\n$fmap_command\n\n";
         system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
     } elsif ($flow_method eq "cranmer"){
         my $fmap_command =
-        "$configs{python_dir} fluxon-mhd/fluxpype/fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
+        "$configs{python_dir} fluxpype/fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
         # print "\n\n$fmap_command\n\n";
         system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 
@@ -407,6 +410,9 @@ sub map_fluxon_flow_parallel_master {
 
     # Modify the filename to indicate it contains full velocity profiles
     my $results_file = File::Spec->catfile($new_results_dir, "results_${flow_method}_full_velocity.dat");
+
+    print(\@results, $results_file);
+
     save_full_velocity_profiles(\@results, $results_file);
 
     my $after_time = clock_gettime();

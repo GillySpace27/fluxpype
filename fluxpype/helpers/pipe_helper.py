@@ -116,7 +116,7 @@ def configurations(
     """
     config_obj = configparser.ConfigParser()
     # config_path = os.path.join(os.environ.get("FL_MHDLIB"), "fluxpype", config_filename)
-    # config_path = "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/config.ini"
+    # config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/config.ini"
     config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/config/config.ini"
     # Search for the configuration file in the current directory and subdirectories
     if not os.path.exists(config_path):
@@ -1701,7 +1701,7 @@ def decimal_years_to_datetimes(decimal_years):
 def sunspotplot(carr_ax, cr=None, use_years=False):
     # Plot the Sunspot Number
     carrington = np.loadtxt(
-        "/Users/cgilbert/vscode/fluxons/fluxon-mhd/fluxpype/fluxpype/plotting/SN_m_tot_V2.0.txt"
+        "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/plotting/SN_m_tot_V2.0.txt"
     ).T
     ## https://sidc.be/SILSO/datafiles#total ##
     from sunpy.coordinates.sun import (

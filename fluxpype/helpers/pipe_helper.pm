@@ -104,6 +104,7 @@ L<PDL::AutoLoader>, L<PDL>, L<Time::Piece>
 package pipe_helper;
 use strict;
 use warnings;
+use local::lib;
 use Exporter qw(import);
 use Flux::World    qw(read_world);
 our @EXPORT_OK =
@@ -691,13 +692,13 @@ sub load_highest_numbered_world {
     my $selected_file_path;
     my $original_file_path;
     print "Searching for files in $world_out_dir\n";
-    print "File pattern: $file_pattern\n";
-    print "Original pattern: $original_pattern\n";
+    # print "File pattern: $file_pattern\n";
+    # print "Original pattern: $original_pattern\n";
 
 
     opendir(my $dh, $world_out_dir) or die "Cannot open directory: $!";
     while (my $file = readdir($dh)) {
-        print $file . "\n";
+        # print $file . "\n";
         if ($file =~ /$file_pattern/) {
             my $d_value = $1;
             if ($d_value > $max_d) {

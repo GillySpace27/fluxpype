@@ -274,20 +274,20 @@ sub make_world_from_pfss {
             #     $open = $open->glue(1, $replicated_last_col)->squeeze;
             #     if ($print_debug) {print "Extended open: $open\n";}
             # }
+            my $print_debug = 0;
 
+            # Print radial values before sorting
+            if ($print_debug) {print "Radial values before sorting: ", $open(2, :), "\n";}
 
-            # # Print radial values before sorting
-            # if ($print_debug) {print "Radial values before sorting: ", $open(2, :), "\n";}
+            # Sort the array by the radial component to ensure monotonic increase
+            my $sorted_indices = $open(2, :)->flat->qsorti;
+            if ($print_debug) {print "Sorted indices: $sorted_indices\n";}
 
-            # # Sort the array by the radial component to ensure monotonic increase
-            # my $sorted_indices = $open(2, :)->flat->qsorti;
-            # if ($print_debug) {print "Sorted indices: $sorted_indices\n";}
+            # Reorder the array based on the sorted indices
+            $open = $open->dice_axis(1, $sorted_indices);
 
-            # # Reorder the array based on the sorted indices
-            # $open = $open->dice_axis(1, $sorted_indices);
-
-            # # Remove the first element, which is a 1.0 value
-            # $open = $open->(:, 1:-1);
+            # Remove the first element, which is a 1.0 value
+            $open = $open->(:, 1:-1);
 
 
             if ($oflx->($ofln($i))<0){

@@ -11,6 +11,8 @@ package gen_fluxon_tflow;
 use strict;
 use warnings;
 use Exporter qw(import);
+use lib "fluxpype/science";
+use local::lib;
 our @EXPORT_OK = qw(gen_fluxon_tflow);
 use gen_fluxon_flow qw(gen_fluxon_flow);
 

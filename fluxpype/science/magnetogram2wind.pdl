@@ -50,6 +50,7 @@ use FindBin qw($RealBin);
 use lib "$RealBin";                 # Add the current script directory to @INC
 use lib ".";                 # Add the current script directory to @INC
 use lib "..";            # Add the parent directory to @INC
+use local::lib;
 # use lib "helpers";    # Add the helpers directory to @INC
 # use lib "science";    # Add the science directory to @INC
 # use lib "plotting";   # Add the plotting directory to @INC
