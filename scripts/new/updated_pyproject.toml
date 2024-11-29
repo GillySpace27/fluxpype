@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fluxpype"
+version = "0.1.2"
+description = "The python wrapper used to run FLUX"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+
+classifiers = ["Programming Language :: Python :: 3.8"]
+
+dependencies = [
+    "matplotlib",
+    "sunpy",
+    "pandas",
+    "tqdm",
+    "astropy",
+    "bs4",
+    "lxml",
+    "zeep",
+    "drms",
+    "timeout_decorator",
+]
+
+[project.urls]
+Homepage = "https://github.com/gillyspace27/fluxpype"
+BaseProject = "https://github.com/lowderchris/fluxon-mhd"
