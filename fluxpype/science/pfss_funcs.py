@@ -593,7 +593,7 @@ def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_c
             # assert False
 
         if True:
-            #extend up to 200 R_sun logarithmically
+            #extend up to 21.5 R_sun logarithmically
             extend_height = np.amax(fl_rads)
             extend_height2 = 21.5
             extend_num2 = 10
@@ -617,9 +617,9 @@ def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_c
         # print("Filtered fl_lons:", fl_lons.T)
         # import pdb; pdb.set_trace()
 
-        if first:
-            a=[print(x,"  \t",y,"\t",z) for x,y,z in zip(fl_rads, fl_lats, fl_lons)]
-            first = False
+        # if first:
+        #     # a=[print(x,"  \t",y,"\t",z) for x,y,z in zip(fl_rads, fl_lats, fl_lons)]
+        #     first = False
             # 1/0
 
 
@@ -781,7 +781,7 @@ def trace_lines_parallel_OLD(pfss_output, f_vars, open_path, closed_path, adapt)
     field_lines = tracer.trace(seeds, pfss_output)
     print('Finished tracing field lines')
 
-    results = trace_all(field_lines)
+    results = [] #trace_all(field_lines)
     # trace_each_partial = partial(trace_each, r0=r0, adapt=adapt, output=output)
     # ii = np.arange(len(f_lat))
     # with Pool() as pool:
