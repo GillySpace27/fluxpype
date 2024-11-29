@@ -74,7 +74,10 @@ INSTALL_PERL_MODULES() {
     export PERL_MM_OPT="INSTALL_BASE=$PL_PREFIX/lib/perl5"
     cpanm -L $PL_PREFIX PDL
     cpanm -L $PL_PREFIX local::lib File::ShareDir File::ShareDir::Install \
-      PDL::Graphics::Gnuplot Math::RungeKutta Moo::Role Chart::Gnuplot
+      PDL::Graphics::Gnuplot Math::RungeKutta Moo::Role Chart::Gnuplot \
+      Text::CSV Math::Interpolate Math::GSL Config::IniFiles File::HomeDir Inline::C \
+      Parallel::ForkManager
+
 
     eval "$(perl -I$PL_PREFIX/lib/perl5 -Mlocal::lib=$PL_PREFIX/lib/perl5)"
 
