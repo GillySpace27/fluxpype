@@ -117,9 +117,9 @@ class CustomInstallCommand(install):
         libflux_path = os.path.join(fl_prefix, "lib", "libflux.a")
         flux_pm_path = os.path.join(pl_prefix, "lib", "perl5", "Flux.pm")
         if os.path.exists(libflux_path) and os.path.exists(flux_pm_path):
-            print(f"Found existing FLUX installation:
-- {libflux_path}
-- {flux_pm_path}")
+            print(f"Found existing FLUX installation: \
+                    - {libflux_path} \
+                    - {flux_pm_path}")
             return True
         return False
 
