@@ -38,7 +38,10 @@ class CustomInstallCommand(install):
         # Install Perlbrew if not installed
         if not shutil.which("perlbrew"):
             print("Installing Perlbrew...")
-            subprocess.check_call(["curl", "-L", "https://install.perlbrew.pl", "|", "bash"], shell=True)
+            subprocess.check_call(
+                "/bin/bash -c 'curl -L https://install.perlbrew.pl | bash'",
+                shell=True
+            )
         else:
             print("Perlbrew is already installed.")
 
