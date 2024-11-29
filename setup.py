@@ -191,7 +191,6 @@ setup(
         "zeep",
         "drms",
         "timeout_decorator",
-        "shutil",
     ],
     classifiers=[
         "Programming Language :: Python :: 3.8",

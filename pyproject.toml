@@ -23,7 +23,6 @@ dependencies = [
     "zeep",
     "drms",
     "timeout_decorator",
-    "shutil",
 ]
 
 [project.urls]
