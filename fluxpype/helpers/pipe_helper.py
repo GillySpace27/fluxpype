@@ -97,6 +97,15 @@ import configparser
 
 # CONFIGURATION MANAGEMENT #######################################################
 
+import ast
+
+import configparser
+import os
+
+
+import configparser
+import os
+
 
 def configurations(
     config_name=None, config_filename="config.ini", args=None, debug=False
@@ -106,201 +115,208 @@ def configurations(
 
     Args:
         config_name (str, optional): The specific configuration section to read.
-                                     If not provided, defaults to the DEFAULT section.
+                                     Defaults to the 'DEFAULT' section.
         config_filename (str, optional): The filename of the configuration file.
                                          Defaults to 'config.ini'.
+        args (Namespace, optional): Command-line arguments to override config values.
         debug (bool, optional): Whether to print debug information. Defaults to False.
 
     Returns:
         dict: Configuration settings as key-value pairs.
     """
-    config_obj = configparser.ConfigParser()
-    # config_path = os.path.join(os.environ.get("FL_MHDLIB"), "fluxpype", config_filename)
-    # config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/config.ini"
-    config_path = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/config/config.ini"
-    # Search for the configuration file in the current directory and subdirectories
-    if not os.path.exists(config_path):
-        found = False
-        for root, dirs, files in os.walk(os.path.join(os.getcwd())):
-            if config_filename in files:
-                config_path = os.path.join(root, config_filename)
-                found = True
-                break
-        if not found:
-            raise FileNotFoundError("Configuration file not found.")
+    # Load configuration file
+    config_path = find_config_file(config_filename)
+    config_obj = configparser.ConfigParser(
+        interpolation=configparser.ExtendedInterpolation()
+    )
 
-    # Clean the file content: remove comments and trailing whitespaces
     with open(config_path, "r") as f:
-        lines = f.readlines()
-    clean_lines = [line.split("#")[0].rstrip() for line in lines]
-    clean_content = "\n".join(clean_lines)
-
-    # Parse the clean configuration string
+        clean_content = clean_config_content(f.readlines())
     config_obj.read_string(clean_content)
 
-    # Fallback to section defined in the DEFAULT section if no specific section is provided
-    config_name = config_name or config_obj["DEFAULT"]["config_name"]
+    # Determine the configuration section to use
+    config_name = config_name or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+    if config_name not in config_obj:
+        available_sections = ", ".join(config_obj.sections())
+        raise ValueError(
+            f"Configuration section '{config_name}' not found in {config_filename}. "
+            f"Available sections: {available_sections}"
+        )
 
     # Create the configuration dictionary
     the_config = dict(config_obj[config_name])
 
-    # Update configs with command-line arguments
+    # Override with command-line arguments
     assimilate_args(the_config, args)
 
-    # Extract and further process configuration settings
+    # Resolve and compute configuration settings
+    base_dir = resolve_base_dir(config_filename)
+    the_config.update({"base_dir": base_dir})
+    the_config = resolve_placeholders(the_config, {"base_dir": base_dir})
+
+    # Process directories and derived values
+    the_config.update(calculate_directories(the_config))
+    if "batch_dir" not in the_config:
+        raise KeyError("batch_dir is missing after calculate_directories.")
+    update_magdir_paths(the_config)
     compute_configs(the_config)
 
-    # Calculate directories
-    calculate_directories(the_config)
+    # Final type conversion
+    the_config = {key: convert_value(value) for key, value in the_config.items()}
 
-    # Update configs with command-line arguments
-    assimilate_args(the_config, args)
-
-    # Set the types to be correct
-    for key, value in the_config.items():
-        the_config[key] = convert_value(value)
-
+    # Debugging output
     if debug:
-        print("\nConfiguration file values:\n--------------------------------")
-        for key, value in sorted(the_config.items()):
-            print(f"{key}: \t{value}")
-        print("--------------------------------\n\n")
+        print_debug_info(the_config)
 
     return the_config
 
 
-def assimilate_args(configs, args=None):
-    if args is not None:
-        # Update configs with command-line arguments
+def find_config_file(config_filename):
+    """Find the configuration file in the current directory or subdirectories."""
+    config_path = os.path.expanduser(config_filename)
+    if os.path.exists(config_path):
+        return config_path
+
+    for root, _, files in os.walk(os.getcwd()):
+        if config_filename in files:
+            return os.path.join(root, config_filename)
+
+    raise FileNotFoundError(f"Configuration file '{config_filename}' not found.")
+
+
+def clean_config_content(lines):
+    """Remove comments and trailing whitespace from configuration file content."""
+    return "\n".join(line.split("#", 1)[0].strip() for line in lines if line.strip())
+
+
+def resolve_base_dir(config_path=None):
+    """Determine the base directory dynamically."""
+    return os.path.abspath(os.path.dirname(config_path)) if config_path else os.getcwd()
+
+
+def assimilate_args(config, args=None):
+    """Override configuration values with command-line arguments, if provided."""
+    if args:
         for arg, value in vars(args).items():
             if value is not None:
-                configs[arg] = value
+                config[arg] = value
 
 
-def compute_configs(the_config):
-    the_config["abs_rc_path"] = os.path.expanduser(the_config["rc_path"])
-    the_config["abs_fl_mhdlib"] = os.path.expanduser(the_config["fl_mhdlib"])
+def resolve_placeholders(config, placeholders):
+    """Resolve placeholders like ${base_dir} in the configuration dictionary."""
+    for key, value in config.items():
+        if isinstance(value, str):
+            for placeholder, replacement in placeholders.items():
+                value = value.replace(f"${{{placeholder}}}", replacement)
+        config[key] = value
+    return config
 
-    if not the_config["abs_fl_mhdlib"] in the_config["run_script"]:
-        the_config["run_script"] = os.path.join(
-            the_config["abs_fl_mhdlib"], the_config["run_script"]
-        )
-    # the_config["run_script"]    = the_config["run_script"]
 
-    if the_config["rotations"][0] == "[":
-        the_config["rotations"] = ast.literal_eval(the_config["rotations"])
-    elif the_config["rotations"][0] == "(":
-        (start, stop, step) = ast.literal_eval(the_config["rotations"])
-        the_config["rotations"] = list(np.arange(start, stop, step))
+def calculate_directories(config):
+    """Calculate and update directory paths in the configuration."""
+    basedir = os.path.expanduser(config.get("base_dir", "").strip())
+    batch_name = config.get("batch_name", "").strip()
+    dat_dir = config.get("data_dir", os.path.join(basedir, "fluxon-data"))
 
-    if the_config["flow_method"][0] == "[":
-        the_config["flow_method"] = the_config["flow_method"].strip("[]").split(", ")
+    batch_dir = os.path.join(dat_dir, "batches", batch_name)
+    CR = config.get("cr", "")
+
+    return {
+        "batch_dir": os.path.expanduser(batch_dir),
+        "flocdir": os.path.join(batch_dir, f"cr{CR}/floc"),
+        "pipe_dir": os.path.join(basedir, "fluxpype", "fluxpype"),
+        "pdl_dir": os.path.join(basedir, "pdl", "PDL"),
+        "datdir": os.path.expanduser(dat_dir),
+        "data_dir": os.path.expanduser(dat_dir),
+        "mag_dir": os.path.join(dat_dir, "magnetograms"),
+        "logfile": os.path.join(batch_dir, "pipe_log.txt"),
+    }
+
+
+def update_magdir_paths(config):
+    """Update paths related to magnetograms and fluxons."""
+    CR = config.get("cr")
+    n_fluxons_wanted = config.get("nwant")
+    if not CR or not n_fluxons_wanted:
+        raise ValueError("Instance values 'cr' or 'nwant' not found in configuration.")
+
+    adapt_select = config.get("adapt_select", 0)
+    reduction = config.get("mag_reduce", 1)
+
+    if config.get("adapt", False):
+        magfile = f"CR{CR}_rf{adapt_select}_adapt.fits"
+        flocfile = f"floc_cr{CR}_rf{adapt_select}_f{n_fluxons_wanted}_adapt.dat"
     else:
-        the_config["flow_method"] = [the_config["flow_method"]]
+        magfile = f"CR{CR}_r{reduction}_hmi.fits"
+        flocfile = f"floc_cr{CR}_r{reduction}_f{n_fluxons_wanted}_hmi.dat"
 
-    the_config["fluxon_count"] = ast.literal_eval(the_config["fluxon_count"])
-    the_config["adapts"] = ast.literal_eval(the_config["adapts"])
-
-    the_config["cr"] = the_config["rotations"][0]
-    the_config["nwant"] = the_config["fluxon_count"][0]
-    the_config["n_jobs"] = str(
-        len(the_config["rotations"])
-        * len(the_config["fluxon_count"])
-        * len(the_config["adapts"])
-        * len(the_config["flow_method"])
+    config.update(
+        {
+            "magfile": magfile,
+            "flocfile": flocfile,
+            "magpath": os.path.join(config["mag_dir"], magfile),
+            "flocpath": os.path.join(config["flocdir"], flocfile),
+        }
     )
 
 
-import os
+def compute_configs(config):
+    """Process and compute additional configuration settings."""
+    config["abs_rc_path"] = os.path.expanduser(config.get("rc_path", ""))
+    config["abs_fl_mhdlib"] = os.path.expanduser(config.get("fl_mhdlib", ""))
+
+    # Parse lists or ranges
+    config["rotations"] = parse_list_or_range(config.get("rotations", "[]"))
+    config["flow_method"] = parse_list(config.get("flow_method", "[]"))
+    config["fluxon_count"] = parse_list(config.get("fluxon_count", "[]"))
+    config["adapts"] = parse_list(config.get("adapts", "[]"))
+
+    # Compute derived values
+    config["cr"] = config["rotations"][0]
+    config["nwant"] = config["fluxon_count"][0]
+    config["n_jobs"] = str(
+        len(config["rotations"])
+        * len(config["fluxon_count"])
+        * len(config["adapts"])
+        * len(config["flow_method"])
+    )
 
 
-def update_magdir_paths(the_config):
-    # for key, val in sorted(the_config.items()):
-    #     print(f"\t{key}: \t", the_config.get(key, None))
-    CR = the_config.get("cr", None)
-    n_fluxons_wanted = the_config.get("nwant", None)
-    if not CR or not n_fluxons_wanted:
-        raise ValueError("Instance Values not Found!")
-    adapt_select = the_config["adapt_select"]
-    reduction = the_config["mag_reduce"]
-    batchdir = the_config["batch_dir"]
-
-    if the_config.get("adapt", False):
-        the_config["magfile"] = f"CR{CR}_rf{adapt_select}_adapt.fits"
-        the_config["flocfile"] = (
-            f"floc_cr{CR}_rf{adapt_select}_f{n_fluxons_wanted}_adapt.dat"
-        )
-    else:
-        the_config["magfile"] = f"CR{CR}_r{reduction}_hmi.fits"
-        the_config["flocfile"] = f"floc_cr{CR}_r{reduction}_f{n_fluxons_wanted}_hmi.dat"
-
-    the_config["flocdir"] = os.path.join(batchdir, f"cr{CR}/floc")
-    the_config["magpath"] = os.path.join(the_config["mag_dir"], the_config["magfile"])
-    the_config["flocpath"] = os.path.join(the_config["flocdir"], the_config["flocfile"])
-    return the_config
+def parse_list_or_range(value):
+    """Parse a list or range-like string into a Python list."""
+    if value.startswith("[") and value.endswith("]"):  # Parse list
+        value = value.strip("[]")
+        return [item.strip() for item in value.split(",")]
+    elif value.startswith("(") and value.endswith(")"):  # Parse range
+        start, stop, step = map(int, value.strip("()").split(","))
+        return list(range(start, stop, step))
+    return [value.strip()]  # Single value as list
 
 
-def calculate_directories(the_config):
-    # Helper function to calculate directories
-    basedir = the_config["fl_mhdlib"].strip()
-    batch_name = the_config["batch_name"].strip()
-    dat_dir = the_config.get("data_dir", None)
-
-    the_config["pipe_dir"] = os.path.join(basedir, "fluxpype", "fluxpype")
-    the_config["pdl_dir"] = os.path.join(basedir, "pdl", "PDL")
-    the_config["datdir"] = dat_dir if dat_dir else os.path.join(basedir, "fluxon-data")
-    the_config["data_dir"] = the_config["datdir"]
-    the_config["mag_dir"] = os.path.join(the_config["datdir"], "magnetograms")
-    the_config["batch_dir"] = os.path.join(the_config["datdir"], "batches", batch_name)
-    the_config["logfile"] = os.path.join(the_config["batch_dir"], "pipe_log.txt")
-
-    the_config["pipe_dir"] = os.path.expanduser(the_config["pipe_dir"])
-    the_config["pdl_dir"] = os.path.expanduser(the_config["pdl_dir"])
-    the_config["datdir"] = os.path.expanduser(the_config["datdir"])
-    the_config["data_dir"] = os.path.expanduser(the_config["data_dir"])
-    the_config["mag_dir"] = os.path.expanduser(the_config["mag_dir"])
-    the_config["batch_dir"] = os.path.expanduser(the_config["batch_dir"])
-    the_config["logfile"] = os.path.expanduser(the_config["logfile"])
-
-    # If 'adapt' isn't set in the_config, default to False
-    the_config.setdefault("adapt", False)
-
-    # # Update magdir paths
-    # update_magdir_paths(the_config)
+def parse_list(value):
+    """Parse a string into a list."""
+    return value.strip("[]").split(",") if value else []
 
 
 def convert_value(value):
-    """Convert a string to an int or float if possible, otherwise return the string.
+    """Convert configuration values to appropriate types."""
+    # If the value is already a type other than string, return it as-is
+    if not isinstance(value, str):
+        return value
 
-    Parameters
-    ----------
-    value : string
-        the value to convert to a number
-
-    Returns
-    -------
-    int, float, string
-        the input value, typecast appropriately
-    """
-
-    if type(value) is list:
-        new_list = []
-        for item in value:
-            new_list.append(convert_value(item))
-        return new_list
-
+    # Try to evaluate the value as Python code
     try:
-        return int(value)
-    except ValueError:
-        try:
-            return float(value)
-        except ValueError:
-            return value.strip()
+        return eval(value)
+    except (SyntaxError, NameError):
+        # If eval fails, return the value as a string
+        return value
 
 
-# configs = configurations()
-# dat_dir = configs["data_dir"]
-# default_email = configs["jsoc_email"]
+def print_debug_info(config):
+    """Print debug information for the configuration."""
+    print("\nDebug Configuration Values:")
+    for key, value in sorted(config.items()):
+        print(f"{key}: {value}")
 
 
 # PATH MANAGEMENT ################################################################
@@ -1337,12 +1353,12 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
         adapt_cube = np.asarray([the_map.data for the_map in adapt_maps])
         output_map = np.nanmean(adapt_cube, axis=0)
 
-        if False:
-            # Lots of Plots
-            plot_all_adapt(adapt_maps)
-            expose_adapt_fits(adapt_fits)
-            print_adapt_maps(adapt_maps)
-            plot_mean_adapt(mean_adapt)
+        # if False:
+        #     # Lots of Plots
+        #     plot_all_adapt(adapt_maps)
+        #     expose_adapt_fits(adapt_fits)
+        #     print_adapt_maps(adapt_maps)
+        #     plot_mean_adapt(mean_adapt)
 
     elif isinstance(method, int):
         adapt_map = sunpy.map.Map((main_data[method], main_header))

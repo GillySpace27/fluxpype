@@ -33,10 +33,13 @@ from fluxpype.helpers.pipe_helper import configurations
 import timeout_decorator
 
 configs = configurations(debug=False)
-print(fluxpype.helpers.pipe_helper.__file__)
+# print(fluxpype.helpers.pipe_helper.__file__)
 
 # Initialize timeout_num
 timeout_num = 0
+
+import os
+
 
 @timeout_decorator.timeout(1000)  # Set a timeout for each subprocess call
 def run_pdl_script(rot, nflux, adapt, method):
@@ -48,12 +51,19 @@ def run_pdl_script(rot, nflux, adapt, method):
     - nflux: Fluxon count
     - adapt: Adaptation parameter
     """
+    # Resolve the absolute path to the script
+    run_script_path = os.path.expanduser(configs["run_script"])
+    run_script_path = os.path.abspath(run_script_path)
+
+    # print(f"Resolved RUN SCRIPT = {run_script_path}")
+
+    if not os.path.isfile(run_script_path):
+        raise FileNotFoundError(f"Perl script not found at {run_script_path}")
 
     subprocess.run(
         [
             "perl",
-            # "-f",
-            configs["run_script"],
+            run_script_path,
             str(rot),
             str(nflux),
             str(adapt),

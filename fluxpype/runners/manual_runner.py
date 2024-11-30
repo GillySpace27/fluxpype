@@ -65,7 +65,7 @@ reduction = 2
 capture = False
 verbose = True
 do_download = 0
-print_run_command = False
+print_run_command = True
 
 n_jobs = len(rotations) * len(do_flux)
 

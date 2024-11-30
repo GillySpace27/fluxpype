@@ -31,7 +31,7 @@ import subprocess
 from tqdm import tqdm
 from fluxpype.helpers.pipe_helper import configurations
 import timeout_decorator
-
+timeout_num = 0
 configs = configurations(debug=False)
 def run():
     # Initialize a progress bar with the total number of jobs to run
@@ -48,6 +48,7 @@ def run():
                     pbar.set_description(f"Rotation {rot}, n_fluxon {nflux}")
                     try:
                         # Execute the PDL script with the current parameters
+                        print(configs["run_script"])
                         result = subprocess.run(["perl", configs["run_script"],
                                                 str(rot), str(nflux), str(adapt)], check=False)
 

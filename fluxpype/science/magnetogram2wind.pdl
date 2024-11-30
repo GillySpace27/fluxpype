@@ -218,7 +218,9 @@ if (1-$configs{wind_only}){
     use FindBin;
     my $this_dir     = $FindBin::RealBin;
     my $get_mag_path = "$this_dir/get_magnetograms.py";
-    my $mag_command = "python3 $get_mag_path --cr $CR --reduce $reduction --datdir $datdir --do_download $do_download --adapt $adapt";
+    my $the_dat_dir = $datdir;
+    print $the_dat_dir;
+    my $mag_command = "python3 $get_mag_path --cr $CR --reduce $reduction --do_download $do_download --adapt $adapt";
 
     system($mag_command) == 0 or ( die "Python script returned error $?", exit );
 
