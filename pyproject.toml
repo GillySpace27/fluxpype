@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "fluxpype"
-version = "0.1.2"
-description = "The python wrapper used to run FLUX"
+version = "0.1.4"
+description = "A wrapper and installer for the FLUX Model"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
@@ -24,6 +24,9 @@ dependencies = [
     "drms",
     "timeout_decorator",
 ]
+
+[project.optional-dependencies]
+FLUXcore = []
 
 [project.urls]
 Homepage = "https://github.com/gillyspace27/fluxpype"

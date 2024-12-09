@@ -31,38 +31,46 @@ import subprocess
 from tqdm import tqdm
 from fluxpype.helpers.pipe_helper import configurations
 import timeout_decorator
-timeout_num = 0
+import os
+
 configs = configurations(debug=False)
+timeout_num = 0
+
+
+@timeout_decorator.timeout(1000)
+def run_pdl_script(rot, nflux, adapt, method):
+    run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
+
+    if not os.path.isfile(run_script_path):
+        raise FileNotFoundError(f"Perl script not found at {run_script_path}")
+
+    subprocess.run(
+        ["perl", run_script_path, str(rot), str(nflux), str(adapt), str(method)],
+        check=False,
+    )
+
+
 def run():
-    # Initialize a progress bar with the total number of jobs to run
+    global timeout_num
     with tqdm(total=int(configs["n_jobs"]), unit="runs") as pbar:
-
         for adapt in configs["adapts"]:
-            # Loop through specified Carrington Rotations
             for rot in configs["rotations"]:
-
-                # Loop through specified fluxon counts
                 for nflux in configs["fluxon_count"]:
+                    for method in configs["flow_method"]:
+                        pbar.set_description(
+                            f"Job:: Rotation {rot}, n_fluxon {nflux}, flow_method {method}"
+                        )
+                        try:
+                            run_pdl_script(rot, nflux, adapt, method)
+                        except timeout_decorator.TimeoutError:
+                            timeout_num += 1
+                        except Exception as e:
+                            print(
+                                f"Error: Rotation {rot}, n_fluxon {nflux}, flow_method {method}: {e}"
+                            )
+                        pbar.update(1)
+    print(f"Total timeouts: {timeout_num}")
 
-                    # Update the progress bar description
-                    pbar.set_description(f"Rotation {rot}, n_fluxon {nflux}")
-                    try:
-                        # Execute the PDL script with the current parameters
-                        print(configs["run_script"])
-                        result = subprocess.run(["perl", configs["run_script"],
-                                                str(rot), str(nflux), str(adapt)], check=False)
-
-                    except timeout_decorator.TimeoutError:
-                        timeout_num += 1
-                    # Update the progress bar
-                    pbar.update(1)
 
 if __name__ == "__main__":
-
-    # import os
-    # import sys
-    # sys.exec(open(os.path.expanduser('~/.zshrc')).read())
-    # print(os.environ.get('PERL5LIB'))
-
-
     run()
