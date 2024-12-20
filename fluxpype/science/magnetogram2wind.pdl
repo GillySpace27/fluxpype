@@ -82,7 +82,9 @@ foreach my $module (@required_modules) {
     }
 }
 use make_world_from_pfss qw(make_world_from_pfss);
-print "LIBS ARE LOADED\n";
+use relax_pfss_world qw(relax_pfss_world);
+use plot_world qw(plot_worlds);
+
 
 use PDL;
 use PDL::AutoLoader;
@@ -96,6 +98,7 @@ use Time::HiRes qw(clock_gettime sleep);
 use File::Basename qw(fileparse);
 use File::Spec::Functions qw(catfile catdir rel2abs);
 
+print "LIBS ARE LOADED\n";
 
 # $PDL::BIGPDL = 1;
 
@@ -246,40 +249,40 @@ if (1-$configs{wind_only}){
         $n_fluxons_wanted, $adapt,      $force_make_world, $lim,
         $lim2,             \%configs,
     );
+#######################################################################################################
+## Relax the initial world state ##Use the FLUX Code ##################################################
+#######################################################################################################
+# Then we take that initial guess from pfss.py and relax down using the fluxon code, which gets us realistic topology, and a near force-free state,
+# but allowing for currents (not a potential field any longer).
+
+
+    my $world_out_dir = $datdir . "/batches/$batch_name/data/cr" . $CR . '/world/';
+    mkdir $world_out_dir unless -d $world_out_dir;
+    my $full_world_path =
+      $world_out_dir . 'cr' . $CR . "_f$n_fluxons_wanted\_$inst.flux";
+    our $this_world_orig;
+
+    ($this_world_orig, $this_world_relaxed, my $stepnum ) =
+      relax_pfss_world(
+        $world_out_dir, $full_world_path,  $do_relax,
+        $do_steps,      $relax_threshold,  $max_cycles,
+        $logfile,       $n_fluxons_wanted, $N_actual,
+        $datdir,        $batch_name,       $CR
+      );
+
+#######################################################################################################
+## Plot the world states  #############################################################################
+#######################################################################################################
+
+    plot_worlds(
+        $this_world_orig,  $this_world_relaxed, $do_interactive,
+        $do_png,           $full_world_path,    $datdir,
+        $batch_name,       $CR,                 $N_actual,
+        $n_fluxons_wanted, $lim,                $lim2,
+        $stepnum
+    );
+
 }
-# #######################################################################################################
-# ## Relax the initial world state ##Use the FLUX Code ##################################################
-# #######################################################################################################
-# # Then we take that initial guess from pfss.py and relax down using the fluxon code, which gets us realistic topology, and a near force-free state,
-# # but allowing for currents (not a potential field any longer).
-
-
-#     my $world_out_dir = $datdir . "/batches/$batch_name/data/cr" . $CR . '/world/';
-#     mkdir $world_out_dir unless -d $world_out_dir;
-#     my $full_world_path =
-#       $world_out_dir . 'cr' . $CR . "_f$n_fluxons_wanted\_$inst.flux";
-#     our $this_world_orig;
-
-#     ($this_world_orig, $this_world_relaxed, my $stepnum ) =
-#       relax_pfss_world(
-#         $world_out_dir, $full_world_path,  $do_relax,
-#         $do_steps,      $relax_threshold,  $max_cycles,
-#         $logfile,       $n_fluxons_wanted, $N_actual,
-#         $datdir,        $batch_name,       $CR
-#       );
-
-# #######################################################################################################
-# ## Plot the world states  #############################################################################
-# #######################################################################################################
-
-#     plot_worlds(
-#         $this_world_orig,  $this_world_relaxed, $do_interactive,
-#         $do_png,           $full_world_path,    $datdir,
-#         $batch_name,       $CR,                 $N_actual,
-#         $n_fluxons_wanted, $lim,                $lim2,
-#         $stepnum
-#     );
-
 
 # # # Plot the field map
 # my $fmap_command =
