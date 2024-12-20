@@ -218,7 +218,7 @@ def plot_fr(args):
 if __name__ == "__main__":
     # Create the argument parser
     print("\t Plotting Fr... ", end="")
-    from fluxpype.helpers.pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=

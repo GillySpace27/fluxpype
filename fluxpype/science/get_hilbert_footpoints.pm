@@ -1,4 +1,3 @@
-
 =head1 NAME
 
 get_hilbert_footpoints - Traces Magnetogram to get Footpoints using a Hilbert Curve
@@ -77,30 +76,35 @@ use strict;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_hilbert_footpoints);
-use lib "helpers";
-use lib "fluxpype/helpers";
-# use lib "science";
-use lib "fluxpype/fluxpype/helpers";
 use lib "fluxpype/fluxpype/science";
 use lib "fluxpype/science";
-use pipe_helper qw(shorten_path);
-use File::Path  qw(mkpath);
-
+use lib ".";
+use File::Path qw(mkpath);
+use File::Spec::Functions qw(catfile catdir);
 use fluxon_placement_hilbert qw(fluxon_placement_hilbert);
 use PDL;
 use PDL::NiceSlice;
+use PDL::IO::FITS;   # For rfits
+use PDL::IO::Misc;   # For wcols and rcols
+# use pipe_helper qw(shorten_path);  # Ensure that you actually need this
 
 sub get_hilbert_footpoints {
-    my ( %configs ) = @_;    # get the hash reference
+    my (%configs) = @_;
 
+    # Retrieve required configurations
     my $process_magnetogram = $configs{'force_process_magnetogram'};
-    my $magfile          = $configs{'magfile'};
-    my $magpath          = $configs{'magpath'};
-    my $flocdir          = $configs{'flocdir'};
-    my $flocfile         = $configs{'flocfile'};
-    my $flocpath         = $configs{'flocpath'};
-    my $adapt            = $configs{'adapt'};
-    my $n_fluxons_wanted = $configs{'n_fluxons_wanted'};
+    my $magfile             = $configs{'magfile'};
+    my $magpath             = $configs{'magpath'};
+    my $adapt               = $configs{'adapt'};
+    my $n_fluxons_wanted    = $configs{'n_fluxons_wanted'};
+    my $datdir              = $configs{'datdir'};       # Data directory
+    my $batch_name          = $configs{'batch_name'};   # Batch name
+    my $CR                  = $configs{'CR'};           # Carrington Rotation
+
+    # Compute 'flocdir' and 'flocpath' if not provided
+    my $flocdir = $configs{'flocdir'} // catdir($datdir, "batches", $batch_name, "data", "cr${CR}", "footpoints");
+    my $flocfile = $configs{'flocfile'} // "footpoints_${n_fluxons_wanted}.dat";
+    my $flocpath = $configs{'flocpath'} // catfile($flocdir, $flocfile);
 
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Tracing Magnetogram to get $n_fluxons_wanted Footpoints\n";
@@ -110,44 +114,29 @@ sub get_hilbert_footpoints {
     my $floc     = 0;
     my $N_actual = 0;
 
-    # $adapt = 0;
-
     if ( !-e $flocpath ) {
         $no_floc = 1;
         if ( !-d $flocdir ) {
+            print "Footpoint directory not found. Creating: $flocdir\n";
             mkpath($flocdir) or die "Failed to create directory: $flocdir !\n";
         }
     }
+
     print "\n\tSearching for file...";
     if ( $process_magnetogram || $no_floc ) {
-        ## Read in the Magnetogram #################################
+        # Magnetogram not found or reprocessing forced
         print "Not found.\n\n";
         print "\tRunning Hilbert Tracer...\n";
-
-        # print "\t\tFile: ". shorten_path($magfile) . "\n\n";
         print "\t\tFile: " . $magpath . "\n\n";
 
-        # print "\n\t**Reading Magnetogram...";
-        # die;
-        my $smag = rfits($magpath);
+        # Read the magnetogram
+        my $smag = eval { rfits($magpath) } or die "Failed to read magnetogram: $magpath !\n";
 
-        # print $smag->info;
-
-        # eval {my $smag = rfits($magfile)};
-        # if ($@) {$smag = rfits($datdir.$magfile)};
-
-        # Extra step for adapt br maps
-        # if ($adapt) {$smag = $smag(:,:,2)->squeeze};
-        # if ($adapt) {$smag = $smag(:,:,2)->squeeze};
-
-        ## Run the fluxon hilbert code ##############################
-        print "\n";
-        print
-"\n\t\tPlacing $n_fluxons_wanted footpoints using Hilbert Curves...\n";
+        print "\n\t\tPlacing $n_fluxons_wanted footpoints using Hilbert Curves...\n";
 
         # Define tolerance and initial step size
         my $tolerance = $n_fluxons_wanted * 0.05;    # 5% tolerance
-        my $step      = $n_fluxons_wanted * 0.1;    # Initial step size as 10% of $n_fluxons_wanted
+        my $step      = $n_fluxons_wanted * 0.1;     # Initial step size as 10% of $n_fluxons_wanted
 
         # Initialize variables
         my $width       = 100;
@@ -161,53 +150,45 @@ sub get_hilbert_footpoints {
         while ( $iterate && $count < $maxreps ) {
             $try_fluxons = int($try_fluxons);
             $floc        = fluxon_placement_hilbert( $smag, $try_fluxons );
-            # The number of fluxons placed is 1/3 the number of elements in the floc array
             $N_actual    = $floc->nelem / 3;
             $count++;
 
-            print("\t\t    Placing footpoints:: iter: $count/$maxreps. Wanted: $n_fluxons_wanted, Tried: $try_fluxons, Placed: $N_actual...");
+            print("\t\t    Placing footpoints:: iter: $count/$maxreps. ".
+                  "Wanted: $n_fluxons_wanted, Tried: $try_fluxons, Placed: $N_actual...");
 
             my $distance = $N_actual - $n_fluxons_wanted;
             if ( abs($distance) > $tolerance ) {
-
-            # Adjust step size based on the distance from the desired number of fluxons
+                # Adjust step size based on the distance from the desired number of fluxons
                 my $factor = 1 + abs($distance) / ( $n_fluxons_wanted * 2 );
                 $step *= $factor;
                 $step *= 0.9;
-                if ( $distance > 0 ) {
-                    $try_fluxons -= $step;
-                }
-                else {
-                    $try_fluxons += $step;
-                }
+                $try_fluxons += $distance > 0 ? -$step : $step;
 
                 $iterate = 1;
-                print "Retrying! Pype\n";
-            }
-            else {
+                print "Retrying!\n";
+            } else {
                 print "Success!\n";
                 $iterate = 0;
             }
         }
 
-        ## Write to disk ############################################
-        print "\n";
-        print "\t\tWriting Result...";
+        print "\n\t\tWriting Result...";
         wcols $floc->transpose, $flocpath;
         print "Success! File saved to:";
         print "\n\t\t\t " . shorten_path($flocpath);
         print "\n";
-    }
-    else {
+    } else {
         $floc     = rcols $flocpath;
         $floc     = $floc->transpose;
-        $N_actual = int( ( $floc->nelem ) );
-        print "\n\t\tFound a $N_actual footpoint file on Disk:";
-        my $flocpath_short = shorten_path( $flocpath, 5 );
+        $N_actual = int( ( $floc->nelem ) / 3 );
+        my $flocpath_short = shorten_path($flocpath);
 
+        print "\n\t\tFound a $N_actual footpoint file on Disk:";
         print "\n\t\t\t$flocpath_short\n";
     }
+
     print "\n\t\t\t```````````````````````````````\n\n\n";
     return $floc, $N_actual;
 }
-1;
+
+1;  # End of module

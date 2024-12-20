@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
-from fluxpype.helpers.pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 import pandas as pd
 # configs = configurations(debug=False)
 

@@ -1198,7 +1198,7 @@ def plot_from_existing_file(filename):
         plt.savefig(outfile)
         plt.close(fig)
 
-from fluxpype.helpers.pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 
 def parse_args():
     # Create the argument parser

@@ -13,6 +13,7 @@ our @EXPORT_OK = qw(plot_world plot_worlds);
 use PDL;
 use File::Basename         qw(dirname fileparse);
 use File::Path             qw(mkpath);
+use lib "fluxpype";
 use pipe_helper            qw(shorten_path);
 use PDL::Graphics::Gnuplot qw(gpwin);
 use PDL::AutoLoader;

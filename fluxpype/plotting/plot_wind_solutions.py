@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import os
-from fluxpype.helpers.pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 from scipy.interpolate import interp1d
 import re
 def_file = "fluxon-data/zephyr_2007_2013.sav"

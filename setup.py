@@ -1,211 +1,59 @@
-import subprocess
 from setuptools import setup, find_packages
 from setuptools.command.install import install
+from setuptools.command.develop import develop
+from pathlib import Path
 import os
-import shutil
 
 
 class CustomInstallCommand(install):
-    """Customized setuptools install command - installs prerequisites and FLUX."""
-
     def run(self):
-        # Run the standard installation process first
-        install.run(self)
+        super().run()
+        self.save_module_root()
 
-        # Paths for FLUX installation
-        user_home = os.path.expanduser("~")
-        fl_prefix = os.environ.get(
-            "FL_PREFIX", os.path.join(user_home, "Library", "flux")
-        )
-        pl_prefix = os.environ.get(
-            "PL_PREFIX", os.path.join(user_home, "Library", "perl5")
-        )
-
-        print(
-            f"Checking FLUX installation with FL_PREFIX={fl_prefix} and PL_PREFIX={pl_prefix}..."
-        )
-
-        try:
-            # Perform necessary installation steps
-            self.install_perlbrew()
-            self.install_homebrew()
-            self.setup_virtualenv(pl_prefix)
-            self.install_prerequisites(pl_prefix)
-            self.install_flux(fl_prefix, pl_prefix)
-            print("Installation completed successfully.")
-        except Exception as e:
-            print(f"Installation failed: {e}")
-            raise
-
-    def install_perlbrew(self):
-        """Ensure Perlbrew is installed and a specific version of Perl is available."""
-        perl_version = "perl-5.36.0"  # Define the Perl version you need
-
-        # Install Perlbrew if not installed
-        if not shutil.which("perlbrew"):
-            print("Installing Perlbrew...")
-            subprocess.check_call(
-                "/bin/bash -c 'curl -L https://install.perlbrew.pl | bash'", shell=True
-            )
-            # Add Perlbrew to the environment
-            perlbrew_env = os.path.expanduser("~/perl5/perlbrew/etc/bashrc")
-            if os.path.exists(perlbrew_env):
-                print(f"Initializing Perlbrew from {perlbrew_env}...")
-                self.initialize_perlbrew(perlbrew_env)
-            else:
-                raise FileNotFoundError(
-                    f"Perlbrew initialization script not found: {perlbrew_env}"
-                )
-        else:
-            print("Perlbrew is already installed.")
-
-        # Check if perlbrew is available
-        if not shutil.which("perlbrew"):
-            raise EnvironmentError(
-                "Perlbrew command not found after installation. Ensure your environment is set up correctly."
-            )
-
-        # Check if the desired Perl version is installed
-        installed_versions = subprocess.check_output(["perlbrew", "list"]).decode()
-        if perl_version not in installed_versions:
-            print(f"Installing Perl version {perl_version} using Perlbrew...")
-            subprocess.check_call(["perlbrew", "install", perl_version])
-        else:
-            print(f"Perl version {perl_version} is already installed.")
-
-        # Use the installed Perl version
-        print(f"Switching to Perl version {perl_version}...")
-        subprocess.check_call(["perlbrew", "use", perl_version])
-
-    def initialize_perlbrew(self, perlbrew_env):
-        """Source the Perlbrew environment."""
-        print(f"Initializing Perlbrew environment from {perlbrew_env}...")
-        command = f"source {perlbrew_env} && env"
-        proc = subprocess.Popen(
-            command, stdout=subprocess.PIPE, shell=True, executable="/bin/bash"
-        )
-        output, _ = proc.communicate()
-
-        # Update environment variables in the current Python process
-        for line in output.decode().splitlines():
-            key, _, value = line.partition("=")
-            os.environ[key] = value
-
-    def setup_virtualenv(self, pl_prefix):
-        """Set up a virtual Perl environment using local::lib."""
-        print(f"Setting up local::lib with PL_PREFIX={pl_prefix}...")
-        os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={pl_prefix}"
-        subprocess.check_call(
-            ["cpanm", "--local-lib-contained", pl_prefix, "local::lib"]
-        )
-
-    def install_prerequisites(self, pl_prefix):
-        """Install Perl dependencies."""
-        perl_dependencies = [
-            "local::lib",
-            "File::ShareDir",
-            "File::ShareDir::Install",
-            "PDL::Graphics::Gnuplot",
-            "Math::RungeKutta",
-            "Moo::Role",
-            "Chart::Gnuplot",
-            "Text::CSV",
-            "Math::Interpolate",
-            "Math::GSL",
-            "Config::IniFiles",
-            "File::HomeDir",
-            "Inline::C",
-            "Parallel::ForkManager",
-        ]
-        print("Installing Perl dependencies...")
-        subprocess.check_call(["cpanm"] + perl_dependencies)
-
-    def install_flux(self, fl_prefix, pl_prefix):
-        """Check for or install FLUX."""
-        if self.check_existing_flux(fl_prefix, pl_prefix):
-            print(
-                "FLUX installation detected. Linking the Python package to the existing installation."
-            )
-            return
-
-        print("No existing FLUX installation detected. Installing FLUX...")
-        self.clone_flux_repo(fl_prefix)
-        self.build_and_install_flux(fl_prefix, pl_prefix)
-
-    def check_existing_flux(self, fl_prefix, pl_prefix):
-        """Check if FLUX is already installed."""
-        libflux_path = os.path.join(fl_prefix, "lib", "libflux.a")
-        flux_pm_path = os.path.join(pl_prefix, "lib", "perl5", "Flux.pm")
-        if os.path.exists(libflux_path) and os.path.exists(flux_pm_path):
-            print(
-                f"Found existing FLUX installation:\n- {libflux_path}\n- {flux_pm_path}"
-            )
-            return True
-        return False
-
-    def clone_flux_repo(self, fl_prefix):
-        """Clone the FLUX repository."""
-        repo_url = "https://github.com/lowderchris/fluxon-mhd.git"
-        repo_dir = os.path.join(fl_prefix, "fluxon-mhd")
-        if not os.path.exists(repo_dir):
-            print(f"Cloning FLUX repository from {repo_url}...")
-            subprocess.check_call(["git", "clone", repo_url, repo_dir])
-        else:
-            print("FLUX repository already exists. Pulling latest changes...")
-            subprocess.check_call(["git", "-C", repo_dir, "pull"])
-
-    def build_and_install_flux(self, fl_prefix, pl_prefix):
-        """Build and install FLUX."""
-        repo_dir = os.path.join(fl_prefix, "fluxon-mhd")
-        os.chdir(repo_dir)
-        os.environ["FL_PREFIX"] = fl_prefix
-        os.environ["PL_PREFIX"] = pl_prefix
-        subprocess.check_call(["make", "libbuild"])
-        subprocess.check_call(["make", "libinstall"])
-        subprocess.check_call(["make", "pdlbuild"])
-        subprocess.check_call(["make", "pdltest"])
-        subprocess.check_call(["make", "pdlinstall"])
-        self.update_shell_config(fl_prefix, pl_prefix)
-
-    def update_shell_config(self, fl_prefix, pl_prefix):
-        """Update user's shell configuration to include FLUX paths."""
-        shell_config = os.path.expanduser("~/.zprofile")
-        if os.path.exists(shell_config):
-            with open(shell_config, "r") as file:
-                existing_config = file.read()
-        else:
-            existing_config = ""
-
-        if f"export FL_PREFIX={fl_prefix}" not in existing_config:
-            with open(shell_config, "a") as file:
-                file.write(f"\n# FLUX environment setup\n")
-                file.write(f"export FL_PREFIX={fl_prefix}\n")
-                file.write(f"export PL_PREFIX={pl_prefix}\n")
-                perl_lib_path = os.path.join(pl_prefix, "lib", "perl5")
-                file.write(
-                    f"eval `perl -I {perl_lib_path} -Mlocal::lib={perl_lib_path}`\n"
-                )
-            print(f"Shell configuration updated in {shell_config}.")
-        else:
-            print("FLUX environment variables already set in shell configuration.")
+    def save_module_root(self):
+        install_path = Path(self.install_lib)
+        os.environ["FLUXPYPE_ROOT"] = str(install_path)
+        with open(install_path / "fluxpype/__init__.py", "a") as f:
+            f.write(f"\nos.environ['FLUXPYPE_ROOT'] = '{install_path}'")
 
 
-# Check if `src` directory exists and use it, otherwise use current directory
-package_dir = {"": "src"} if os.path.isdir("src") else {"": "."}
-packages = find_packages(where=package_dir[""])
+class CustomDevelopCommand(develop):
+    def run(self):
+        super().run()
+        self.save_module_root()
+
+    def save_module_root(self):
+        develop_path = Path(self.egg_base) / "fluxpype"
+        os.environ["FLUXPYPE_ROOT"] = str(develop_path)
+        with open(develop_path / "fluxpype/__init__.py", "a") as f:
+            f.write(f"\nos.environ['FLUXPYPE_ROOT'] = '{develop_path}'")
+
+
+def load_flux_installer():
+    import importlib.util
+
+    installer_path = Path(__file__).parent / "flux_installer.py"
+    if not installer_path.exists():
+        raise FileNotFoundError(f"flux_installer.py not found at {installer_path}")
+    spec = importlib.util.spec_from_file_location("flux_installer", installer_path)
+    flux_installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(flux_installer)
+    return flux_installer
+
+
+flux_installer = load_flux_installer()
+
 setup(
     name="fluxpype",
-    version="0.1.3",
-    description="A wrapper and installer for the FLUX Model",
+    version="0.1.4",
+    description="A wrapper and installer for the FLUX model",
     long_description=(
-        open("README.md").read()
-        if os.path.exists("README.md")
-        else "A wrapper and installer for the FLUX Model"
+        Path("README.md").read_text() if Path("README.md").exists() else ""
     ),
     long_description_content_type="text/markdown",
     url="https://github.com/gillyspace27/fluxpype",
-    packages=packages,
-    package_dir=package_dir,
+    packages=find_packages(where="fluxpype"),
+    package_dir={"": "fluxpype"},
     python_requires=">=3.8",
     install_requires=[
         "matplotlib",
@@ -218,11 +66,21 @@ setup(
         "zeep",
         "drms",
         "timeout_decorator",
+        "rich",
     ],
-    classifiers=[
-        "Programming Language :: Python :: 3.8",
-    ],
-    cmdclass={
-        "install": CustomInstallCommand,
+    extras_require={
+        "FLUXcore": [],
     },
+    package_data={
+        "fluxpype": [
+            "bootstrap_pdl.pl",
+            "science/*",
+            "plotting/*",
+        ],
+    },
+    include_package_data=True,
+    # cmdclass={
+    #     "install": CustomInstallCommand,
+    #     "develop": CustomDevelopCommand,
+    # },
 )

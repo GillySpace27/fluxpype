@@ -15,8 +15,33 @@ package get_wind;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_wind);
-use lib "fluxpype/fluxpype/helpers/";
-use lib "fluxpype/fluxpype/science/";
+use local::lib;
+use lib ".";
+use lib "..";
+# use lib "fluxpype/fluxpype/helpers/";
+# use lib "fluxpype/fluxpype/science/";
+
+my @required_modules = qw(
+    Flux
+    pipe_helper
+    get_hilbert_footpoints
+    make_world_from_pfss
+    plot_world
+    relax_pfss_world
+    get_wind
+);
+
+foreach my $module (@required_modules) {
+    eval {
+        require "$module.pm";  # Dynamically find and load the module
+        $module->import();     # Explicitly call the import method
+    };
+    if ($@) {
+        die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
+    }
+}
+
+
 use pipe_helper                     qw(shorten_path configurations find_highest_numbered_file_with_string);
 use File::Path                      qw(mkpath);
 use map_fluxon_b                    qw(map_fluxon_b);

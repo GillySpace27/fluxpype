@@ -40,11 +40,11 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from fluxpype.helpers.pipe_helper import load_fits_magnetogram, get_fixed_coords
+from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
-def_file = "/Users/cgilbert/vscode/fluxons/fluxon-data/zephyr_2007_2013.sav"
+def_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav
@@ -282,7 +282,7 @@ def run_plots(args, times=0):
 if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
-    from fluxpype.helpers.pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
