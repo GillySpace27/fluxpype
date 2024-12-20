@@ -236,9 +236,11 @@ def calculate_directories(config):
 def update_magdir_paths(config):
     """Update paths related to magnetograms and fluxons."""
     CR = config.get("cr", config.get("rotations", [2100])[0])
-    n_fluxons_wanted = config.get("nwant")
+    n_fluxons_wanted = config.get("fluxon_count")
     if not CR or not n_fluxons_wanted:
-        raise ValueError("Instance values 'cr' or 'nwant' not found in configuration.")
+        raise ValueError(
+            "Instance values 'cr' or 'fluxon_count' not found in configuration."
+        )
 
     adapt_select = config.get("adapt_select", 0)
     reduction = config.get("mag_reduce", 1)

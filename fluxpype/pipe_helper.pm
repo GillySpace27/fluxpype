@@ -339,8 +339,9 @@ sub configs_update_magdir {
 
     my ($config_ref) = @_;
 
-    my $CR = $config_ref->{'cr'};
-    my $n_fluxons_wanted = $config_ref->{'nwant'};
+    my $CR = $config_ref->{'cr'} // $config_ref->{'rotations'};
+    print "This is the CR we are using: $CR\n";
+    my $n_fluxons_wanted = $config_ref->{'fluxon_count'};
 
     # Check if critical values are present
     croak("Instance values 'cr' or 'nwant' not found in configuration.") unless defined $CR && defined $n_fluxons_wanted;
@@ -362,6 +363,7 @@ sub configs_update_magdir {
     $config_ref->{'flocfile'} = $flocfile;
     $config_ref->{'magpath'} = catfile($config_ref->{'mag_dir'}, $magfile);
     $config_ref->{'flocpath'} = catfile($config_ref->{'flocdir'}, $flocfile);
+    print "The flocpath is " . $config_ref->{'flocpath'};
 }
 
 =head2 find_highest_numbered_file

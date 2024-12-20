@@ -86,7 +86,7 @@ use PDL;
 use PDL::NiceSlice;
 use PDL::IO::FITS;   # For rfits
 use PDL::IO::Misc;   # For wcols and rcols
-# use pipe_helper qw(shorten_path);  # Ensure that you actually need this
+use pipe_helper qw(shorten_path);  # Ensure that you actually need this
 
 sub get_hilbert_footpoints {
     my (%configs) = @_;
@@ -104,7 +104,12 @@ sub get_hilbert_footpoints {
     # Compute 'flocdir' and 'flocpath' if not provided
     my $flocdir = $configs{'flocdir'} // catdir($datdir, "batches", $batch_name, "data", "cr${CR}", "footpoints");
     my $flocfile = $configs{'flocfile'} // "footpoints_${n_fluxons_wanted}.dat";
-    my $flocpath = $configs{'flocpath'} // catfile($flocdir, $flocfile);
+    my $flocpath = catfile($flocdir, $flocfile);
+
+    # print "dir:  $flocdir\n";
+    # print "file: $flocfile\n";
+    # print "path: $flocpath\n";
+
 
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Tracing Magnetogram to get $n_fluxons_wanted Footpoints\n";
@@ -129,8 +134,19 @@ sub get_hilbert_footpoints {
         print "\tRunning Hilbert Tracer...\n";
         print "\t\tFile: " . $magpath . "\n\n";
 
-        # Read the magnetogram
-        my $smag = eval { rfits($magpath) } or die "Failed to read magnetogram: $magpath !\n";
+    # Read the magnetogram
+    my $smag;
+    eval {
+        $smag = rfits($magpath);
+        1; # Success flag
+    } or do {
+        die "Failed to read magnetogram: $magpath!\n";
+    };
+
+    # Check if $smag is defined and valid
+    unless (defined $smag) {
+        die "Magnetogram read operation returned undefined result: $magpath!\n";
+    }
 
         print "\n\t\tPlacing $n_fluxons_wanted footpoints using Hilbert Curves...\n";
 

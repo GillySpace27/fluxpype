@@ -32,7 +32,6 @@ use make_tempest_file qw(make_tempest_file);
 use pipe_helper qw(configurations);
 use PDL::Graphics::Gnuplot;
 
-
 my %configs = configurations();
 
 # Control Flags
