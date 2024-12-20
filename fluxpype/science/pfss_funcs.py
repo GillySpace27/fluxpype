@@ -59,7 +59,7 @@ import timeout_decorator
 from pfsspy import tracing
 from tqdm import tqdm
 
-from fluxpype.pipe_helper import load_fits_magnetogram, read_fits_data, shorten_path
+from pipe_helper import load_fits_magnetogram, read_fits_data, shorten_path
 
 mpl.use("qt5agg")
 
@@ -295,6 +295,8 @@ def get_fluxon_locations(floc_path, batch, configs=None):
         Fluxon count
     """
 
+    print(f"{floc_path=}")
+
     fluxon_location = np.genfromtxt(floc_path)
     magnet, header = load_fits_magnetogram(batch=batch, ret_all=True, configs=configs)
     f_lat, f_lon, f_sgn, n_flux = pixel_to_latlon(
@@ -340,6 +342,7 @@ def plot_fluxon_locations(br_safe, cr, datdir, fits_path, reduce,
     """
 
     floc_path = f"{datdir}/batches/{batch}/data/cr{cr}/floc/floc_cr{cr}_r{reduce}_f{nwant}.dat"
+    print(f"{floc_path = }")
     f_lat, f_lon, f_sgn, n_flux = get_fluxon_locations(floc_path, batch, cr)
     fluxon_location = np.genfromtxt(floc_path)
 

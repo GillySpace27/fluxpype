@@ -219,23 +219,23 @@ if (1-$configs{wind_only}){
     # Retrieve the Footpoints using the Hilbert method
     my $N_actual =
       get_hilbert_footpoints::get_hilbert_footpoints( %configs );
+
+#######################################################################################################
+## Run the Python PFSS Code ## Trace the Footpoints into the Corona ###################################
+#######################################################################################################
+# Then we take those root points and use the pfss tracer to map upward from those initial points
+# into the corona to define an initial placeholder geometry.
+# This lets us extend this into 3d space with real linking topology.
+    my $get_pfss_path = "$this_dir/get_pfss.py";
+
+    my $pfss_command = "python $get_pfss_path --cr $CR --magpath $configs{magpath} --nwant $n_fluxons_wanted --adapt $adapt";
+
+    # print $pfss_command;
+    system($pfss_command) == 0
+      or ( die "Python script returned error $?", exit );
+
+    # print "3  " . $configs{'magpath'} . "\n\n";
 }
-# #######################################################################################################
-# ## Run the Python PFSS Code ## Trace the Footpoints into the Corona ###################################
-# #######################################################################################################
-# # Then we take those root points and use the pfss tracer to map upward from those initial points
-# # into the corona to define an initial placeholder geometry.
-# # This lets us extend this into 3d space with real linking topology.
-#     my $get_pfss_path = "$this_dir/get_pfss.py";
-
-#     my $pfss_command = "$configs{python_dir} $get_pfss_path --cr $CR --magpath $configs{magpath} --nwant $n_fluxons_wanted --adapt $adapt";
-
-#     # print $pfss_command;
-#     system($pfss_command) == 0
-#       or ( die "Python script returned error $?", exit );
-
-#     # print "3  " . $configs{'magpath'} . "\n\n";
-
 # #######################################################################################################
 # ## Generate World from PFSS ###########################################################################
 # #######################################################################################################
