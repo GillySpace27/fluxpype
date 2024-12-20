@@ -282,17 +282,17 @@ if (1-$configs{wind_only}){
         $stepnum
     );
 
-}
 
-# # # Plot the field map
-# my $fmap_command =
-# "$configs{python_dir} $pipedir/plotting/plot_fieldmap.py --cr $CR --open $open_file"
-#   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
+
+# # Plot the field map
+my $fmap_command =
+"python fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
+  . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
 #   print $fmap_command;
-# system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
+system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 
 
-# }  # End of the if (0) block
+}  # End of the if (0) block
 
 # #######################################################################################################
 # ## Begin solar wind computation  ######################################################################
