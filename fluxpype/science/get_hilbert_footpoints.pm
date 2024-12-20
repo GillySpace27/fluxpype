@@ -102,7 +102,7 @@ sub get_hilbert_footpoints {
     my $CR                  = $configs{'CR'};           # Carrington Rotation
 
     # Compute 'flocdir' and 'flocpath' if not provided
-    my $flocdir = $configs{'flocdir'} // catdir($datdir, "batches", $batch_name, "data", "cr${CR}", "footpoints");
+    my $flocdir = $configs{'flocdir'} // catdir($datdir, "batches", $batch_name, "data", "cr${CR}", "floc");
     my $flocfile = $configs{'flocfile'} // "footpoints_${n_fluxons_wanted}.dat";
     my $flocpath = catfile($flocdir, $flocfile);
 

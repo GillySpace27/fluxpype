@@ -81,7 +81,7 @@ foreach my $module (@required_modules) {
         die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
     }
 }
-
+use make_world_from_pfss qw(make_world_from_pfss);
 print "LIBS ARE LOADED\n";
 
 use PDL;
@@ -235,18 +235,18 @@ if (1-$configs{wind_only}){
       or ( die "Python script returned error $?", exit );
 
     # print "3  " . $configs{'magpath'} . "\n\n";
+
+#######################################################################################################
+## Generate World from PFSS ###########################################################################
+#######################################################################################################
+    my $force_make_world = 0;
+
+    ( $open_file, $closed_file, $world_out_path ) = make_world_from_pfss(
+        $datdir,           $batch_name, $CR,               $reduction,
+        $n_fluxons_wanted, $adapt,      $force_make_world, $lim,
+        $lim2,             \%configs,
+    );
 }
-# #######################################################################################################
-# ## Generate World from PFSS ###########################################################################
-# #######################################################################################################
-#     my $force_make_world = 0;
-
-#     ( $open_file, $closed_file, $world_out_path ) = make_world_from_pfss(
-#         $datdir,           $batch_name, $CR,               $reduction,
-#         $n_fluxons_wanted, $adapt,      $force_make_world, $lim,
-#         $lim2,             \%configs,
-#     );
-
 # #######################################################################################################
 # ## Relax the initial world state ##Use the FLUX Code ##################################################
 # #######################################################################################################

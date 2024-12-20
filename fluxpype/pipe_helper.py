@@ -260,6 +260,7 @@ def update_magdir_paths(config):
             "flocpath": os.path.join(config["flocdir"], flocfile),
         }
     )
+    return config
 
 
 def compute_configs(config):
