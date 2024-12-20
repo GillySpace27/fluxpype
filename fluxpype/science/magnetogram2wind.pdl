@@ -69,7 +69,6 @@ my @required_modules = qw(
     make_world_from_pfss
     plot_world
     relax_pfss_world
-    get_wind
 );
 
 foreach my $module (@required_modules) {
@@ -84,6 +83,7 @@ foreach my $module (@required_modules) {
 use make_world_from_pfss qw(make_world_from_pfss);
 use relax_pfss_world qw(relax_pfss_world);
 use plot_world qw(plot_worlds);
+use get_wind qw(get_wind);
 
 
 use PDL;
@@ -294,29 +294,29 @@ system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 
 }  # End of the if (0) block
 
-# #######################################################################################################
-# ## Begin solar wind computation  ######################################################################
-# #######################################################################################################
-# # our ( $out_b, $out_fr, $out_wind );
+#######################################################################################################
+## Begin solar wind computation  ######################################################################
+#######################################################################################################
+our ( $out_b, $out_fr, $out_wind, $out_b_all );
 
 
-# our $this_world_orig;
-# # our $this_world_relaxed;
-# $this_world_relaxed, $this_world_orig = load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
+our $this_world_orig;
+# our $this_world_relaxed;
+$this_world_relaxed, $this_world_orig = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
-# my $use_world;
-# my $plot_stiff = 0;
-# if ($plot_stiff){
-#   print "Using Stiff World:\n";
-#   $use_world = $this_world_orig;
-# } else {
-#   print "Using Relaxed World:\n";
-#   $use_world = $this_world_relaxed;
-# }
-#   print $use_world;
+our $use_world = 0;
+my $plot_stiff = 0;
+if ($plot_stiff){
+  print "Using Stiff World:\n";
+  $use_world = $this_world_orig;
+} else {
+  print "Using Relaxed World:\n";
+  $use_world = $this_world_relaxed;
+}
+  print $use_world;
 
-# my ( $out_b, $out_fr, $out_wind, $out_b_all ) =
-#   get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
+ ( $out_b, $out_fr, $out_wind, $out_b_all ) =
+  get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
 
 # #######################################################################################################
 # ## Plot the Solar wind Solutions  #####################################################################

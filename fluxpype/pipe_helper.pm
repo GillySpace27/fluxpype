@@ -677,7 +677,7 @@ sub load_highest_numbered_world {
     closedir($dh);
 
     print "Selected file: $selected_file_path\n";
-    print "Original file: $original_file_path\n";
+    print "Original file: $original_file_path\n\n";
 
     if (defined $selected_file_path && defined $original_file_path) {
         my $this_world_relaxed = read_world($selected_file_path);
