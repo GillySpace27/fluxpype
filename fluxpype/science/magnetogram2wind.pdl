@@ -318,20 +318,20 @@ if ($plot_stiff){
  ( $out_b, $out_fr, $out_wind, $out_b_all ) =
   get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
 
-# #######################################################################################################
-# ## Plot the Solar wind Solutions  #####################################################################
-# #######################################################################################################
+#######################################################################################################
+## Plot the Solar wind Solutions  #####################################################################
+#######################################################################################################
 
-# if (1) {
+if (1) {
 
-# print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
-# print("(py) Plotting Solar Wind Maps for CR$CR\n");
-# print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+print("(py) Plotting Solar Wind Maps for CR$CR\n");
+print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
-# # system(
-# # "$configs{python_dir} $pipedir/plotting/plot_bmag.py"
-# #       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
-# # ) == 0 or ( die "Python script returned error $?", exit );
+# system(
+# "$configs{python_dir} $pipedir/plotting/plot_bmag.py"
+#       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
+# ) == 0 or ( die "Python script returned error $?", exit );
 
 
 # # This plot shows the actual magnetic fields in the fluxon world
@@ -378,7 +378,7 @@ if ($plot_stiff){
 # ) == 0 or ( die "Python script returned error $?", exit );
 
 
-# } # End of the if (0) block
+} # End of the if (0) block
 
 
 

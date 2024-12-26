@@ -359,11 +359,17 @@ sub configs_update_magdir {
         $flocfile = "floc_cr${CR}_r${reduction}_f${n_fluxons_wanted}_hmi.dat";
     }
 
-    $config_ref->{'magfile'} = $magfile;
+    $config_ref->{'magfile'}  = $magfile;
     $config_ref->{'flocfile'} = $flocfile;
-    $config_ref->{'magpath'} = catfile($config_ref->{'mag_dir'}, $magfile);
+    $config_ref->{'magpath'}  = catfile($config_ref->{'mag_dir'}, $magfile);
+    $config_ref->{'flocdir'}  = catfile($config_ref->{'batch_dir'},"data/cr$CR/floc/");
     $config_ref->{'flocpath'} = catfile($config_ref->{'flocdir'}, $flocfile);
-    print "The flocpath is " . $config_ref->{'flocpath'};
+
+    print $config_ref->{'flocfile'} . "\n\n";
+    # print $config_ref->{'magpath'}  . "\n\n";
+    print $config_ref->{'flocdir'}  . "\n\n";
+    # print $config_ref->{'flocpath'} . "\n\n";
+    print "The flocpath is " . $config_ref->{'flocpath'} . "\n";
 }
 
 =head2 find_highest_numbered_file
