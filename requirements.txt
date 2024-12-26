@@ -1,0 +1,13 @@
+pandas
+tqdm
+matplotlib
+astropy
+sunpy
+bs4
+lxml
+zeep
+drms
+timeout_decorator
+opencv-python
+pexpect
+rich

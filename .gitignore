@@ -8,10 +8,10 @@ scripts/
 *.png
 *.fits
 *.dat
-*.txt
 *.flux
 *.json
 *.npy
+*.sav
 
 # C extensions
 *.so
