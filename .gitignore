@@ -11,6 +11,7 @@ scripts/
 *.txt
 *.flux
 *.json
+*.npy
 
 # C extensions
 *.so
@@ -187,3 +188,4 @@ pip-delete-this-directory.txt
 perl_lib/
 
 fluxpype/fluxpype/data/
+

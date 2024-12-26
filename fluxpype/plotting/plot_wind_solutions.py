@@ -6,7 +6,7 @@ import os
 from pipe_helper import configurations
 from scipy.interpolate import interp1d
 import re
-def_file = "fluxpype/data/zephyr_2007_2013.sav"
+def_file = "fluxpype/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav

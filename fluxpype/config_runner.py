@@ -133,7 +133,7 @@ def run():
     with tqdm(
         total=int(configs["n_jobs"]),
         unit="runs",
-        colour="yellow"
+        colour="green"
     ) as pbar:
         for adapt in configs["adapts"]:
             for rot in configs["rotations"]:

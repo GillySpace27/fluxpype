@@ -44,7 +44,7 @@ from pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
-def_file = "fluxpype/data/zephyr_2007_2013.sav"
+def_file = "fluxpype/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav
@@ -68,7 +68,7 @@ def load_zephyr(file = def_file):
 def sunspotplot(ax3, crlist=None):
     ### THIRD PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/plotting/SN_m_tot_V2.0.txt").T
+    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]

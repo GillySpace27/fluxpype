@@ -1001,7 +1001,7 @@ def plot_tempest(file, ax=None):
     return zx, zTR, zcrit, u_miranda, u_prospero, rho
 
 
-def_file = "fluxon-data/zephyr_2007_2013.sav"
+def_file = "fluxpype/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav
