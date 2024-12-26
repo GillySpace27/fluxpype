@@ -110,8 +110,8 @@ def run_pdl_script(rot, nflux, adapt, method):
         raise FileNotFoundError(f"Perl script not found at {run_script_path}")
 
     if 'PERL5LIB' not in os.environ:
-        logging.error("PERL5LIB environment variable is not set. Please configure it before running the script")
-        raise EnvironmentError("PERL5LIB environment variable is not set")
+        logging.warning("PERL5LIB environment variable is not set. Please configure it before running the script")
+        # raise EnvironmentError("PERL5LIB environment variable is not set")
 
     try:
         logging.info(f"Running PDL script: {run_script_path} \n\t\twith parameters: rot={rot}, nflux={nflux}, adapt={adapt}, method={method}")

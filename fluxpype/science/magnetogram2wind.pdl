@@ -414,7 +414,7 @@ print
 "\tProgram Complete for CR$CR in $round_elapsed Seconds, press RETURN to exit...\n";
 print
 "--------------------------------------------------------------------------------------------------\n";
-print "|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n";
+print "|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n\n\ ";
 print color("reset");
 
 # # system("python3 plot_scalability.py") == 0 or (die "Python script returned error $?", exit);
