@@ -202,7 +202,7 @@ def plot_fr(args):
     fig.set_size_inches((10,6))
     plt.tight_layout()
     plt.savefig(frname)
-    if args.show or True:
+    if args.show or False:
         plt.show()
     plt.close(fig)
     print("Done!")
@@ -217,8 +217,8 @@ def plot_fr(args):
 #
 if __name__ == "__main__":
     # Create the argument parser
-    print("\t Plotting Fr... ", end="")
-    from fluxpype.pipe_helper import configurations
+    print("\tPlotting Fr... ", end="")
+    from pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
     parser.add_argument('--show',   type=int, default=0)
     parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt', type=int, default=configs["adapt"], help='Use ADAPT magnetograms')
+    parser.add_argument('--adapt', type=int, default=0, help='Use ADAPT magnetograms')
 
 
     args = parser.parse_args()

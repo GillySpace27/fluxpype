@@ -35,7 +35,7 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram,
+from pipe_helper import (configurations, load_fits_magnetogram,
                          load_magnetogram_params, get_fixed_coords, get_ax)
 from fluxpype.science.pfss_funcs import get_fluxon_locations
 
@@ -692,8 +692,8 @@ def plot_wind_map_latitude(configs):
     plt.close(fig)
     print("Success!")
 
-    print("\nDone with wind plotting!\n")
-    print("```````````````````````````````\n\n\n")
+    # print("\nDone with wind plotting!\n")
+    # print("```````````````````````````````\n\n\n")
 
 
     ###################################
@@ -736,7 +736,7 @@ if __name__ == "__main__":
         parser.add_argument('--dat_dir',type=str, default=configs['data_dir'], help='data directory')
         parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='number of fluxons')
         parser.add_argument('--batch',  type=str, default=configs["batch_name"], help='select the batch name')
-        parser.add_argument('--adapt',  type=int, default=configs["adapt"], help='Use ADAPT magnetograms')
+        parser.add_argument('--adapt',  type=int, default=0, help='Use ADAPT magnetograms')
         args = parser.parse_args()
         configs = configurations(args=args)
 

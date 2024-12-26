@@ -53,6 +53,11 @@ use lib "..";
 use FindBin qw($RealBin);
 use File::Spec;
 
+use Term::ANSIColor;
+print color("magenta");
+
+
+
 BEGIN {
     # Include relative paths for required modules
     my @required_modules_paths = ("../fluxpype", "../fluxpype/science", "../fluxpype/plotting");
@@ -98,8 +103,8 @@ use Time::HiRes qw(clock_gettime sleep);
 use File::Basename qw(fileparse);
 use File::Spec::Functions qw(catfile catdir rel2abs);
 
-print "LIBS ARE LOADED\n";
 
+print "\nLIBS ARE LOADED\n";
 # $PDL::BIGPDL = 1;
 
 # Confirm modules were loaded
@@ -123,7 +128,7 @@ my $adapt = $ARGV[2] // ( $configs{adapts}->at(0) );
 my $flow_method = $ARGV[3] // ( $configs{flow_method}->at(0) );
 $configs{flow_method} = $flow_method;
 $configs{adapt} = $adapt;
-pipe_helper::configs_update_magdir( \%configs );
+# pipe_helper::configs_update_magdir( \%configs );
 # $configs{magdir} = catdir($configs{data_dir}, 'magnetograms');
 
 my $closed_file;
@@ -188,12 +193,13 @@ my $inst;
 if ($adapt) {$inst = 'adapt';}
 else {$inst = 'hmi';}
 
-pipe_helper::print_banner( $batch_name, $CR, $reduction, $n_fluxons_wanted,
-    $recompute_string, $adapt, $flow_method );
+# pipe_helper::print_banner( $batch_name, $CR, $reduction, $n_fluxons_wanted,
+#     $recompute_string, $adapt, $flow_method );
 
 my $very_beginning = clock_gettime();
 
-
+print color("reset");
+print "\n\n\n";
 #### BEGIN ##################################################################
 if (1-$configs{wind_only}){
 
@@ -324,59 +330,66 @@ if ($plot_stiff){
 
 if (1) {
 
+print color("bright_cyan");
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 print("(py) Plotting Solar Wind Maps for CR$CR\n");
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+print color("reset");
 
+system(
+"python3 fluxpype/plotting/plot_bmag.py"
+      . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
+) == 0 or ( die "Python script returned error $?", exit );
+
+
+# This plot shows the actual magnetic fields in the fluxon world
 # system(
-# "$configs{python_dir} $pipedir/plotting/plot_bmag.py"
-#       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
-# ) == 0 or ( die "Python script returned error $?", exit );
+# "python3 fluxpype/plotting/plot_bmag_all.py"
+#       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt")
+#       == 0 or ( die "Python script returned error $?", exit );
+
+# This plot shows the actual magnetic fields from all the sims in the batch
+system(
+"python3 fluxpype/plotting/multiplot_bmag_all.py"
+      . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
+) == 0 or ( die "Python script returned error $?", exit );
 
 
-# # This plot shows the actual magnetic fields in the fluxon world
-# # system(
-# # "$configs{python_dir} $pipedir/plotting/plot_bmag_all.py"
-# #       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
-# # ) == 0 or ( die "Python script returned error $?", exit );
-
-# # This plot shows the actual magnetic fields from all the sims in the batch
+# This is the plot with many panels showing the expansion of the fields geometrically
 # system(
-# "$configs{python_dir} $pipedir/plotting/multiplot_bmag_all.py"
+# "python3 fluxpype/plotting/plot_bmag_fill.py"
 #       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
 # ) == 0 or ( die "Python script returned error $?", exit );
 
+# <STDIN>;
+      system(
+      "python3 fluxpype/plotting/plot_fr.py"
+            . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
+      ) == 0 or ( die "Python script returned error $?", exit );
 
-# # This is the plot with many panels showing the expansion of the fields geometrically
-# # system(
-# # "$configs{python_dir} $pipedir/plotting/plot_bmag_fill.py"
-# #       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
-# # ) == 0 or ( die "Python script returned error $?", exit );
+system(
+"python3 fluxpype/plotting/plot_wind_map_detailed.py"
+      . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
 
-# # <STDIN>;
-#       system(
-#       "$configs{python_dir} $pipedir/plotting/plot_fr.py"
-#             . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
-#       ) == 0 or ( die "Python script returned error $?", exit );
+#       #    . " --open $open_file --closed $closed_file "
+) == 0 or ( die "Python script returned error $?", exit );
 
-# # system(
-# # "$configs{python_dir} $pipedir/plotting/plot_wind_map_detailed.py"
-# #       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
-
-# #       #    . " --open $open_file --closed $closed_file "
-# # ) == 0 or ( die "Python script returned error $?", exit );
-
-# system(
-# "$configs{python_dir} $pipedir/plotting/plot_wind_map_square.py"
-#       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
-# ) == 0 or ( die "Python script returned error $?", exit );
+system(
+"python3 fluxpype/plotting/plot_wind_map_square.py"
+      . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
+) == 0 or ( die "Python script returned error $?", exit );
 
 
-# system(
-# "$configs{python_dir} $pipedir/plotting/plot_wind_solutions.py"
-#       . " $datdir/batches/$batch_name/data/cr$CR/wind"
-# ) == 0 or ( die "Python script returned error $?", exit );
+system(
+"python3 fluxpype/plotting/plot_wind_solutions.py"
+      . " $datdir/batches/$batch_name/data/cr$CR/wind"
+) == 0 or ( die "Python script returned error $?", exit );
 
+
+  print color("bright_cyan");
+  print("\nDone with wind plotting!\n");
+  print("```````````````````````````````\n\n\n");
+  print color("reset");
 
 } # End of the if (0) block
 
@@ -386,22 +399,23 @@ print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
 # ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ## Count the total time and write to file
-# my $after         = clock_gettime();
-# my $elapsed       = $after - $very_beginning;
-# my $round_elapsed = rint( $elapsed * 10 ) / 10;
+my $after         = clock_gettime();
+my $elapsed       = $after - $very_beginning;
+my $round_elapsed = rint( $elapsed * 10 ) / 10;
 # open( my $fhh, ">>", $logfile ) or die "Cannot open file: $!";
 # printf $fhh "ttime: $round_elapsed";
 # close $fhh;
 
 
-
-# print
-# "--------------------------------------------------------------------------------------------------\n";
-# print
-# "\tProgram Complete for CR$CR in $round_elapsed Seconds, press RETURN to exit...\n";
-# print
-# "--------------------------------------------------------------------------------------------------\n";
-# print "|\n|\n|\n|\n|\n|\n|\n|\n|\n|";
+print color("bright_green");
+print
+"--------------------------------------------------------------------------------------------------\n";
+print
+"\tProgram Complete for CR$CR in $round_elapsed Seconds, press RETURN to exit...\n";
+print
+"--------------------------------------------------------------------------------------------------\n";
+print "|\n|\n|\n|\n|\n|\n|\n|\n|\n|\n";
+print color("reset");
 
 # # system("python3 plot_scalability.py") == 0 or (die "Python script returned error $?", exit);
 # # <STDIN>;  # Wait for user input

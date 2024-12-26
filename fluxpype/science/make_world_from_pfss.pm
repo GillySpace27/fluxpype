@@ -109,6 +109,7 @@ Gilly <gilly@swri.org> (and others!)
 L<PDL>, L<PDL::Transform>, L<PDL::NiceSlice>, L<PDL::Options>, L<Flux>, L<PDL::IO::Misc>, L<File::Path>, L<Time::HiRes>, L<File::Basename>
 
 =cut
+use Term::ANSIColor;
 
 
 sub make_world_from_pfss {
@@ -130,10 +131,11 @@ sub make_world_from_pfss {
     my $open_file = "$floc_path/floc_open_cr$CR\_r$reduction\_f$n_fluxons_wanted\_$file_end.dat";
     my $closed_file = "$floc_path/floc_closed_cr$CR\_r$reduction\_f$n_fluxons_wanted\_$file_end.dat";
     my $world_out_path = $world_out_dir .'/cr'.$CR.'_f'.$n_fluxons_wanted."\_$file_end.flux";
-
+    print color("bright_cyan");
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Converting PFSS Fieldlines into FLUX Fluxons\n";
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
+    print color("reset");
 
     # Make the world
     my $need_world=0;

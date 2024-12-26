@@ -42,10 +42,10 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
+from pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
-from fluxpype.pipe_helper import configurations
+from pipe_helper import configurations
 
 
 
@@ -61,7 +61,7 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     """
     configs = configurations(debug=False, args=args)
     batch = args.batch
-    ext = configs["plot_type"]
+    ext = configs.get("plot_type", "png")
     filename = args.file or f'{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat'
     imagename = os.path.basename(filename.replace("all.dat", f"fill_{r0:02d}.{ext}"))
     imagedir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(filename))))
@@ -502,7 +502,7 @@ def run_all():
     parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
     parser.add_argument('--show',   type=int, default=0)
     parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt',  type=int, default=configs["adapt"],           help='Use ADAPT magnetograms')
+    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
     args = parser.parse_args()
 
 

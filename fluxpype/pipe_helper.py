@@ -1039,6 +1039,7 @@ import matplotlib as mpl
 
 # mpl.use('qt5agg')
 import matplotlib.pyplot as plt  # Import libraries
+from rich import print
 
 # from sunpy.net.dataretriever import GenericClient
 
@@ -1103,9 +1104,13 @@ def get_magnetogram_file(
 
     mag_dir = make_mag_dir(datdir)
 
-    print("\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    print(f"(py) Getting Magnetogram for CR{CR}, from {date}...")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n")
+    print(
+        "\n[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]"
+    )
+    print(f"[cyan](py) Getting Magnetogram for CR{CR}, from {date}...[/cyan]")
+    print(
+        "[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]\n"
+    )
 
     import pathlib
 

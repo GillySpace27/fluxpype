@@ -114,7 +114,7 @@ def run_pdl_script(rot, nflux, adapt, method):
         raise EnvironmentError("PERL5LIB environment variable is not set")
 
     try:
-        logging.info(f"Running PDL script: {run_script_path} with parameters: rot={rot}, nflux={nflux}, adapt={adapt}, method={method}")
+        logging.info(f"Running PDL script: {run_script_path} \n\t\twith parameters: rot={rot}, nflux={nflux}, adapt={adapt}, method={method}")
         subprocess.run(
             ["bash", "fluxpype/run_pdl.sh", run_script_path, str(rot), str(nflux), str(adapt), str(method)],
             check=True,

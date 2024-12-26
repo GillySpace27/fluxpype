@@ -40,11 +40,11 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
+from pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
-def_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/zephyr_2007_2013.sav"
+def_file = "fluxpype/data/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav
@@ -68,7 +68,7 @@ def load_zephyr(file = def_file):
 def sunspotplot(ax3, crlist=None):
     ### THIRD PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/fluxpype/plotting/SN_m_tot_V2.0.txt").T
+    carrington = np.loadtxt("fluxpype/plotting/SN_m_tot_V2.0.txt").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
@@ -213,7 +213,6 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
     return bmagname, maxlist
 
 
-
 import cv2
 import os
 
@@ -274,7 +273,7 @@ def run_plots(args, times=0):
             shutil.copyfile(bmagfull, os.path.join(new_dir, bmagfile))
             break
     assert tried, "Something went wrong with the multiplot_bmag_all function."
-    print(f"{args.cr} Done!\n")
+    print(f"CR{args.cr} Done!\n")
     return bmagdir
 
 
@@ -282,7 +281,7 @@ def run_plots(args, times=0):
 if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
-    from fluxpype.pipe_helper import configurations
+    from pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
@@ -293,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
     parser.add_argument('--show',   type=int, default=0)
     parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt',  type=int, default=configs["adapt"],           help='Use ADAPT magnetograms')
+    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
     args = parser.parse_args()
 
 
@@ -312,4 +311,3 @@ if __name__ == "__main__":
 
     # filename = "expansion_cr{}_f{}.avi".format(args.cr, args.nwant)
     # create_video_from_images(bmagdir, filename)
-

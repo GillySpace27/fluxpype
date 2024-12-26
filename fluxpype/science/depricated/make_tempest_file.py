@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import sys
-from fluxpype.pipe_helper import configurations
+from pipe_helper import configurations
 import pandas as pd
 # configs = configurations(debug=False)
 
@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
     parser.add_argument('--show',   type=int, default=0)
     parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt',  type=int, default=configs["adapt"],           help='Use ADAPT magnetograms')
+    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
     args = parser.parse_args()
     filename = args.file or f'{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat'
     configs = configurations(args=args)

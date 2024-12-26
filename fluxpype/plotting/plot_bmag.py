@@ -120,7 +120,7 @@ def plot_bmag(configs):
 
     imagename = os.path.basename(filename.replace(".dat", ".png"))
     imagedir =os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(filename))))
-    bdir = os.path.join(imagedir, "imgs", "bmag", "bmag")
+    bdir = os.path.join(imagedir, "imgs", "bmag")
     if not os.path.exists(bdir):
         os.makedirs(bdir)
     pngname = os.path.join(bdir, imagename)

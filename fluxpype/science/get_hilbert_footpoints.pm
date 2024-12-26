@@ -87,6 +87,7 @@ use PDL::NiceSlice;
 use PDL::IO::FITS;   # For rfits
 use PDL::IO::Misc;   # For wcols and rcols
 use pipe_helper qw(shorten_path);  # Ensure that you actually need this
+use Term::ANSIColor;
 
 sub get_hilbert_footpoints {
     my (%configs) = @_;
@@ -110,10 +111,11 @@ sub get_hilbert_footpoints {
     # print "file: $flocfile\n";
     # print "path: $flocpath\n";
 
-
+    print color("bright_cyan");
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Tracing Magnetogram to get $n_fluxons_wanted Footpoints\n";
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
+    print color("reset");
 
     my $no_floc  = 0;
     my $floc     = 0;

@@ -80,9 +80,16 @@ def get_pfss(configs=None):
     # print("\n\n\n")
 
     # Print initial message
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-    print("(py) Running PFSS Code to Trace Footpoints into the Corona")
-    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~", flush=True)
+    from rich import print
+
+    print(
+        "[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]"
+    )
+    print("[cyan](py) Running PFSS Code to Trace Footpoints into the Corona[/cyan]")
+    print(
+        "[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]",
+        flush=True,
+    )
 
     elapsed = 0
 
@@ -90,8 +97,6 @@ def get_pfss(configs=None):
     print(f"{magpath=}")
     print(f"{datdir=}")
     br_safe, fits_path = load_and_condition_fits_file(magpath, datdir, adapt)
-
-
 
     ###############################################################################
     # Do the PFSS mapping
@@ -137,8 +142,8 @@ def get_pfss(configs=None):
             flnum_open = len(np.unique(fl_open[:, 0]))+1
             flnum_closed = 2*len(np.unique(fl_closed[:, 0]))
             print("Fluxon Loc data files already exist!")
-            print(f"\t\t\t{shorten_path(open_path)}")
-            print(f"\t\t\t{shorten_path(closed_path)}")
+            # print(f"\t\t\t{shorten_path(open_path)}")
+            # print(f"\t\t\t{shorten_path(closed_path)}")
             print(f"\t\tFootpoints:\t Open: {flnum_open}, Closed: \
                     {flnum_closed}, Total: {flnum_open+flnum_closed}")
         except FileNotFoundError:
@@ -148,7 +153,6 @@ def get_pfss(configs=None):
         # Trace the lines now
         fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed  = trace_lines(
                                     pfss_output, (f_lon, f_lat, f_sgn), open_path, closed_path, adapt)
-
 
     # # Record stats in the pfss_output file
     # shp = br_safe.data.shape

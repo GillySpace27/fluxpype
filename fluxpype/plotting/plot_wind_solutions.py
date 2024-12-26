@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import os
-from fluxpype.pipe_helper import configurations
+from pipe_helper import configurations
 from scipy.interpolate import interp1d
 import re
-def_file = "fluxon-data/zephyr_2007_2013.sav"
+def_file = "fluxpype/data/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav

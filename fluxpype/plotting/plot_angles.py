@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from fluxpype.pipe_helper import configurations
+from pipe_helper import configurations
 configs = configurations()
 mpl.use('qt5Agg')
 # Specify the path to your CSV file

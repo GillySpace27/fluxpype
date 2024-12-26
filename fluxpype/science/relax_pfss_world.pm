@@ -92,6 +92,9 @@ L<pipe_helper>, L<Storable>, L<File::Path>, L<Time::HiRes>
 
 =cut
 
+use Term::ANSIColor;
+
+
 sub relax_pfss_world {
     my (
         $world_out_dir, $full_world_path,  $do_relax,
@@ -99,11 +102,13 @@ sub relax_pfss_world {
         $timefile,      $n_fluxons_wanted, $N_actual,
         $datdir,        $batch_name,       $CR
     ) = @_;
-
+    print color("bright_cyan");
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Relax the Initial World State from PFSS\n";
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "\n";
+    print color("reset");
+
     my ( $found_file_path, $stepnum ) =
       find_highest_numbered_file($world_out_dir);
     my ( $second_file_present, $file_path_relaxed ) =

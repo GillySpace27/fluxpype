@@ -340,7 +340,7 @@ sub configs_update_magdir {
     my ($config_ref) = @_;
 
     my $CR = $config_ref->{'cr'} // $config_ref->{'rotations'};
-    print "This is the CR we are using: $CR\n";
+    # print "This is the CR we are using: $CR\n";
     my $n_fluxons_wanted = $config_ref->{'fluxon_count'};
 
     # Check if critical values are present
@@ -365,11 +365,11 @@ sub configs_update_magdir {
     $config_ref->{'flocdir'}  = catfile($config_ref->{'batch_dir'},"data/cr$CR/floc/");
     $config_ref->{'flocpath'} = catfile($config_ref->{'flocdir'}, $flocfile);
 
-    print $config_ref->{'flocfile'} . "\n\n";
+    # print $config_ref->{'flocfile'} . "\n\n";
     # print $config_ref->{'magpath'}  . "\n\n";
-    print $config_ref->{'flocdir'}  . "\n\n";
+    # print $config_ref->{'flocdir'}  . "\n\n";
     # print $config_ref->{'flocpath'} . "\n\n";
-    print "The flocpath is " . $config_ref->{'flocpath'} . "\n";
+    # print "floc: $config_ref->{'flocpath'} \n";
 }
 
 =head2 find_highest_numbered_file

@@ -41,7 +41,7 @@ import numpy as np
 
 
 from fluxpype.science.pfss_funcs import pixel_to_latlon
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
+from pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
                             shorten_path, get_ax)
 
 def magnet_plot(

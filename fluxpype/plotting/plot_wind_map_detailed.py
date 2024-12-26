@@ -35,10 +35,10 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram,
+from pipe_helper import (configurations, load_fits_magnetogram,
                          load_magnetogram_params, get_fixed_coords, get_ax)
 
-from fluxpype.plotting.plot_fieldmap import magnet_plot
+from plotting.plot_fieldmap import magnet_plot
 
 
 def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, power=1):
@@ -534,8 +534,8 @@ def plot_wind_map_detailed_orig(configs):
     plt.close(fig)
     print("Success!")
 
-    print("\n\t    Done with wind plotting!\n")
-    print("\t\t\t```````````````````````````````\n\n\n")
+    # print("\n\t    Done with wind plotting!\n")
+    # print("\t\t\t```````````````````````````````\n\n\n")
 
 
 def plot_wind_map_detailed(configs):
@@ -591,7 +591,6 @@ def plot_wind_map_detailed(configs):
     n_outliers = len(vel1[vel1<all_vmin]) + len(vel1[vel1>all_vmax])
     percent_outliers = 100 * n_outliers / n_total
 
-
     # Create subplots
     fig, ax = plt.subplots(5)
 
@@ -610,7 +609,6 @@ def plot_wind_map_detailed(configs):
         do_print_top=False,
         legend=True
     )
-
 
     # Interpolated plot of wind speed [Hexagons]
     hex_n = np.max((n_open // 10, 3))
@@ -659,7 +657,6 @@ def plot_wind_map_detailed(configs):
     square_ax.scatter   (ph1b, th1b, color='w', s=3**2, alpha=1, marker='+')
     dot_ax.scatter      (ph1b, th1b, color='w', s=3**2, alpha=1, marker='+')
 
-
     # Create histogram of wind speeds
     n_bins = np.linspace(all_vmin - 200, all_vmax + 300, 48)
     mean1, std1 = hist_plot(
@@ -671,7 +668,6 @@ def plot_wind_map_detailed(configs):
         CR=CR,
         cmap=cmap
     )
-
 
     ## Plot Formatting #####
     # Set Titles
@@ -718,7 +714,6 @@ def plot_wind_map_detailed(configs):
         hspace=0.340,
         wspace=0)
 
-
     # Set the output file names
     method = configs.get("flow_method")
     filename = f"png_cr{CR}_f{nwant}_op{n_open}_radial_wind_{method}.png"
@@ -731,7 +726,6 @@ def plot_wind_map_detailed(configs):
     if not os.path.exists(os.path.dirname(outer_file)):
         os.makedirs(os.path.dirname(outer_file))
 
-
     # Save the Figures
     print("\n\t\tSaving figures to disk...", end="")
     main_pdf = main_file.replace(".png", ".pdf")
@@ -742,8 +736,7 @@ def plot_wind_map_detailed(configs):
     plt.close(fig)
     print("Success!")
 
-    print("\nDone with wind plotting!\n")
-    print("```````````````````````````````\n\n\n")
+
 
 
 ########################################################################
@@ -762,7 +755,7 @@ if __name__ == "__main__":
     parser.add_argument('--dat_dir',type=str, default=configs['data_dir'], help='data directory')
     parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='number of fluxons')
     parser.add_argument('--batch',  type=str, default=configs["batch_name"], help='select the batch name')
-    parser.add_argument('--adapt',  type=int, default=configs["adapt"], help='Use ADAPT magnetograms')
+    parser.add_argument('--adapt',  type=int, default=0, help='Use ADAPT magnetograms')
     args = parser.parse_args()
     configs = configurations(args=args)
 
