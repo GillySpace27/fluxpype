@@ -32,6 +32,8 @@ import timeout_decorator
 import os
 from rich import print
 from rich.panel import Panel
+from rich.console import Console
+console = Console()
 import logging
 
 # Setting up logging
@@ -128,15 +130,23 @@ def run():
     global timeout_num
     validate_configurations(configs)
 
-    with tqdm(total=int(configs["n_jobs"]), unit="runs") as pbar:
+    with tqdm(
+        total=int(configs["n_jobs"]),
+        unit="runs",
+        colour="yellow"
+    ) as pbar:
         for adapt in configs["adapts"]:
             for rot in configs["rotations"]:
                 for nflux in configs["fluxon_count"]:
                     for method in configs["flow_method"]:
                         pbar.set_description(
-                            f"Job:: Rotation {rot}, n_fluxon {nflux}, flow_method {method}"
+                            f"Job:: Rotation {rot}, " +
+                            f"n_fluxon {nflux}, flow_method {method}"
                         )
+                        pbar.refresh()
+                        # 1/0
                         try:
+
                             run_pdl_script(rot, nflux, adapt, method)
                         except timeout_decorator.TimeoutError:
                             timeout_num += 1

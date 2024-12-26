@@ -20,6 +20,7 @@ use lib ".";
 use lib "..";
 # use lib "fluxpype/fluxpype/helpers/";
 # use lib "fluxpype/fluxpype/science/";
+use Term::ANSIColor;
 
 my @required_modules = qw(
     Flux
@@ -199,10 +200,11 @@ sub get_wind {
         or $recompute) {
         $do_wind_calc = 1;
     }
-
+    print color("bright_cyan");
     print "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Calculating Coronal Plasma Parameters for CR$CR\n";
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
+    print color("reset");
 
     # Perform the calculation if necessary
     if ($do_wind_calc ) {
@@ -234,7 +236,7 @@ sub get_wind {
         # Calculate the radial expansion factor
         print "\n\tRadial Expansion Factor (Fr) Calculation...";
         map_fluxon_fr( $out_fr, \@fluxons );
-        print "Done! Saved to $out_fr\n";
+        print "Done! Saved to \n\t$out_fr\n";
 
         # Calculate the radial wind speed
 

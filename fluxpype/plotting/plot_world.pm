@@ -17,6 +17,7 @@ use lib "fluxpype";
 use pipe_helper            qw(shorten_path);
 use PDL::Graphics::Gnuplot qw(gpwin);
 use PDL::AutoLoader;
+use Term::ANSIColor;
 
 =head1 SYNOPSIS
     asdf
@@ -173,11 +174,12 @@ sub plot_worlds {
     }
 
     # print "\n \n**Plotting the Worlds...";
-
+    print color("bright_cyan");
     print "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print "(pdl) Plotting the Initial and Relaxed Worlds\n";
     print
       "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n \n";
+    print color("reset");
 
     ## Plot to Png
     $stepnum = $stepnum || 0;
@@ -200,7 +202,7 @@ sub plot_worlds {
         my $new_filename_relaxed2 =
           $directories . $filename . "_relaxed\_s$stepnum-wide.png";
 
-        my $top_path = $datdir . "/batches/$batch_name/imgs/relaxed/";
+        my $top_path = $datdir . "/batches/$batch_name/imgs/world/";
         if ( !-d $top_path ) {
             mkpath($top_path)
               or die "Failed to create directory: $top_path $!\n";
@@ -235,7 +237,7 @@ sub plot_worlds {
         }
 
 
-        print "\t\tRendering $short_new_filename_relaxed!!!\n";
+        print "\t\tRendering $short_new_filename_relaxed\n";
         my $window4 = gpwin(
             'pngcairo',
             size   => [ 9, 9 ],
