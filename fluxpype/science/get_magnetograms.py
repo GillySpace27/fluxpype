@@ -28,7 +28,23 @@ Gilly <gilly@swri.org> (and others!)
 
 
 import argparse
-from pipe_helper import (configurations, get_magnetogram_file, get_ADAPT_file)
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from importlib import import_module
+# pipe_helper = import_module("pipe_helper")
+# from . import pipe_helper
+# import fluxpype
+# pipe_helper = fluxpype.pipe_helper
+from pipe_helper import configurations, get_magnetogram_file, get_ADAPT_file
+
+
+# configurations = pipe_helper.configurations
+# get_magnetogram_file = pipe_helper.get_magnetogram_file
+# get_ADAPT_file = pipe_helper.get_ADAPT_file
+
+# from pipe_helper import (configurations, get_magnetogram_file, get_ADAPT_file)
 configs = configurations()
 # Create the argument parser
 parser = argparse.ArgumentParser(description='This script downloads a magnetogram for a particular Carrington Rotation')
@@ -45,5 +61,3 @@ if args.adapt:
     big_path, processed_path = get_ADAPT_file(cr=args.cr, datdir=args.datdir, force_download=args.do_download, reduce=args.reduce)
 else:
     big_path, small_path = get_magnetogram_file(cr=args.cr, datdir=args.datdir, force_download=args.do_download, reduce=args.reduce, args=args)
-
-

@@ -103,10 +103,6 @@ import configparser
 import os
 
 
-import configparser
-import os
-
-
 def configurations(
     config_name=None, config_filename="config.ini", args=None, debug=False
 ):

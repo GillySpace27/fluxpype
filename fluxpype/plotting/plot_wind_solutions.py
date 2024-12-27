@@ -5,6 +5,7 @@ import glob
 import os
 from pipe_helper import configurations
 from scipy.interpolate import interp1d
+from rich import print
 import re
 def_file = "fluxpype/zephyr_2007_2013.sav"
 
@@ -162,7 +163,7 @@ def plot_full_velocity_profiles(directory=None):
                 os.makedirs(os.path.dirname(outfile))
 
             plt.savefig(outfile)
-            print(f"Saved plot to {outfile}")
+            print(f"\n[yellow]Saved plot to\n[/yellow] {outfile}\n")
             plt.close(fig)
 
 if __name__ == "__main__":

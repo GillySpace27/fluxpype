@@ -189,4 +189,6 @@ perl_lib/
 
 fluxpype/fluxpype/data/
 
-fluxpype/data/batches/Newtest/pipe_log.txt
+# fluxpype/data/batches/Newtest/pipe_log.txt
+fluxpype/data/batches/*
+.venv2/*

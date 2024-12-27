@@ -1,2 +1,2 @@
-recursive-include fluxpype
+include fluxpype
 exclude *data*

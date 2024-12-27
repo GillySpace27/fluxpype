@@ -11,3 +11,5 @@ timeout_decorator
 opencv-python
 pexpect
 rich
+pfsspy
+PyQt5

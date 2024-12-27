@@ -385,7 +385,7 @@ def run_tempest():
     if not os.path.exists(tempest_file):
         print(f"Tempest file does not exist. Creating one at {tempest_file}")
         write_interpolated_file(filename, tempest_file)
-        main(tempest_file)
+        # main(tempest_file)
         reinterpolate_velocity(tempest_file, filename)
     else:
         print(f"Tempest file exists at {tempest_file}")

@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-from fluxpype.science.pfss_funcs import pixel_to_latlon
+from science.pfss_funcs import pixel_to_latlon
 from pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
                             shorten_path, get_ax)
 
@@ -76,7 +76,7 @@ def magnet_plot(
         get_cr = get_cr or configs.get("cr", None)
         nwant = nwant   or configs.get("nwant", None)
         reduce_amt = reduce_amt or configs.get("mag_reduce", None)
-        if configs['adapt']:
+        if configs.get('adapt', False):
             inst = "adapt"
             reduce_amt = "f" + str(configs.get("adapt_select"))
         else:
