@@ -203,16 +203,16 @@ sub map_fluxon_flow_parallel_master {
     # If requested, run a precomputation step
     if ($flow_method eq "tempest") {
         # Make the tempest file
-        my $fmap_command = "$configs{python_dir} fluxpype/fluxpype/science/tempest.py --cr $CR --nwant $n_want";
+        my $fmap_command = "python3 fluxpype/science/tempest.py --cr $CR --nwant $n_want";
         system($fmap_command) == 0 or die "Python script returned error $?";
     }
     elsif ($flow_method eq "cranmer") {
-        my $fmap_command = "$configs{python_dir} fluxpype/fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
+        my $fmap_command = "python3 fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
         system($fmap_command) == 0 or die "Python script returned error $?";
     }
     elsif ($flow_method eq "wsa") {
         # run the python file footpoint_distances.py
-        system("$configs{python_dir} fluxpype/fluxpype/science/footpoint_distances_2.py --cr $CR") == 0
+        system("python3 fluxpype/science/footpoint_distances_2.py --cr $CR") == 0
             or die "footpoint_distances_2.py returned error $?";
 
         my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/distances.csv";
