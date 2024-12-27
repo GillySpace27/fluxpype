@@ -391,6 +391,9 @@ system(
   print("```````````````````````````````\n\n\n");
   print color("reset");
 
+  print color("blue");
+  print ("Output directory:\n\n $datdir/batches/$batch_name/ \n\n");
+  print color ("reset");
 } # End of the if (0) block
 
 
