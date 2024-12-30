@@ -18,34 +18,31 @@ Open a terminal, navigate to your desired repo library directory, then type the 
 > pip install .
 
 Once the package has been locally installed, test it out by typing this:
-> flux_config_view
 
-to see the details of the job configuration,
-> flux_config_edit
-
-to make changes, and
->flux_config_run
-
-to initiate the simulation.
+> python3 fluxpype \
+or \
+> flux_config_run
 
 ## Configuration
-
 Editing the configuration file by running the flux_config_edit command is one of the primary ways to interface with the code. The file can also be edited directly. The second line of the config file selects which profile that fluxpype will use. Any settings not redefined in that profile will use the default settings from the first block ("DEFAULT").
 
+To see the details of the current job configuration:
+> flux_config_view
+
+To edit the details of the configuration, modify config.ini. You can find that by typing:
+> flux_config_edit
+
 ## Running
-The pipe can be invoked in three ways.
+The pipe can be invoked in four ways.
 
-from the terminal as:
->flux_config_run
+> \% flux_config_run
 
-From the root as:
->python3 fluxpype/config_runner.py
+> \% python3 fluxpype/config_runner.py
 
-From within python as:
->python3
+> \% python3 fluxpype
 
->\>\>\> from fluxpype.config_runner import run
-
+> \% python3 \
+>\>\>\> from fluxpype.config_runner import run \
 >\>\>\> run()
 
 
