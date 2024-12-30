@@ -7,13 +7,16 @@ name = "fluxpype"
 version = "0.1.5"
 description = "A wrapper and installer for the FLUX model"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.8.1"
 license = { file = "LICENSE" }
 
 classifiers = [
-    "Programming Language :: Python :: 3.8",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11"
 ]
 
 dependencies = [
@@ -27,26 +30,65 @@ dependencies = [
     "zeep",
     "drms",
     "timeout_decorator",
-    "rich",
+    "rich"
 ]
 
 [project.optional-dependencies]
-FLUXcore = []
+spark = ["pyspark>=3.0.0"]
+test = [
+    "bandit[toml]==1.7.10",
+    "black==24.8.0",
+    "check-manifest==0.50",
+    "flake8-bugbear==24.10.31",
+    "flake8-docstrings",
+    "flake8-formatter_junit_xml",
+    "flake8",
+    "flake8-pyproject",
+    "pre-commit==4.0.1",
+    "pylint==3.2.7",
+    "pylint_junit",
+    "pytest-cov==6.0.0",
+    "pytest-mock<3.14.1",
+    "pytest-runner",
+    "pytest==8.3.3",
+    "pytest-github-actions-annotate-failures",
+    "shellcheck-py==0.10.0.1"
+]
 
 [project.urls]
-homepage = "https://github.com/gillyspace27/fluxpype"
-base-project = "https://github.com/lowderchris/fluxon-mhd"
+Documentation = "https://github.com/gillyspace27/fluxpype#readme"
+Source = "https://github.com/gillyspace27/fluxpype"
+Tracker = "https://github.com/gillyspace27/fluxpype/issues"
+Homepage = "https://github.com/gillyspace27/fluxpype"
 
-[tool.setuptools.packages]
-find = { where = ["fluxpype"] }
+[tool.bandit]
+exclude_dirs = ["build", "dist", "tests", "scripts"]
+number = 4
+recursive = true
+targets = "src"
 
-[tool.setuptools.package-data]
-"fluxpype" = ["bootstrap_pdl.pl", "science/*", "plotting/*"]
+[tool.black]
+line-length = 120
+fast = true
 
-[tool.setuptools]
-include-package-data = true
+[tool.coverage.run]
+branch = true
 
-[project.entry-points."console_scripts"]
-flux_config_run = "fluxpype.config_runner:run"
-flux_config_view = "fluxpype.config_runner:view"
-flux_config_edit = "fluxpype.config_runner:open_file"
+[tool.coverage.report]
+fail_under = 100
+
+[tool.flake8]
+max-line-length = 120
+select = ["F", "E", "W", "B", "B901", "B902", "B903"]
+exclude = [".eggs", ".git", ".tox", "build", "dist", "tests", "swagger_client"]
+ignore = ["E722", "B001", "W503", "E203"]
+
+[tool.pytest.ini_options]
+addopts = "--cov-report xml:coverage.xml --cov src --cov-fail-under 0 --cov-append -m 'not integration'"
+testpaths = "tests"
+markers = [
+    "integration: marks as integration test",
+    "spark: marks tests which need Spark",
+    "slow: marks tests as slow",
+    "unit: fast offline tests"
+]
