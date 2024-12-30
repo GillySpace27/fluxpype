@@ -7,6 +7,8 @@ name = "fluxpype"
 version = "0.1.5"
 description = "A wrapper and installer for the FLUX model"
 readme = "README.md"
+author = "Gilly"
+author-email = "gilly@swri.org"
 requires-python = ">=3.8.1"
 license = { file = "LICENSE" }
 
@@ -59,9 +61,9 @@ test = [
 Documentation = "https://github.com/gillyspace27/fluxpype#readme"
 Source = "https://github.com/gillyspace27/fluxpype"
 Tracker = "https://github.com/gillyspace27/fluxpype/issues"
-Homepage = "https://github.com/gillyspace27/fluxpype"
+Home-page = "https://github.com/gillyspace27/fluxpype"
 
-[project.entry-points."consile_scripts"]
+[project.entry-points."console_scripts"]
 flux_config_run = "fluxpype.config_runner:run"
 flux_config_view = "fluxpype.config_runner:view"
 flux_config_edit = "fluxpype.config_runner:open_file"

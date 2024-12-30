@@ -33,15 +33,6 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Import configurations
-from pipe_helper import configurations
-
-# pipe_helper = import_module("pipe_helper")
-configs = configurations(debug=False)
-
-# Global counter for timeouts
-timeout_count = 0
-
 
 def validate_configurations(configurations):
     """
@@ -70,7 +61,7 @@ def validate_configurations(configurations):
         raise KeyError(f"Missing configuration parameters: {', '.join(missing_keys)}")
 
 
-def display_splash_screen():
+def display_splash_screen(configs):
     """
     Displays a splash screen with configuration details using Rich.
     """
@@ -122,6 +113,10 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
     subprocess.CalledProcessError
         If the script execution fails.
     """
+    # Import configurations
+    from pipe_helper import configurations
+    configs = configurations(debug=False)
+
     run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
 
     if not os.path.isfile(run_script_path):
@@ -150,7 +145,11 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         raise
 
 def view():
-    display_splash_screen()
+    # Import configurations
+    from pipe_helper import configurations
+    configs = configurations(debug=False)
+
+    display_splash_screen(configs)
 
 # def open():
 
@@ -199,8 +198,16 @@ def run():
     """
     Executes the PDL script for all combinations of configurations.
     """
+    # Import configurations
+    from pipe_helper import configurations
+
+    # pipe_helper = import_module("pipe_helper")
+    configs = configurations(debug=False)
+
+    # Global counter for timeouts
     global timeout_count
-    display_splash_screen()
+    timeout_count = 0
+    display_splash_screen(configs)
     validate_configurations(configs)
 
     total_jobs = (
