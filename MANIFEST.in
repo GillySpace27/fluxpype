@@ -1,0 +1,2 @@
+include fluxpype
+exclude *data*

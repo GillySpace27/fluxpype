@@ -1,0 +1,1 @@
+n_want: 1000, n_actual: 1026, n_out: 0, Success: 1, steps: 800, stiff: 1.57, n_want: 1000, n_actual: 983, n_out: 0, Success: 1, steps: 800, stiff: 1.32, n_want: 1000, n_actual: 982, n_out: 0, Success: 1, steps: 800, stiff: 1.35, 
