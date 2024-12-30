@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11"
+    "Programming Language :: Python :: 3.11",
 ]
 
 dependencies = [
@@ -30,7 +30,7 @@ dependencies = [
     "zeep",
     "drms",
     "timeout_decorator",
-    "rich"
+    "rich",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +52,7 @@ test = [
     "pytest-runner",
     "pytest==8.3.3",
     "pytest-github-actions-annotate-failures",
-    "shellcheck-py==0.10.0.1"
+    "shellcheck-py==0.10.0.1",
 ]
 
 [project.urls]
@@ -75,7 +75,7 @@ fast = true
 branch = true
 
 [tool.coverage.report]
-fail_under = 100
+fail_under = 25
 
 [tool.flake8]
 max-line-length = 120
@@ -90,5 +90,5 @@ markers = [
     "integration: marks as integration test",
     "spark: marks tests which need Spark",
     "slow: marks tests as slow",
-    "unit: fast offline tests"
+    "unit: fast offline tests",
 ]

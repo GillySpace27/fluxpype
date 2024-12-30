@@ -44,11 +44,26 @@ from pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
-def_file = "fluxpype/zephyr_2007_2013.sav"
+def_files = ["zephyr_2007_2013.sav"]
+def_files.append("fluxpype/zephyr_2007_2013.sav")
+def_files.append("fluxpype/fluxpype/zephyr_2007_2013.sav")
 
-def load_zephyr(file = def_file):
-    from scipy.io import readsav
-    data = readsav(file)
+from scipy.io import readsav
+
+def_files = ["zephyr_2007_2013.sav", "fluxpype/zephyr_2007_2013.sav", "fluxpype/fluxpype/zephyr_2007_2013.sav"]
+
+
+def load_zephyr():
+    for file in def_files:
+        try:
+            data = readsav(file)
+            print(f"Successfully loaded file: {file}")
+            return data
+        except FileNotFoundError:
+            print(f"File not found: {file}")
+    raise FileNotFoundError("None of the specified files could be found.")
+
+    # return data
     # nz ()
     # nmods ()
     # model_year (319,)
@@ -61,8 +76,6 @@ def load_zephyr(file = def_file):
     # t (319, 1300)
     # br (319, 1300)
     # [print(k, data[k].shape) for k in data.keys()]
-
-    return data
 
 
 def sunspotplot(ax3, crlist=None):
