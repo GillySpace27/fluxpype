@@ -23,6 +23,12 @@ Once the package has been locally installed, test it out by typing this:
 or \
 > flux_config_run
 
+A simple test you can run is to type
+
+> perl -e "use Flux"
+
+If this throws an exception, your FLUX code isn't correctly compiled and linked. Please [see the repo for the FLUX project](https://github.com/lowderchris/fluxon-mhd) for installation instructions.
+
 ## Configuration
 Editing the configuration file by running the flux_config_edit command is one of the primary ways to interface with the code. The file can also be edited directly. The second line of the config file selects which profile that fluxpype will use. Any settings not redefined in that profile will use the default settings from the first block ("DEFAULT").
 
