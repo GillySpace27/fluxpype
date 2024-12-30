@@ -146,7 +146,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
 
 def view():
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
 
     display_splash_screen(configs)
@@ -199,7 +199,7 @@ def run():
     Executes the PDL script for all combinations of configurations.
     """
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
 
     # pipe_helper = import_module("pipe_helper")
     configs = configurations(debug=False)

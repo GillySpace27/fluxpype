@@ -35,8 +35,8 @@ os, argparse, numpy, pfss_funcs, pipe_helper
 import os
 import argparse
 import numpy as np
-from science.pfss_funcs import trace_lines, load_pfss, compute_pfss, load_and_condition_fits_file, get_fluxon_locations
-from pipe_helper import shorten_path, configurations
+from fluxpype.science.pfss_funcs import trace_lines, load_pfss, compute_pfss, load_and_condition_fits_file, get_fluxon_locations
+from fluxpype.pipe_helper import shorten_path, configurations
 import astropy.constants as const
 import astropy.units as u
 import matplotlib.colors as mcolor
@@ -62,7 +62,7 @@ def get_pfss(configs=None):
 
     configs = configs or configurations()
 
-    from pipe_helper import update_magdir_paths
+    from fluxpype.pipe_helper import update_magdir_paths
     update_magdir_paths(configs)
 
     # Extract arguments or use defaults from configs
@@ -100,7 +100,7 @@ def get_pfss(configs=None):
 
     ###############################################################################
     # Do the PFSS mapping
-    from science.pfss_funcs import load_pfss, compute_pfss
+    from fluxpype.science.pfss_funcs import load_pfss, compute_pfss
 
     # Get the fluxon locations
     if configs.get("adapt"):

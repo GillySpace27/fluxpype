@@ -35,10 +35,15 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from pipe_helper import (configurations, load_fits_magnetogram,
-                         load_magnetogram_params, get_fixed_coords, get_ax)
+from fluxpype.pipe_helper import (
+    configurations,
+    load_fits_magnetogram,
+    load_magnetogram_params,
+    get_fixed_coords,
+    get_ax,
+)
 
-from plotting.plot_fieldmap import magnet_plot
+from fluxpype.plotting.plot_fieldmap import magnet_plot
 
 
 def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, power=1):
@@ -735,8 +740,6 @@ def plot_wind_map_detailed(configs):
     plt.savefig(outer_file, dpi=200)
     plt.close(fig)
     print("Success!")
-
-
 
 
 ########################################################################
