@@ -61,6 +61,11 @@ Source = "https://github.com/gillyspace27/fluxpype"
 Tracker = "https://github.com/gillyspace27/fluxpype/issues"
 Homepage = "https://github.com/gillyspace27/fluxpype"
 
+[project.entry-points."consile_scripts"]
+flux_config_run = "fluxpype.config_runner:run"
+flux_config_view = "fluxpype.config_runner:view"
+flux_config_edit = "fluxpype.config_runner:open_file"
+
 [tool.bandit]
 exclude_dirs = ["build", "dist", "tests", "scripts"]
 number = 4

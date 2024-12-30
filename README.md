@@ -9,6 +9,8 @@ Open a terminal, navigate to your desired repo library directory, then type the 
 
 > git clone [https://github.com/GillySpace27/fluxpype.git](https://github.com/GillySpace27/fluxpype.git)
 
+> cd fluxpype
+
 > python3 -m venv .venv
 
 > source .venv/bin/activate
