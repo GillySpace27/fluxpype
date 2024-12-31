@@ -36,7 +36,8 @@ FLUXcore = ["pexpect", "PyQt5"]
 flux-install = "fluxpype.installers.unified_installer:main"
 flux-config-run = "fluxpype.config_runner:run"
 flux-config-view = "fluxpype.config_runner:view"
-flux-config-edit = "fluxpype.config_runner:open_file"
+flux-config-edit = "fluxpype.config_runner:open_config"
+flux-config-gallery = "fluxpype.config_runner:gallery"
 
 [tool.pytest.ini_options]
 addopts = "--cov-report xml:coverage.xml --cov src --cov-fail-under 0 --cov-append -m 'not integration'"
