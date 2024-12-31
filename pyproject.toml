@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "fluxpype"
-version = "0.1.6"
+version = "0.1.8"
 description = "A Python wrapper and installer for the FLUX modeling framework"
 authors = ["Gilly <gilly@swri.org>"]
 license = "MIT"
@@ -17,7 +17,8 @@ keywords = ["FLUX", "modeling", "data analysis"]
 [tool.poetry.dependencies]
 python = "^3.8"
 matplotlib = "^3.4"
-sunpy = "^3.1"
+numpy = "<2.0"
+sunpy = "^4.0"
 pandas = "^1.3"
 tqdm = "^4.62"
 astropy = "<7.0"           # Fixing dependency issue
@@ -32,7 +33,7 @@ rich = "^10.13"
 FLUXcore = ["pexpect", "PyQt5"]
 
 [tool.poetry.scripts]
-flux-installer = "fluxpype.installers.flux_installer:main"
+flux-installer = "fluxpype.installers.flux_installer:install"
 flux-config-run = "fluxpype.config_runner:run"
 flux-config-view = "fluxpype.config_runner:view"
 flux-config-edit = "fluxpype.config_runner:open_file"

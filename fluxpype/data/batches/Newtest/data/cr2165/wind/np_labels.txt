@@ -1,2 +1,0 @@
-ph0, th0, fr0, vel0, ph1, th1, fr1, vel1, polarity
-<- Solar Surface ->  <-Outer Boundary ->

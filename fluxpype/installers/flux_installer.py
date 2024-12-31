@@ -39,6 +39,9 @@ def install_flux():
         print(f"FLUX installation failed: {e}")
 
 
+def install():
+    return post_build_check()
+
 def post_build_check():
     """Run after fluxpype is built to check for FLUX."""
     # Check if FLUXcore was explicitly requested
@@ -68,4 +71,4 @@ def prompt_user():
 
 
 if __name__ == "__main__":
-    post_build_check()
+    install()
