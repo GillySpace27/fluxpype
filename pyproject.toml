@@ -33,7 +33,7 @@ rich = "^10.13"
 FLUXcore = ["pexpect", "PyQt5"]
 
 [tool.poetry.scripts]
-flux-installer = "fluxpype.installers.flux_installer:install"
+flux-install = "fluxpype.installers.unified_installer:main"
 flux-config-run = "fluxpype.config_runner:run"
 flux-config-view = "fluxpype.config_runner:view"
 flux-config-edit = "fluxpype.config_runner:open_file"

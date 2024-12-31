@@ -66,7 +66,7 @@ def setup_perl():
     zprofile_path = os.path.expanduser("~/.zprofile")
     with open(zprofile_path, "a") as zprofile:
         zprofile.write(f"\n# Perl environment setup\n")
-        zprofile.write(f"export PERL5LIB={perl_lib_dir}/lib/perl5\n")
+        zprofile.write(f"export PERL5LIB={perl_lib_dir}/lib/perl5:$PERL5LIB\n")
     log("Perl setup complete.")
 
 
