@@ -4,6 +4,13 @@ import subprocess
 from pathlib import Path
 
 
+def is_flux_installed():
+    """Check if FLUX is installed."""
+    flux_path = Path(os.environ.get("FL_PREFIX", Path.home() / "Library" / "flux"))
+    flux_files = ["lib/libflux.a", "bin/flux"]
+    return all((flux_path / file).exists() for file in flux_files)
+
+
 def check_dependencies():
     """Check for required system tools."""
     tools = ["perl", "cpanm", "make", "gcc"]
@@ -12,12 +19,6 @@ def check_dependencies():
         print(f"The following dependencies are missing: {', '.join(missing)}")
         return False
     return True
-
-
-def prompt_user():
-    """Prompt user for installation options."""
-    response = input("FLUX is not installed. Would you like to install it now? (yes/no): ").lower()
-    return response in ["yes", "y", ""]
 
 
 def install_flux():
@@ -38,17 +39,33 @@ def install_flux():
         print(f"FLUX installation failed: {e}")
 
 
-def main():
-    """Main function to manage FLUX installation."""
-    if not check_dependencies():
-        print("Please install missing dependencies and try again.")
+def post_build_check():
+    """Run after fluxpype is built to check for FLUX."""
+    # Check if FLUXcore was explicitly requested
+    if "FLUXcore" in os.environ.get("PIP_OPTIONAL_ARGS", ""):
+        print("FLUXcore extra detected. Proceeding with FLUX installation...")
+        if check_dependencies():
+            install_flux()
+        else:
+            print("Please install missing dependencies manually before proceeding.")
         return
 
-    if prompt_user():
-        install_flux()
+    # Default behavior for normal installation
+    if is_flux_installed():
+        print("FLUX is already installed. You're ready to go!")
     else:
-        print("Skipping FLUX installation.")
+        print("FLUX installation not detected.")
+        if check_dependencies() and prompt_user():
+            install_flux()
+        else:
+            print("Please install FLUX manually or rerun the installer.")
+
+
+def prompt_user():
+    """Prompt user for installation options."""
+    response = input("Flux isn't installed yet. Shall we proceed to install it? (yes/no): ").lower()
+    return response in ["yes", "y", ""]
 
 
 if __name__ == "__main__":
-    main()
+    post_build_check()

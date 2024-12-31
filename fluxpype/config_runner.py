@@ -114,7 +114,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         If the script execution fails.
     """
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
 
     run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
