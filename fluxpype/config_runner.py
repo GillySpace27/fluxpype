@@ -127,7 +127,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         logging.warning("PERL5LIB environment variable is not set. Execution may fail.")
 
     command = [
-        "zsh",
+        "bash",
         "fluxpype/run_pdl.sh",
         run_script_path,
         str(rotation),
