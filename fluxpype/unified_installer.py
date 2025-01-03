@@ -5,18 +5,20 @@ import shutil
 import logging
 import re
 from pathlib import Path
-from rich.console import Console
-from rich.logging import RichHandler
+
+# import rich
+# from rich.console import Console
+# from rich.logging import RichHandler
 
 # Initialize Rich console
-console = Console()
+# console = Console()
 
 # Set up Rich logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
     datefmt="[%X]",
-    handlers=[RichHandler(console=console, rich_tracebacks=True)],
+    # handlers=[RichHandler(console=console, rich_tracebacks=True)],
 )
 logger = logging.getLogger("rich")
 

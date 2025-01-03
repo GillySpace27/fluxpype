@@ -28,6 +28,9 @@ zeep = "^4.1"
 drms = "^0.6"
 timeout-decorator = "^0.5"
 rich = "^10.13"
+pfsspy = "^1.2.0"
+PyQt5 = "^5.15.11"
+opencv_python = "^4.10.0.84"
 
 [tool.poetry.extras]
 FLUXcore = ["pexpect", "PyQt5"]

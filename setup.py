@@ -1,8 +1,8 @@
+import os
 import subprocess
+import sys
 from setuptools import setup, find_packages
 from setuptools.command.install import install
-import sys
-import os
 
 
 class CustomInstallCommand(install):
@@ -12,17 +12,17 @@ class CustomInstallCommand(install):
         # Run standard installation
         install.run(self)
 
-        # Run the unified installer script in a subprocess
-        installer_path = os.path.join(os.path.dirname(__file__), "fluxpype", "unified_installer.py")
-        if os.path.exists(installer_path):
-            try:
+        # Run the unified installer script after dependencies are installed
+        try:
+            installer_path = os.path.join(os.path.dirname(__file__), "fluxpype", "unified_installer.py")
+            if os.path.exists(installer_path):
                 print("Running unified installer...")
                 subprocess.run([sys.executable, installer_path], check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"FLUX installation failed: {e}")
-                raise RuntimeError("Failed to complete FLUX installation.")
-        else:
-            print("Unified installer script not found. Skipping FLUX installation.")
+            else:
+                print("Unified installer script not found. Skipping FLUX installation.")
+        except subprocess.CalledProcessError as e:
+            print(f"FLUX installation failed: {e}")
+            raise RuntimeError("Failed to complete FLUX installation.")
 
 
 setup(
@@ -44,6 +44,16 @@ setup(
         "drms",
         "timeout-decorator",
         "rich",
+        "opencv-python"
     ],
+    entry_points={
+        "console_scripts": [
+            "flux-install = fluxpype.unified_installer:main",
+            "flux-config-run = fluxpype.config_runner:run",
+            "flux-config-view = fluxpype.config_runner:view",
+            "flux-config-edit = fluxpype.config_runner:open_config",
+            "flux-config-gallery = fluxpype.config_runner:gallery",
+        ]
+    },
     cmdclass={"install": CustomInstallCommand},
 )
