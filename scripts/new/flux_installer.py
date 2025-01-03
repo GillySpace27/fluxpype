@@ -13,7 +13,7 @@ def is_flux_installed():
 
 def check_dependencies():
     """Check for required system tools."""
-    tools = ["perl", "cpanm", "make", "gcc"]
+    tools = ["perl", "cpanm", "make", "gcc", ""]
     missing = [tool for tool in tools if not shutil.which(tool)]
     if missing:
         print(f"The following dependencies are missing: {', '.join(missing)}")
