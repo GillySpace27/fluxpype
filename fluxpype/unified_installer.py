@@ -64,7 +64,7 @@ def install_homebrew():
     if not check_command("brew"):
         log("Homebrew not found. Installing...")
         subprocess.run(
-            ["/bin/bash", "-c", "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"],
+            ["/bin/zsh", "-c", "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"],
             check=True,
         )
         log("Homebrew installed successfully.")
