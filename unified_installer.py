@@ -246,7 +246,7 @@ def main():
         install_dependencies()
         setup_perl()
         clone_and_build_flux()
-        log("Installation completed successfully!")
+        log("\n\nInstallation completed successfully!\n\n")
         sys.exit(0)
     except Exception as e:
         log_error(f"Error during installation: {e}")
