@@ -218,7 +218,7 @@ def setup_python_virtualenv():
     Sets up a Python virtual environment.
     """
     log("Setting up Python virtual environment...")
-    venv_dir = Path.cwd() / ".venv"
+    venv_dir = ".venv"
     if not venv_dir.exists():
         run_command(["python3", "-m", "venv", str(venv_dir)])
     activate_script = venv_dir / "bin" / "activate"
