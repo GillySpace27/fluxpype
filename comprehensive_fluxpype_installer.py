@@ -158,8 +158,9 @@ def install_perl_modules(pl_prefix):
     log("Installing Perl modules...")
     modules = [
         "Test::Builder",
-        "File::ShareDir",
         "File::ShareDir::Install",
+        "File::ShareDir",
+        "File::HomeDir",
         "PDL::Graphics::Gnuplot",
         "Math::RungeKutta",
         "Moo::Role",
@@ -168,7 +169,6 @@ def install_perl_modules(pl_prefix):
         "Math::Interpolate",
         "Math::GSL",
         "Config::IniFiles",
-        "File::HomeDir",
         "Inline::C",
         "Parallel::ForkManager",
         "Inline",
@@ -176,7 +176,13 @@ def install_perl_modules(pl_prefix):
         "Capture::Tiny",
         "Devel::CheckLib",
     ]
-    run_command(["cpanm", "-L", str(pl_prefix)] + modules, check=False)
+    try:
+        run_command(["cpanm", "-L", str(pl_prefix)] + modules, check=True)
+    except Exception as e:
+        log("Reverting to Individual Perl Dependency Installation", level="")
+        for module in modules:
+            run_command(["cpanm", "-L", str(pl_prefix), module], check=False)
+
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
     run_command(eval_command, shell=True)
