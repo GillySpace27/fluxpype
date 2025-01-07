@@ -45,15 +45,17 @@ def install_homebrew_dependencies():
     packages = ["gnuplot", "fftw", "qt"]
     run_command(["brew", "install"] + packages)
 
+
 def install_perlbrew(perl_version="perl-5.32.0"):
     if not shutil.which("perlbrew"):
-        log("Installing Perlbrew...")
-        run_command(["curl", "-L", "https://install.perlbrew.pl", "|", "bash"], shell=True)
-        run_command(["perlbrew", "init"])
+        log("Perlbrew not found. Installing...")
+        perlbrew_install_command = "curl -L https://install.perlbrew.pl | bash"
+        os.system(perlbrew_install_command)
+        run_command(["perlbrew", "init"])  # Initialize Perlbrew
         perlbrew_bashrc = Path.home() / "perl5" / "perlbrew" / "etc" / "bashrc"
         if perlbrew_bashrc.exists():
             log("Sourcing Perlbrew environment...")
-            run_command(["source", str(perlbrew_bashrc)], shell=True)
+            os.system(f"source {perlbrew_bashrc}")
         else:
             log("Perlbrew initialization script not found.", level="ERROR")
             sys.exit(1)
@@ -61,12 +63,9 @@ def install_perlbrew(perl_version="perl-5.32.0"):
         log("Perlbrew already installed.")
 
     log(f"Installing Perl version {perl_version}...")
-    try:
-        run_command(["perlbrew", "install", perl_version])
-    except Exception as e:
-        print("", e)
+    os.system(f"perlbrew install {perl_version}")
+    os.system(f"perlbrew switch {perl_version}")
 
-    run_command(["perlbrew", "switch", perl_version])
 
 def setup_local_lib(pl_prefix):
     log(f"Setting up local::lib with PL_PREFIX={pl_prefix} ...")
