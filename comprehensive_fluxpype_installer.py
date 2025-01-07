@@ -168,6 +168,7 @@ def install_perl_modules(pl_prefix):
         "Text::CSV",
         "Math::Interpolate",
         "Math::GSL",
+        "Math::GSL::Alien",
         "Config::IniFiles",
         "Inline::C",
         "Parallel::ForkManager",
@@ -209,7 +210,7 @@ def clone_and_build_flux(fl_prefix, pl_prefix):
     os.chdir(repo_dir)
     os.environ["FL_PREFIX"] = str(fl_prefix)
     os.environ["PL_PREFIX"] = str(pl_prefix)
-    run_command(["make", "everything"])
+    run_command(["make", "everything"], check=False)
 
 
 def setup_python_virtualenv():
@@ -217,7 +218,7 @@ def setup_python_virtualenv():
     Sets up a Python virtual environment.
     """
     log("Setting up Python virtual environment...")
-    venv_dir = Path.cwd() / "fluxenv_pip"
+    venv_dir = Path.cwd() / ".venv"
     if not venv_dir.exists():
         run_command(["python3", "-m", "venv", str(venv_dir)])
     activate_script = venv_dir / "bin" / "activate"
