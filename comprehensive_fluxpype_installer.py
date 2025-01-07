@@ -26,15 +26,19 @@ def run_command(command, shell=False, check=True, capture_output=False):
         raise e
         # sys.exit(1)
 
+
 def check_and_install_homebrew():
     if not shutil.which("brew"):
         log("Homebrew not found. Installing...")
-        run_command(
-            ["/bin/bash", "-c", "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"]
+        homebrew_install_command = (
+            '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
         )
-        os.environ["PATH"] += ":/opt/homebrew/bin"
+        os.system(homebrew_install_command)
+        # Ensure Homebrew is added to the PATH
+        os.environ["PATH"] += ":/opt/homebrew/bin:/usr/local/bin"
     else:
         log("Homebrew already installed.")
+
 
 def install_homebrew_dependencies():
     log("Installing required Homebrew packages...")
