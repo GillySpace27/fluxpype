@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 
 import os
@@ -24,7 +23,8 @@ def run_command(command, shell=False, check=True, capture_output=False):
             return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         log(f"Command failed with error: {e}", level="ERROR")
-        sys.exit(1)
+        raise e
+        # sys.exit(1)
 
 def check_and_install_homebrew():
     if not shutil.which("brew"):
@@ -57,34 +57,53 @@ def install_perlbrew(perl_version="perl-5.32.0"):
         log("Perlbrew already installed.")
 
     log(f"Installing Perl version {perl_version}...")
-    run_command(["perlbrew", "install", perl_version])
+    try:
+        run_command(["perlbrew", "install", perl_version])
+    except Exception as e:
+        print("", e)
+
     run_command(["perlbrew", "switch", perl_version])
 
 def setup_local_lib(pl_prefix):
-    log(f"Setting up local::lib with PL_PREFIX={pl_prefix}...")
+    log(f"Setting up local::lib with PL_PREFIX={pl_prefix} ...")
     os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={pl_prefix}"
-    run_command(["cpanm", "--local-lib-contained", pl_prefix, "local::lib"])
+    run_command(["cpanm", "--local-lib-contained", pl_prefix._str, "local::lib"])
+
 
 def install_perl_modules(pl_prefix):
     log("Installing Perl modules...")
     modules = [
-        "Test::Builder", "File::ShareDir", "File::ShareDir::Install", "PDL::Graphics::Gnuplot",
-        "Math::RungeKutta", "Moo::Role", "Chart::Gnuplot", "Text::CSV", "Math::Interpolate",
-        "Math::GSL", "Config::IniFiles", "File::HomeDir", "Inline::C", "Parallel::ForkManager",
-        "Inline", "Inline::Python", "Capture::Tiny", "Devel::CheckLib"
+        "Test::Builder",
+        "File::ShareDir",
+        "File::ShareDir::Install",
+        "PDL::Graphics::Gnuplot",
+        "Math::RungeKutta",
+        "Moo::Role",
+        "Chart::Gnuplot",
+        "Text::CSV",
+        "Math::Interpolate",
+        "Math::GSL",
+        "Config::IniFiles",
+        "File::HomeDir",
+        "Inline::C",
+        "Parallel::ForkManager",
+        "Inline",
+        "Inline::Python",
+        "Capture::Tiny",
+        "Devel::CheckLib",
     ]
-    for module in modules:
-        run_command(["cpanm", "-L", pl_prefix, module])
+    run_command(["cpanm", "-L", pl_prefix._str] + modules)
 
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
     run_command(eval_command, shell=True)
 
+
 def clone_and_build_flux(fl_prefix, pl_prefix):
     log("Cloning and building the fluxon-mhd repository...")
     repo_url = "https://github.com/lowderchris/fluxon-mhd.git"
     repo_dir = Path.home() / "fluxon-mhd"
-    
+
     if not repo_dir.exists():
         run_command(["git", "clone", repo_url, str(repo_dir)])
     else:
@@ -120,7 +139,7 @@ def main():
         sys.exit(1)
 
     log("Starting comprehensive FluxPype installer...")
-    
+
     fl_prefix = Path.home() / "Library" / "flux"
     pl_prefix = Path.home() / "Library" / "perl5"
 
