@@ -132,7 +132,7 @@ def install_perlbrew(perl_version="perl-5.32.0"):
         log("Perlbrew already installed.")
 
     log(f"Installing Perl version {perl_version}...")
-    run_command(f"perlbrew install {perl_version}", shell=True)
+    run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
     run_command(f"perlbrew switch {perl_version}", shell=True)
 
 
