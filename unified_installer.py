@@ -98,12 +98,12 @@ def setup_perl():
     perl_lib_dir = os.path.expanduser("~/Library/perl5")
     os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={perl_lib_dir}"
     perl_modules = [
-        "File::ShareDir",
-        "File::Map",
         "PDL",
         "PDL::Graphics::Gnuplot",
         "Math::RungeKutta",
+        "File::Map",
         "Term::ReadKey",
+        "File::ShareDir",
     ]
 
     log("Installing Perl modules...")
