@@ -133,7 +133,7 @@ def install_perlbrew(perl_version="perl-5.32.0"):
 
     log(f"Installing Perl version {perl_version}...")
     run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
-    run_command(f"perlbrew switch {perl_version}", shell=True)
+    run_command(f"perlbrew switch {perl_version}", shell=True, check=False)
 
 
 def setup_local_lib(pl_prefix):
@@ -176,7 +176,7 @@ def install_perl_modules(pl_prefix):
         "Capture::Tiny",
         "Devel::CheckLib",
     ]
-    run_command(["cpanm", "-L", str(pl_prefix)] + modules)
+    run_command(["cpanm", "-L", str(pl_prefix)] + modules, check=False)
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
     run_command(eval_command, shell=True)
