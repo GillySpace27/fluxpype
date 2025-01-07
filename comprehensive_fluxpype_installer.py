@@ -51,11 +51,16 @@ def install_perlbrew(perl_version="perl-5.32.0"):
         log("Perlbrew not found. Installing...")
         perlbrew_install_command = "curl -L https://install.perlbrew.pl | bash"
         os.system(perlbrew_install_command)
-        run_command(["perlbrew", "init"])  # Initialize Perlbrew
+
+        # Add Perlbrew initialization to shell RC file
+        shell_rc = Path.home() / ".zshrc" if os.environ.get("SHELL", "").endswith("zsh") else Path.home() / ".bashrc"
         perlbrew_bashrc = Path.home() / "perl5" / "perlbrew" / "etc" / "bashrc"
+
         if perlbrew_bashrc.exists():
-            log("Sourcing Perlbrew environment...")
-            os.system(f"source {perlbrew_bashrc}")
+            log("Adding Perlbrew initialization to shell RC file...")
+            with open(shell_rc, "a") as rc_file:
+                rc_file.write(f"\n# Initialize Perlbrew\nsource {perlbrew_bashrc}\n")
+            os.system(f"source {perlbrew_bashrc}")  # Source Perlbrew immediately for this script
         else:
             log("Perlbrew initialization script not found.", level="ERROR")
             sys.exit(1)
