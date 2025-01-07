@@ -42,7 +42,16 @@ def check_and_install_homebrew():
 
 def install_homebrew_dependencies():
     log("Installing required Homebrew packages...")
-    packages = ["gnuplot", "fftw", "qt"]
+    packages = [
+        "cpanminus",  # For Perl module management
+        "perl",  # Ensures a fresh Perl installation
+        "gnuplot",  # For plotting and visualization
+        "fftw",  # Fast Fourier Transform library
+        "qt",  # Cross-platform graphical toolkit
+        "make",  # Build tool
+        "gcc",  # C compiler for building modules
+        "git",  # For repository cloning
+    ]
     run_command(["brew", "install"] + packages)
 
 
