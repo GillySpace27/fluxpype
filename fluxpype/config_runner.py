@@ -202,11 +202,46 @@ def open_path_windows(path):
     os.startfile(path)
 
 
+import subprocess
+from pathlib import Path
+
+
 def open_path_mac(path):
     """
     Open a file or directory using the default application or file explorer on macOS.
+    If the file type does not have a default application, open it using TextEdit.
+
+    Args:
+        path (str or Path): The path to the file or directory to open.
     """
-    subprocess.call(["open", path])
+    p = Path(path)
+
+    # Check if the path is a directory or has a defined extension
+    if p.is_dir():
+        subprocess.call(["open", path])
+        return
+
+    # Check if the file extension has an associated default application
+    try:
+        result = subprocess.run(
+            ["mdls", "-name", "kMDItemContentType", "-raw", path], check=True, capture_output=True, text=True
+        )
+        content_type = result.stdout.strip()
+
+        if not content_type:
+            raise ValueError("No default application found")
+
+        # Try opening the file with the default application
+        subprocess.call(["open", path])
+
+    except (subprocess.CalledProcessError, ValueError):
+        # Revert to opening as .txt if the default application does not exist
+        print(f"Default application not found for {path}. Opening with TextEdit.")
+        subprocess.call(["open", "-a", "TextEdit", path])
+
+
+# # Example usage
+# open_path_mac("/path/to/your/file.some_extension")
 
 
 def open_path_linux(path):
