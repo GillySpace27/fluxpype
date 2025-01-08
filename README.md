@@ -19,7 +19,7 @@ This may ask you to install the developer tools, which you will need. Run the co
 
 > python3 comprehensive_fluxpype_installer.py
 
-This will likely fail the first time, and you'll just restart the process by opening a new terminal, reactivating the python environment, and running this command again
+This might fail the first time, and you'll just restart the process by opening a new terminal, reactivating the python environment, and running this command again.
 
 Once the package has been locally installed, test it out by typing this from within the fluxpype directory:
 
