@@ -44,6 +44,18 @@ def run_command(command, shell=False, check=True, capture_output=False):
         raise
 
 
+def check_python_version(min_version=(3, 7)):
+    """
+    Ensures this script is running on at least Python 3.7.
+
+    Args:
+        min_version (tuple): Minimum (major, minor) version required.
+    """
+    if sys.version_info < min_version:
+        log(f"This script requires Python {min_version[0]}.{min_version[1]} or higher.", level="ERROR")
+        sys.exit(1)
+
+
 def check_and_install_homebrew():
     """
     Checks if Homebrew is installed, and installs it if it's not. Adds Homebrew to the PATH
@@ -63,12 +75,15 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
+    # Update Homebrew before installing packages, so everything is up to date.
+    run_command(["brew", "update"], check=False)
+
     # Add Homebrew PATH to ~/.zprofile if not already present
     log("Ensuring Homebrew paths are in the shell RC file...")
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_1}:$PATH"')
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_2}:$PATH"')
 
-    # Source the updated ~/.zshrc file
+    # Source the updated ~/.zprofile so we have the latest PATH in this session
     run_command(f"source {shell_rc}", shell=True)
 
 
@@ -140,7 +155,11 @@ def install_perlbrew(perl_version="perl-5.32.0"):
     # run_command(f"perlbrew switch {perl_version}", shell=True, check=False)
     # run_command(f"perlbrew off", shell=True, check=False)
 
+
 def install_perl():
+    """
+    Installs the perl package from Homebrew if not already installed, and then pins it.
+    """
     if not shutil.which("perl"):
         run_command("brew install perl", shell=True)
         run_command("brew pin perl", shell=True)
@@ -155,19 +174,10 @@ def setup_local_lib(pl_prefix):
     """
     log(f"Setting up local::lib with PL_PREFIX={pl_prefix} ...")
 
-    # 1) Make sure Homebrew-based Perl dependencies are installed:
-    #    (You can skip or adapt if you already guarantee these elsewhere.)
-    # homebrew_packages = ["cmake", "gsl", "pkg-config", "cpanminus"]
-    # for pkg in homebrew_packages:
-    #     run_command(["brew", "install", pkg], check=False)
-
     # 2) Set up environment variable so cpanm will put modules under pl_prefix
-    #    Using INSTALL_BASE or --local-lib-contained both work; whichever
-    #    is consistent with the rest of your pipeline.
     os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={pl_prefix}"
 
     # 3) Install local::lib via cpanm
-    #    On some macOS setups you might want --notest or --force:
     run_command(
         [
             "cpanm",
@@ -179,8 +189,7 @@ def setup_local_lib(pl_prefix):
         check=True,
     )
 
-    # 4) Update ~/.perldlrc or similar so that local::lib is recognized
-    #    (if your add_perl5lib_to_perldlrc() does that, leave as is)
+    # 4) Update ~/.perldlrc so that local::lib is recognized
     add_perl5lib_to_perldlrc(pl_prefix)
 
 
@@ -193,8 +202,7 @@ def install_perl_modules(pl_prefix):
     """
     log(f"Installing Perl modules into {pl_prefix} ...")
 
-    # Potentially relevant Homebrew libs for some of these Perl modules:
-    # (gnuplot, cfitsio, swig, etc. could be relevant for PDL or GSL)
+    # Potentially relevant Homebrew libs for some of these Perl modules
     brew_deps = ["gnuplot", "cfitsio", "swig"]
     for pkg in brew_deps:
         run_command(["brew", "install", pkg], check=False)
@@ -243,7 +251,7 @@ def install_perl_modules(pl_prefix):
         "Moo::Role",
     ]
 
-    # Try bulk install with cpanm, passing --notest to skip problematic tests on mac
+    # Try bulk install with cpanm, passing --notest to skip tests on mac
     try:
         run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=True)
     except Exception as e:
@@ -341,8 +349,11 @@ def add_perl5lib_to_perldlrc(pl_prefix):
 
 def main():
     """
-    Main function that orchestrates the complete installation process for the FluxPype project.
+    Main function that orchestrates the complete installation process for the FluxPype project on macOS.
     """
+    # 1) Ensure Python is a suitable version
+    check_python_version()
+
     if sys.platform != "darwin":
         log("This installer is designed for macOS only.", level="ERROR")
         sys.exit(1)
