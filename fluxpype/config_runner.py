@@ -232,18 +232,21 @@ def open_path_mac(path):
             raise ValueError("No default application found")
 
         # Try opening the file with the default application
-        subprocess.call(["open", path], check=True)
+        subprocess.call(["open", path])
 
     except (subprocess.CalledProcessError, ValueError):
         # Revert to opening as .txt if the default application does not exist
         print(f"Default application not found for {path}. Opening with TextEdit.")
         subprocess.call(["open", "-a", "TextEdit", path])
 
+
+
 def open_path_linux(path):
     """
     Open a file or directory using the default application or file explorer on Linux.
     """
     subprocess.call(["xdg-open", path])
+
 
 def run():
     """
