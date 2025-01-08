@@ -351,15 +351,20 @@ def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
 
 def add_perl5lib_to_perldlrc(pl_prefix):
     """
-    Adds the PL_PREFIX to the PERL5LIB environment variable by creating or updating the .perldlrc file.
-
-    Args:
-        pl_prefix (Path): The prefix path for the Perl modules installation.
+    Appends pl_prefix/lib/perl5 to PERL5LIB in ~/.perldlrc, without overwriting existing paths.
     """
-    log("Updating .perldlrc file with PL_PREFIX ...")
     perldlrc_path = Path.home() / ".perldlrc"
-    perl5lib_export = f'$ENV{{PERL5LIB}} = "{pl_prefix}/lib/perl5";'
-    append_to_file_if_not_exists(perldlrc_path, perl5lib_export)
+    perl5_append_snippet = f"""
+# Append PL_PREFIX/lib/perl5 to PERL5LIB if it’s not already in there
+if (defined $ENV{{PERL5LIB}}) {{
+    if ($ENV{{PERL5LIB}} !~ /{pl_prefix}\\/lib\\/perl5/) {{
+        $ENV{{PERL5LIB}} .= ":{pl_prefix}/lib/perl5";
+    }}
+}} else {{
+    $ENV{{PERL5LIB}} = "{pl_prefix}/lib/perl5";
+}}
+"""
+    append_to_file_if_not_exists(perldlrc_path, perl5_append_snippet)
 
 
 def main():
