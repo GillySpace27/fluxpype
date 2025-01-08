@@ -167,6 +167,8 @@ def install_perl_modules(pl_prefix):
         "Chart::Gnuplot",
         "Text::CSV",
         "Math::Interpolate",
+        "Alien::Build::Plugin::Gather::Dino"
+        "Net::SSLeay"
         "Math::GSL",
         "Math::GSL::Alien",
         "Config::IniFiles",
@@ -188,7 +190,7 @@ def install_perl_modules(pl_prefix):
             try:
                 run_command(["cpanm", "-L", str(pl_prefix), module], check=True)
             except Exception as e:
-                run_command(["cpan", module], check=True)
+                run_command(["cpan","--force", module], check=True)
 
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
