@@ -14,4 +14,3 @@ rich
 pfsspy
 PyQt5
 numpy
-tqdm
