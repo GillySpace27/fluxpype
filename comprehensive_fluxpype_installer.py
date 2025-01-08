@@ -525,8 +525,6 @@ def main():
     try:
         check_and_install_homebrew()
         install_homebrew_packages()
-        # install_perlbrew()
-        # install_perl()
         setup_local_lib(pl_prefix)
         enable_perl5lib(pl_prefix)
         try:
@@ -541,6 +539,7 @@ def main():
         add_perl5lib_to_perldlrc(pl_prefix)
         log("Installation completed successfully!")
         log("Open a new shell, navigate to fluxpype, reactivate the environment, test 'flux-config-run'")
+        log("If that doesn't work, try 'pip3 install -e .' too.")
     except Exception as e:
         log(f"An error occurred: {e}", level="ERROR")
         sys.exit(1)
