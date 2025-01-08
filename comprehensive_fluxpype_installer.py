@@ -290,7 +290,7 @@ def clone_and_build_flux(fl_prefix, pl_prefix):
     os.chdir(repo_dir)
     os.environ["FL_PREFIX"] = str(fl_prefix)
     os.environ["PL_PREFIX"] = str(pl_prefix)
-    run_command(["make", "everything"], check=False)
+    run_command(["make", "everything"], check=False, shell=True)
 
 
 def setup_python_virtualenv():
@@ -329,7 +329,7 @@ def install_fluxpype():
     # If the requirements file exists, install from it using the venv python
     if requirements_file.exists():
         run_command([str(venv_python), "-m", "pip", "install", "-r", str(requirements_file)])
-        run_command([str(venv_python), "-m", "pip", "install", "-e", "."])
+        run_command([str(venv_python), "-m", "pip", "install", "-e", str(script_dir)])
         log("FluxPype Python dependencies installed successfully.")
     else:
         log("Requirements file not found. Skipping Python dependency installation.", level="WARNING")
