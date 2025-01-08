@@ -56,6 +56,31 @@ def check_python_version(min_version=(3, 7)):
         sys.exit(1)
 
 
+def enable_perl5lib(pl_prefix):
+    """
+    Immediately set PERL5LIB in this process and persist the setting in ~/.zprofile
+    so that new shells also pick it up.
+    """
+    new_path = f"{pl_prefix}/lib/perl5"
+    existing_value = os.environ.get("PERL5LIB", "")
+
+    # 1) Update the script's environment so subsequent commands can see local::lib
+    if new_path not in existing_value.split(":"):
+        if existing_value:
+            os.environ["PERL5LIB"] = f"{new_path}:{existing_value}"
+        else:
+            os.environ["PERL5LIB"] = new_path
+        log(f"PERL5LIB updated in the current environment: {os.environ['PERL5LIB']}")
+
+    # 2) Persist this in ~/.zprofile
+    shell_rc = Path.home() / ".zprofile"
+    # For permanent usage, we typically just append. If you'd like to ensure
+    # *only* one occurrence, you could do a more thorough check.
+    perl5lib_line = f'export PERL5LIB="{new_path}:$PERL5LIB"'
+    append_to_file_if_not_exists(shell_rc, perl5lib_line)
+    log(f"Ensured PERL5LIB is set in {shell_rc}")
+
+
 def check_and_install_homebrew():
     """
     Checks if Homebrew is installed, and installs it if it's not. Adds Homebrew to the PATH
@@ -391,6 +416,7 @@ def main():
         # install_perlbrew()
         # install_perl()
         setup_local_lib(pl_prefix)
+        enable_perl5lib(pl_prefix)
         try:
             install_perl_modules(pl_prefix)
         except Exception as e:
