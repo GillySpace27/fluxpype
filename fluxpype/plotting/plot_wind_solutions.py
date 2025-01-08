@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import os
-from pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 from scipy.interpolate import interp1d
 from rich import print
 import re

@@ -37,12 +37,17 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from pipe_helper import (configurations, load_fits_magnetogram,
-                         load_magnetogram_params, get_fixed_coords, get_ax)
-from science.pfss_funcs import get_fluxon_locations
-from pipe_helper import (sunspotplot, parse_big_dict, load_wind_files)
+from fluxpype.pipe_helper import (
+    configurations,
+    load_fits_magnetogram,
+    load_magnetogram_params,
+    get_fixed_coords,
+    get_ax,
+)
+from fluxpype.science.pfss_funcs import get_fluxon_locations
+from fluxpype.pipe_helper import sunspotplot, parse_big_dict, load_wind_files
 
-from plotting.plot_fieldmap import magnet_plot
+from fluxpype.plotting.plot_fieldmap import magnet_plot
 
 
 def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, power=1):
@@ -448,7 +453,7 @@ def plot_wind_map_latitude(configs):
     sunspotplot(carr_ax, args.cr, False)
 
     directory_path = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind'  # Change this to your directory's path
-    directory_path = "/Users/cgilbert/vscode/fluxons/flux-extra/batches/sequential/data/wind"
+    directory_path = "~/vscode/fluxons/flux-extra/batches/sequential/data/wind"
     big_dict = load_wind_files(directory_path)
     all_phi, all_theta, all_vel, all_hist, all_cr, all_mean, \
     all_std, total_mean, total_std, all_count = parse_big_dict(big_dict)
@@ -785,7 +790,6 @@ def images_to_video(input_dir, output_file, fps, method="parker"):
     print(f"Video created successfully: {output_file}")
 
 
-
 ########################################################################
 # Main Code
 # ----------------------------------------------------------------------
@@ -820,7 +824,7 @@ if __name__ == "__main__":
         if do_one:
             break
     if not do_one and False:
-        wind_path = '/Users/cgilbert/vscode/fluxons/fluxon-data/batches/sequential/imgs/windmap'  # Change this to your directory's path
+        wind_path = '~/vscode/fluxons/fluxon-data/batches/sequential/imgs/windmap'  # Change this to your directory's path
         images_to_video(wind_path, os.path.join(
             wind_path,f"wind_video_{configs['flow_method']}.mp4"), 10, configs["flow_method"])
     print("All Done!")

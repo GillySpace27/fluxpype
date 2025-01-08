@@ -151,4 +151,4 @@ perl_lib/
 # fluxpype-specific
 fluxpype/fluxpype/data/
 fluxpype/data/
-src/science/_Inline/* 
+src/science/_Inline/*

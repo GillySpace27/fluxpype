@@ -40,9 +40,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-from science.pfss_funcs import pixel_to_latlon
-from pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
-                            shorten_path, get_ax)
+from fluxpype.science.pfss_funcs import pixel_to_latlon
+from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path, get_ax
 
 def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=None, force=False, reduce_amt=0,
                 nact=0, nwant=None, do_print_top=False, ax=None, verb=True, ext="png",
@@ -257,9 +256,6 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
         print("\t\t    Success!")
         print("\t\t\t```````````````````````````````\n\n")
     return _n_open, _n_closed, _n_flux, _fnum, _n_outliers
-
-
-
 
 
 ########################################################################

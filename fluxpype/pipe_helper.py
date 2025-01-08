@@ -1555,7 +1555,7 @@ def plot_raw_magnetogram(fits_path, data, small_image):
     plt.close()
 
 
-# def load_fits_magnetogram(datdir = "/Users/cgilbert/vscode/fluxon-data/", batch="fluxon", bo=2, bn=2, ret_all=False):
+# def load_fits_magnetogram(datdir = "~/vscode/fluxon-data/", batch="fluxon", bo=2, bn=2, ret_all=False):
 #     """Loads a magnetogram from a FITS file."""
 #     fname = load_magnetogram_params(datdir)[2].replace("/fluxon/", f"/{batch}/").replace(f"_{bo}_", f"_{bn}_")
 #     fits_path = datdir + fname
@@ -1720,9 +1720,7 @@ def decimal_years_to_datetimes(decimal_years):
 
 def sunspotplot(carr_ax, cr=None, use_years=False):
     # Plot the Sunspot Number
-    carrington = np.loadtxt(
-        "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/SN_m_tot_V2.0.tsv"
-    ).T
+    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     from sunpy.coordinates.sun import (
         carrington_rotation_time as crt,

@@ -114,7 +114,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         If the script execution fails.
     """
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
 
     run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
@@ -146,7 +146,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
 
 def view():
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
 
     display_splash_screen(configs)
@@ -158,40 +158,62 @@ import os
 import subprocess
 import platform
 
+def open_config(path="fluxpype/config.ini"):
+    return open_path(path)
 
-def open_file(file_path="fluxpype/config.ini"):
+
+def gallery():
     """
-    Open a file in the default text editor based on the operating system.
+    Opens the default directory containing the batches in the file explorer.
+    """
+    # Define the path to the batches directory
+    directory_path = "fluxpype/data/batches"
+
+    # Ensure the directory exists before attempting to open it
+    if not os.path.isdir(directory_path):
+        logging.error(f"Directory not found: {directory_path}")
+        raise FileNotFoundError(f"Directory not found: {directory_path}")
+
+    # Open the directory
+    open_path(directory_path)
+
+
+def open_path(path="fluxpype/config.ini"):
+    """
+    Open a file or directory in the default application or file explorer
+    based on the operating system.
     """
     os_name = platform.system()  # Determine the OS name
 
     if os_name == "Windows":
-        open_file_windows(file_path)
+        open_path_windows(path)
     elif os_name == "Darwin":  # macOS
-        open_file_mac(file_path)
+        open_path_mac(path)
     elif os_name == "Linux":
-        open_file_linux(file_path)
+        open_path_linux(path)
     else:
         raise OSError(f"Unsupported operating system: {os_name}")
 
 
-def open_file_windows(file_path):
+def open_path_windows(path):
     """
-    Open a file using the default editor on Windows.
+    Open a file or directory using the default application or file explorer on Windows.
     """
-    os.startfile(file_path)
+    os.startfile(path)
 
-def open_file_mac(file_path):
-    """
-    Open a file using the default editor on macOS.
-    """
-    subprocess.call(["open", file_path])
 
-def open_file_linux(file_path):
+def open_path_mac(path):
     """
-    Open a file using the default editor on Linux.
+    Open a file or directory using the default application or file explorer on macOS.
     """
-    subprocess.call(["xdg-open", file_path])
+    subprocess.call(["open", path])
+
+
+def open_path_linux(path):
+    """
+    Open a file or directory using the default application or file explorer on Linux.
+    """
+    subprocess.call(["xdg-open", path])
 
 
 def run():
@@ -199,7 +221,7 @@ def run():
     Executes the PDL script for all combinations of configurations.
     """
     # Import configurations
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
 
     # pipe_helper = import_module("pipe_helper")
     configs = configurations(debug=False)

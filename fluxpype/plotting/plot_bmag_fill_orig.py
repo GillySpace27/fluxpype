@@ -67,7 +67,6 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
         os.makedirs(bmagdir)
     bmagname = os.path.join(bmagdir, imagename)
 
-
     ### GET TOP AND BOTTOM DATA
     # Load the dat file
     arr = np.loadtxt(filename).T
@@ -136,22 +135,13 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     # ar0 = skew*(6*a0/ar0_max)**power
     # ar0 = skew*(4*a1/ar0_max)**power
 
-
-
-
-
-
-
     # fig, (ax0, ax1) = plt.subplots(2)
 
     RS = 696340000 #meters
 
-
     # Using GridSpec for layout
     fig = plt.figure()  # Adjust the figure size as needed
     gs = gridspec.GridSpec(3, 4, height_ratios=[2.5, 2.5, 1])  # Adjust the ratios as per your requirement
-
-
 
     # Magnetogram plot (top row, spanning two columns)
     ax0 = plt.subplot(gs[0, 0:2])
@@ -171,13 +161,9 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax50 = plt.subplot(gs[2, :2], sharey=ax1)
     ax5 = plt.subplot(gs[2, 2:])
 
-
-
     ax05.tick_params(axis='y', labelleft=False)
     ax3.tick_params(axis='y', labelleft=False)
     ax4.tick_params(axis='y', labelleft=False)
-
-
 
     ### FIRST PLOT ###
     # Plot magnetogram
@@ -187,7 +173,7 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax05.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
             extent=(0,2*np.pi,-1,1), aspect='auto', vmin=-500, vmax=500, alpha=0.5)
 
-    #Plot Magnetic Field Strength
+    # Plot Magnetic Field Strength
     try:
         bb0 = (b0 - np.nanmin(b0)) / (np.nanmax(b0) - np.nanmin(b0))
         if np.isnan(bb0).any():
@@ -202,7 +188,6 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     except (ValueError, RuntimeWarning):
         bb1 = b1 / np.nanmax(b1)
 
-
     # Plot Latitude of points
     do_lat = True
     if do_lat:
@@ -211,15 +196,11 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
         cbar01 = fig.colorbar(sc01, ax=ax0)
         # cbar01.set_label(f"Lowest Latitude")
 
-
     if True:
         sc01 = ax05.scatter(ph1, th1, c=maxlist[0], s = 100, cmap="brg",
                     alpha=bb1, label=r"First Point Latitude", marker='o', vmin=-1, vmax=1)
         cbar01 = fig.colorbar(sc01, ax=ax05)
         cbar01.set_label("Lowest Latitude")
-
-
-
 
     fig.suptitle(F"Fluxon Magnetic Field Properties for CR {args.cr}, with {nfluxon} Open Fields")
     ax0.set_title(F"Field Strength and Origin at r = {rad0:.2f} Rs")
@@ -230,15 +211,11 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax0.set_xlabel('Longitude (Radians)', labelpad=-2)
     ax0.set_ylabel('Sine latitude')
 
-
-
-
     ### SECOND PLOT ###
     fieldlabel = "Magnetic Field Strength [Gauss]        "
     expandlabel = r"Expansion Factor"
     latlabel = r"Latitude [Sine Radians]"
     lonlabel = r"Longitude [Radians]"
-
 
     ax1.set_ylabel(r'Heliocentric Radius [R$_\odot$]')
     # ax1.set_xlabel(None, color='b')
@@ -253,13 +230,11 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax2.set_xlabel(fieldlabel, color='r', labelpad=-8)
     ax2.tick_params(axis='x', labelcolor='r')
 
-
     ax3.set_xlabel(lonlabel, color='purple')
     ax3.tick_params(axis='x', labelcolor='purple')
 
     ax4.set_xlabel(latlabel, color='green')
     ax4.tick_params(axis='x', labelcolor='green')
-
 
     # Plot the Curves
     for i in reversed(np.arange(0, nfluxon)):
@@ -269,7 +244,6 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
         phi = arr[6, floc]
         ttheta = -1 * arr[5, floc] + np.pi/2
         pphi = np.mod(arr[6, floc], 2*np.pi)
-
 
         expansion = arr[7,floc]
         field = arr[8,floc]
@@ -300,7 +274,7 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax3.axhline(r0, ls=":", c='k', zorder=1000000)
     ax4.axhline(r0, ls=":", c='k', zorder=1000000)
     # if r1:
-        # ax1.axvline(r1, ls=":", c='k', zorder=1000)
+    # ax1.axvline(r1, ls=":", c='k', zorder=1000)
 
     # Create handles and labels
     handles, labels = [], []
@@ -313,12 +287,9 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax1.legend(handles, labels, frameon=False, loc='center left')
     ax1.set_xlim((1* 10**(-6), 5* 10**2))
 
-
-
-
     ### Fourth PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
@@ -340,11 +311,6 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     # fig.close()
     # plt.show()
 
-
-
-
-
-
     # Adjust layout
     fig.set_size_inches((12,8))
     plt.tight_layout()
@@ -357,14 +323,12 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
         wspace=0.1
     )
 
-
     plt.savefig(bmagname)
     if args.show or True:
         plt.show()
     plt.close(fig)
     print(".", end="", flush=True)
     return bmagname, maxlist
-
 
 
 import cv2
@@ -454,4 +418,3 @@ if __name__ == "__main__":
     bmagdir = run_plots(args)
     filename = "expansion_cr{}_f{}.avi".format(args.cr, args.nwant)
     create_video_from_images(bmagdir, filename)
-

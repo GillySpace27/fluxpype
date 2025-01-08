@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from pipe_helper import load_fits_magnetogram, get_fixed_coords
+from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
@@ -57,10 +57,10 @@ def load_zephyr():
     for file in def_files:
         try:
             data = readsav(file)
-            print(f"Successfully loaded file: {file}")
+            print(f"\t\tSuccessfully loaded file: {file}")
             return data
         except FileNotFoundError:
-            print(f"File not found: {file}")
+            print(f"\tFile not found: {file}")
     raise FileNotFoundError("None of the specified files could be found.")
 
     # return data
@@ -294,7 +294,8 @@ def run_plots(args, times=0):
 if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
+
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
@@ -308,7 +309,6 @@ if __name__ == "__main__":
     parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
     args = parser.parse_args()
 
-
     if len(configs["rotations"]) > 1:
         crlist = configs["rotations"]
         print("crlist", crlist)
@@ -320,7 +320,6 @@ if __name__ == "__main__":
                 print("No file found for CR", cr, "\n")
     else:
         bmagdir = run_plots(args)
-
 
     # filename = "expansion_cr{}_f{}.avi".format(args.cr, args.nwant)
     # create_video_from_images(bmagdir, filename)
