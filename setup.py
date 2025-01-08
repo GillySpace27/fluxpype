@@ -44,7 +44,8 @@ setup(
         "drms",
         "timeout-decorator",
         "rich",
-        "opencv-python"
+        "opencv-python",
+        "tqdm"
     ],
     entry_points={
         "console_scripts": [

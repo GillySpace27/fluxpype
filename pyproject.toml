@@ -32,6 +32,7 @@ pfsspy = "^1.2.0"
 PyQt5 = "^5.15.11"
 opencv_python = "^4.10.0.84"
 
+
 [tool.poetry.extras]
 FLUXcore = ["pexpect", "PyQt5"]
 
