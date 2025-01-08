@@ -176,13 +176,19 @@ def install_perl_modules(pl_prefix):
         "Inline::Python",
         "Capture::Tiny",
         "Devel::CheckLib",
+        "List::MoreUtils",
+        "local::lib",
+        "Config::IniFiles",
     ]
     try:
         run_command(["cpanm", "-L", str(pl_prefix)] + modules, check=True)
     except Exception as e:
         log("Reverting to Individual Perl Dependency Installation", level="")
         for module in modules:
-            run_command(["cpanm", "-L", str(pl_prefix), module], check=False)
+            try:
+                run_command(["cpanm", "-L", str(pl_prefix), module], check=True)
+            except Exception as e:
+                run_command(["cpan", "-L", module], check=True)
 
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
@@ -218,7 +224,7 @@ def setup_python_virtualenv():
     Sets up a Python virtual environment.
     """
     log("Setting up Python virtual environment...")
-    venv_dir = ".venv"
+    venv_dir = Path(".venv")
     if not venv_dir.exists():
         run_command(["python3", "-m", "venv", str(venv_dir)])
     activate_script = venv_dir / "bin" / "activate"
@@ -254,6 +260,19 @@ def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
     )
 
 
+def add_perl5lib_to_perldlrc(pl_prefix):
+    """
+    Adds the PL_PREFIX to the PERL5LIB environment variable by creating or updating the .perldlrc file.
+
+    Args:
+        pl_prefix (Path): The prefix path for the Perl modules installation.
+    """
+    log("Updating .perldlrc file with PL_PREFIX ...")
+    perldlrc_path = Path.home() / ".perldlrc"
+    perl5lib_export = f'$ENV{{PERL5LIB}} = "{pl_prefix}/lib/perl5";'
+    append_to_file_if_not_exists(perldlrc_path, perl5lib_export)
+
+
 def main():
     """
     Main function that orchestrates the complete installation process for the FluxPype project.
@@ -278,6 +297,7 @@ def main():
         setup_python_virtualenv()
         install_fluxpype()
         append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc)
+        add_perl5lib_to_perldlrc(pl_prefix)
         log("Installation completed successfully!")
     except Exception as e:
         log(f"An error occurred: {e}", level="ERROR")
