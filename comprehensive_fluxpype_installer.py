@@ -134,10 +134,10 @@ def install_perlbrew(perl_version="perl-5.32.0"):
     else:
         log("Perlbrew already installed.")
 
-    log(f"Installing Perl version {perl_version}...")
-    run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
+    # log(f"Installing Perl version {perl_version}...")
+    # run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
     # run_command(f"perlbrew switch {perl_version}", shell=True, check=False)
-    run_command(f"perlbrew off", shell=True, check=False)
+    # run_command(f"perlbrew off", shell=True, check=False)
 
 
 def setup_local_lib(pl_prefix):
