@@ -295,26 +295,41 @@ def clone_and_build_flux(fl_prefix, pl_prefix):
 
 def setup_python_virtualenv():
     """
-    Sets up a Python virtual environment.
+    Sets up a Python virtual environment without 'sourcing' it.
+
+    Note:
+        We do NOT activate the environment in this function. Instead, any
+        pip installs will be done by explicitly calling the Python executable
+        inside .venv. The user can still manually source .venv/bin/activate
+        later if they want an interactive shell in that venv.
     """
     log("Setting up Python virtual environment...")
     venv_dir = Path(".venv")
     if not venv_dir.exists():
         run_command(["python3", "-m", "venv", str(venv_dir)])
-    activate_script = venv_dir / "bin" / "activate"
-    run_command(["source", str(activate_script)], shell=True)
-    log("Python virtual environment activated.")
+    else:
+        log("Python virtual environment already exists.")
+    log("Virtual environment setup complete (not activated).")
 
 
 def install_fluxpype():
     """
-    Installs Python dependencies for FluxPype.
+    Installs Python dependencies for FluxPype by calling the .venv Python interpreter directly.
     """
     log("Installing FluxPype Python dependencies...")
+    venv_python = Path(".venv") / "bin" / "python"
     requirements_file = Path.cwd() / "requirements-pip.txt"
+
+    # Ensure the .venv was created:
+    if not venv_python.exists():
+        log("Python virtual environment not found. Please run setup_python_virtualenv first.", level="ERROR")
+        return
+
+    # If the requirements file exists, install from it using the venv python
     if requirements_file.exists():
-        run_command(["pip", "install", "-r", str(requirements_file)])
-        run_command(["pip", "install", "-e", "."])
+        run_command([str(venv_python), "-m", "pip", "install", "-r", str(requirements_file)])
+        run_command([str(venv_python), "-m", "pip", "install", "-e", "."])
+        log("FluxPype Python dependencies installed successfully.")
     else:
         log("Requirements file not found. Skipping Python dependency installation.", level="WARNING")
 
