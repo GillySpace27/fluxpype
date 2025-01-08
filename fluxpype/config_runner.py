@@ -228,7 +228,7 @@ def open_path_mac(path):
         )
         content_type = result.stdout.strip()
 
-        if not content_type:
+        if not content_type or result.returncode:
             raise ValueError("No default application found")
 
         # Try opening the file with the default application
@@ -238,7 +238,6 @@ def open_path_mac(path):
         # Revert to opening as .txt if the default application does not exist
         print(f"Default application not found for {path}. Opening with TextEdit.")
         subprocess.call(["open", "-a", "TextEdit", path])
-
 
 
 def open_path_linux(path):
