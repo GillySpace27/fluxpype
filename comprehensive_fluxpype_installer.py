@@ -190,12 +190,12 @@ def install_perl_modules(pl_prefix):
         "Config::IniFiles",
     ]
     try:
-        run_command(["cpanm", "-L", str(pl_prefix)] + modules, check=True)
+        run_command(["cpanm", "-l", str(pl_prefix)] + modules, check=True)
     except Exception as e:
         log("Reverting to Individual Perl Dependency Installation", level="")
         for module in modules:
             try:
-                run_command(["cpanm", "-L", str(pl_prefix), module], check=True)
+                run_command(["cpanm", "-l", str(pl_prefix), module], check=True)
             except Exception as e:
                 run_command(["cpanm","--force", module], check=True)
 
