@@ -13,8 +13,6 @@ This may ask you to install the developer tools, which you will need. Run the co
 
 > cd fluxpype
 
-> git checkout installPype
-
 > python3 -m venv .venv
 
 > source .venv/bin/activate
