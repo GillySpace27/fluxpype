@@ -167,7 +167,7 @@ def install_perl_modules(pl_prefix):
         "Chart::Gnuplot",
         "Text::CSV",
         "Math::Interpolate",
-        "Alien::Build::Plugin::Gather::Dino"
+        "Alien::Build::Plugin::Gather::Dino",
         "Net::SSLeay",
         "Math::GSL",
         "Math::GSL::Alien",
