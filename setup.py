@@ -27,7 +27,7 @@ class CustomInstallCommand(install):
 
 setup(
     name="fluxpype",
-    version="0.1.8",
+    version="0.2.0",
     description="A Python wrapper and installer for the FLUX model",
     packages=find_packages(),
     python_requires=">=3.8",
