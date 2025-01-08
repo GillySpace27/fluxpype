@@ -255,6 +255,7 @@ def install_perl_modules(pl_prefix):
         "Math::GSL::Alien",
         "Math::GSL",
         "Math::Interpolate",
+        "Math::Interpolator",
         "Math::RungeKutta",
         # PDL (Perl Data Language)
         "PDL",
@@ -428,6 +429,7 @@ def main():
         append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc)
         add_perl5lib_to_perldlrc(pl_prefix)
         log("Installation completed successfully!")
+        log("Open a new shell, navigate to fluxpype, reactivate the environment, test 'flux-config-run'")
     except Exception as e:
         log(f"An error occurred: {e}", level="ERROR")
         sys.exit(1)
