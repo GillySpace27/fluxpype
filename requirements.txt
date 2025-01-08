@@ -13,3 +13,4 @@ pexpect
 rich
 pfsspy
 PyQt5
+numpy

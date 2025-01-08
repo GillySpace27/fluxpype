@@ -1,2 +1,3 @@
-include fluxpype
+include fluxpype/unified_installer
+include scripts
 exclude *data*

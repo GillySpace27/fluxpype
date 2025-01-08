@@ -209,8 +209,6 @@ def plot_fr(args):
     return True
 
 
-
-
 ########################################################################
 # Main Code
 # ----------------------------------------------------------------------
@@ -218,7 +216,8 @@ def plot_fr(args):
 if __name__ == "__main__":
     # Create the argument parser
     print("\tPlotting Fr... ", end="")
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
+
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
@@ -230,7 +229,6 @@ if __name__ == "__main__":
     parser.add_argument('--show',   type=int, default=0)
     parser.add_argument('--file',   type=str, default=None)
     parser.add_argument('--adapt', type=int, default=0, help='Use ADAPT magnetograms')
-
 
     args = parser.parse_args()
 

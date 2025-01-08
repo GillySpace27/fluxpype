@@ -48,7 +48,7 @@ def run_flux_install(fl_prefix=None, pl_prefix=None):
                     pexpect.EOF,
                     pexpect.TIMEOUT,
                     "password for",  # Handle sudo password prompts
-                    pexpect.re.compile(r"(error|failed)", re.IGNORECASE),
+                    pexpect.re.compile(r"(error|failed)", pexpect.re.IGNORECASE),
                 ]
             )
             if index == 0:  # Process completed

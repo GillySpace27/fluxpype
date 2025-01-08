@@ -1,10 +1,7 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-#!/bin/bash
-
 
 # Setting the PERL5LIB environment variable
 export PERL5LIB="$PERL5LIB:$SCRIPT_DIR:$SCRIPT_DIR/science:$SCRIPT_DIR/plotting"

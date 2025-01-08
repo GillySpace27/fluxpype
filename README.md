@@ -9,9 +9,11 @@ Open a terminal, navigate to your desired repo library directory, then type the 
 
 > git clone [https://github.com/GillySpace27/fluxpype.git](https://github.com/GillySpace27/fluxpype.git)
 
-This may ask you to install the developer tools, which you will need. After that completes, run the git command again. Then run:
+This may ask you to install the developer tools, which you will need. Run the command again, then run:
 
 > cd fluxpype
+
+> git checkout installPype
 
 > python3 -m venv .venv
 
@@ -23,10 +25,8 @@ This will likely fail the first time, and you'll just restart the process by ope
 
 Once the package has been locally installed, test it out by typing this from within the fluxpype directory:
 
-> python3 fluxpype
-
-or
-
+> python3 fluxpype \
+or \
 > flux-config-run
 
 If python doesn't see the fluxpype module, try running:

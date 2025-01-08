@@ -64,7 +64,6 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
         os.makedirs(bmagdir)
     bmagname = os.path.join(bmagdir, imagename)
 
-
     ### GET TOP AND BOTTOM DATA
     # Load the dat file
     arr = np.loadtxt(filename, skiprows=1).T
@@ -133,16 +132,9 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     # ar0 = skew*(6*a0/ar0_max)**power
     # ar1 = skew*(4*a1/ar1_max)**power
 
-
-
-
-
-
-
     # fig, (ax0, ax1) = plt.subplots(2)
 
     RS = 696340000 #meters
-
 
     # Using GridSpec for layout
     fig = plt.figure(figsize=(10, 8))  # Adjust the figure size as needed
@@ -158,17 +150,13 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     # Sunspot Number plot
     ax3 = plt.subplot(gs[2])
 
-
-
-
     ### FIRST PLOT ###
     # Plot magnetogram
     magnet = load_fits_magnetogram(configs=configs)
     ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
             extent=(0,2*np.pi,-1,1), aspect='auto', vmin=-500, vmax=500, alpha=0.5)
 
-
-    #Plot Magnetic Field Strength
+    # Plot Magnetic Field Strength
     try:
         bb0 = (b0 - np.nanmin(b0)) / (np.nanmax(b0) - np.nanmin(b0))
         if np.isnan(bb0).any():
@@ -201,17 +189,10 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
         # cbar01.set_label(f"B({r2:.2f} Rs) [Gauss]")
         cbar01.set_label("First Point Sine Latitude")
 
-
-
-
-
-
-
     ### SECOND PLOT ###
     alabel = r"Magnetic Field Strength [Gauss]"
     blabel = r"Expansion Factor"
     tlabel = r"Latitude [Radians]"
-
 
     ax1.set_xlabel(r'Heliocentric Radius [R$_\odot$]')
     ax1.set_ylabel(alabel, color='r')
@@ -224,7 +205,6 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     ax2.set_ylabel(blabel, color='b')
     ax2.tick_params(axis='y', labelcolor='b')
 
-
     # Plot the Curves
     for i in np.arange(0, nfluxon):
         floc = np.where(arr[0,:] == i)[0]
@@ -233,7 +213,6 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
         phi = arr[6, floc]
         ttheta = -1 * arr[5, floc] + np.pi/2
         pphi = np.mod(arr[6, floc], 2*np.pi)
-
 
         expansion = arr[7,floc]
         field = arr[8,floc]
@@ -249,13 +228,9 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     if do_r2:
         ax1.axvline(r2-1, ls=":", c='k', zorder=1000)
 
-
-
-
-
     ### THIRD PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
@@ -274,10 +249,6 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     # fig.close()
     # plt.show()
 
-
-
-
-
     fig.suptitle(F"Fluxon Magnetic Field Properties for CR {args.cr}, with {nfluxon} Open Fields")
     ax0.set_title(F"Field Strength and Origin at r = {r1:.2f} Rs")
     ax1.set_title(F"Magnetic Field Strength and Expansion Factor vs Height")
@@ -294,7 +265,6 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     plt.close(fig)
     print(".", end="", flush=True)
     return bmagname, maxlist
-
 
 
 import cv2
@@ -383,4 +353,3 @@ if __name__ == "__main__":
     bmagdir = run_plots(args)
     filename = "expansion_cr{}_f{}.avi".format(args.cr, args.nwant)
     # create_video_from_images(bmagdir, filename)
-
