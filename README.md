@@ -29,7 +29,7 @@ or \
 
 If python doesn't see the fluxpype module, try running:
 
-> python3 -m pip3 install -e .
+> python3 -m pip install -e .
 
 Another simple test you can run is to type
 

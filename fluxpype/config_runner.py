@@ -239,17 +239,11 @@ def open_path_mac(path):
         print(f"Default application not found for {path}. Opening with TextEdit.")
         subprocess.call(["open", "-a", "TextEdit", path])
 
-
-# # Example usage
-# open_path_mac("/path/to/your/file.some_extension")
-
-
 def open_path_linux(path):
     """
     Open a file or directory using the default application or file explorer on Linux.
     """
     subprocess.call(["xdg-open", path])
-
 
 def run():
     """

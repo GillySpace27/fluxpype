@@ -481,6 +481,7 @@ def install_fluxpype():
     else:
         log("Requirements file not found. Skipping Python dependency installation.", level="WARNING")
 
+    log("Attempting to install FluxPype Package")
     run_command([str(venv_python), "-m", "pip", "install", "-e", str(script_dir)])
 
 def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
@@ -550,7 +551,7 @@ def main():
         add_perl5lib_to_perldlrc(pl_prefix)
         log("Installation completed successfully!")
         log("Open a new shell, navigate to fluxpype, reactivate the environment, test 'flux-config-run'")
-        log("If that doesn't work, try 'pip3 install -e .' too.")
+        log("If that doesn't work, try 'pip install -e .' too.")
     except Exception as e:
         log(f"An error occurred: {e}", level="ERROR")
         sys.exit(1)
