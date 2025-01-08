@@ -313,7 +313,11 @@ def main():
         install_homebrew_packages()
         install_perlbrew()
         setup_local_lib(pl_prefix)
-        install_perl_modules(pl_prefix)
+        try:
+            install_perl_modules(pl_prefix)
+        except Exception as e:
+            log(e, level="")
+            log("Perl Modules may need to be addressed individually", level="")
         clone_and_build_flux(fl_prefix, pl_prefix)
         setup_python_virtualenv()
         install_fluxpype()
