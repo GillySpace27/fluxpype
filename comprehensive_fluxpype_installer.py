@@ -454,7 +454,7 @@ def install_fluxpype():
     Installs Python dependencies for FluxPype by calling the .venv Python interpreter directly.
     """
     log("Installing FluxPype Python dependencies...")
-    venv_python = Path(".venv") / "bin" / "python"
+    venv_python = Path(".venv") / "bin" / "python3"
     script_dir = Path(__file__).parent
     requirements_file = script_dir / "requirements.txt"
 
@@ -465,12 +465,12 @@ def install_fluxpype():
 
     # If the requirements file exists, install from it using the venv python
     if requirements_file.exists():
-        run_command([str(venv_python), "-m", "pip", "install", "-r", str(requirements_file)])
-        run_command([str(venv_python), "-m", "pip", "install", "-e", str(script_dir)])
+        run_command([str(venv_python), "-m", "pip3", "install", "-r", str(requirements_file)])
         log("FluxPype Python dependencies installed successfully.")
     else:
         log("Requirements file not found. Skipping Python dependency installation.", level="WARNING")
 
+    run_command([str(venv_python), "-m", "pip3", "install", "-e", str(script_dir)])
 
 def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
     """
