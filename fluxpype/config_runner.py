@@ -232,7 +232,9 @@ def open_path_mac(path):
             raise ValueError("No default application found")
 
         # Try opening the file with the default application
-        subprocess.call(["open", path])
+        returncode = subprocess.call(["open", path])
+        if not returncode ==0:
+            raise ValueError("No default application found")
 
     except (subprocess.CalledProcessError, ValueError):
         # Revert to opening as .txt if the default application does not exist
