@@ -168,7 +168,7 @@ def install_perl_modules(pl_prefix):
         "Text::CSV",
         "Math::Interpolate",
         "Alien::Build::Plugin::Gather::Dino"
-        "Net::SSLeay"
+        "Net::SSLeay",
         "Math::GSL",
         "Math::GSL::Alien",
         "Config::IniFiles",
