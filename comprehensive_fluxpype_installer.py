@@ -155,7 +155,7 @@ def install_perl_modules(pl_prefix):
     Args:
         pl_prefix (Path): The prefix path for the Perl modules installation.
     """
-    log("Installing Perl modules...")
+    log(f"Installing Perl modules into {pl_prefix} ...")
     modules = [
         "Test::Builder",
         "File::ShareDir::Install",
