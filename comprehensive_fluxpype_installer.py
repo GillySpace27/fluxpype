@@ -150,6 +150,7 @@ def setup_local_lib(pl_prefix):
     log(f"Setting up local::lib with PL_PREFIX={pl_prefix} ...")
     os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={pl_prefix}"
     run_command(["cpanm", "--local-lib-contained", str(pl_prefix), "local::lib"])
+    add_perl5lib_to_perldlrc(pl_prefix)
 
 
 def install_perl_modules(pl_prefix):
