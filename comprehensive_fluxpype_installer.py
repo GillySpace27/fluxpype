@@ -47,11 +47,11 @@ def run_command(command, shell=False, check=True, capture_output=False):
 def check_and_install_homebrew():
     """
     Checks if Homebrew is installed, and installs it if it's not. Adds Homebrew to the PATH
-    by updating the ~/.zshrc file idempotently.
+    by updating the ~/.zprofile file idempotently.
     """
     homebrew_path_1 = "/opt/homebrew/bin"
     homebrew_path_2 = "/usr/local/bin"
-    shell_rc = Path.home() / ".zshrc"
+    shell_rc = Path.home() / ".zprofile"
 
     if not shutil.which("brew"):
         log("Homebrew not found. Installing...")
@@ -63,7 +63,7 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
-    # Add Homebrew PATH to ~/.zshrc if not already present
+    # Add Homebrew PATH to ~/.zprofile if not already present
     log("Ensuring Homebrew paths are in the shell RC file...")
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_1}:$PATH"')
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_2}:$PATH"')
@@ -138,6 +138,11 @@ def install_perlbrew(perl_version="perl-5.32.0"):
     # run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
     # run_command(f"perlbrew switch {perl_version}", shell=True, check=False)
     # run_command(f"perlbrew off", shell=True, check=False)
+
+def install_perl():
+    if not shutil.which("perl"):
+        run_command("brew install perl", shell=True)
+        run_command("brew pin perl", shell=True)
 
 
 def setup_local_lib(pl_prefix):
@@ -312,7 +317,8 @@ def main():
     try:
         check_and_install_homebrew()
         install_homebrew_packages()
-        install_perlbrew()
+        # install_perlbrew()
+        # install_perl()
         setup_local_lib(pl_prefix)
         try:
             install_perl_modules(pl_prefix)
