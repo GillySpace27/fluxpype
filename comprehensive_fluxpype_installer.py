@@ -362,7 +362,7 @@ def install_perl_modules(pl_prefix):
     ]
 
     try:
-        run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=True)
+        run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=False)
     except Exception as e:
         log(e)
         log("Bulk install failed. Reverting to individual Perl Dependency Installation.")
@@ -465,12 +465,12 @@ def install_fluxpype():
 
     # If the requirements file exists, install from it using the venv python
     if requirements_file.exists():
-        run_command([str(venv_python), "-m", "pip3", "install", "-r", str(requirements_file)])
+        run_command([str(venv_python), "-m", "pip", "install", "-r", str(requirements_file)])
         log("FluxPype Python dependencies installed successfully.")
     else:
         log("Requirements file not found. Skipping Python dependency installation.", level="WARNING")
 
-    run_command([str(venv_python), "-m", "pip3", "install", "-e", str(script_dir)])
+    run_command([str(venv_python), "-m", "pip", "install", "-e", str(script_dir)])
 
 def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
     """
