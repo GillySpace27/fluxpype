@@ -318,7 +318,8 @@ def install_fluxpype():
     """
     log("Installing FluxPype Python dependencies...")
     venv_python = Path(".venv") / "bin" / "python"
-    requirements_file = Path.cwd() / "requirements.txt"
+    script_dir = Path(__file__).parent
+    requirements_file = script_dir / "requirements.txt"
 
     # Ensure the .venv was created:
     if not venv_python.exists():
