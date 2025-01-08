@@ -267,7 +267,7 @@ sub gen_fluxon_ghostsflow_physics {
     my $ierr;
 
     my $filename = "fluxon-data/gilly_background_cvb07.dat";
-    # my $filename = '/Users/cgilbert/vscode/fluxons/fluxon-data/gilly_background_cvb07.dat';
+    # my $filename = '~/vscode/fluxons/fluxon-data/gilly_background_cvb07.dat';
 
     my ($r_zeph, $rho_zeph, $u_zeph, $v_alph_zeph, $T_zeph) = read_data($filename);
 

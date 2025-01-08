@@ -169,7 +169,7 @@ sub make_tempest_file {
     print "Finished writing Tempest file.\n";
 
     # # Call a Python script
-    # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python /Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/plotting/plot_bmag_all.py");
+    # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python ~/vscode/fluxons/fluxpype/fluxpype/plotting/plot_bmag_all.py");
 
 
 }

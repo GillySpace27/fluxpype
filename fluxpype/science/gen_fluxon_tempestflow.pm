@@ -104,7 +104,7 @@ sub gen_fluxon_tempestflow {
     # print "\n\n\n\n\n";
     # print $output_file_name;
     # print "\n";
-    # print "/Users/cgilbert/vscode/fluxons/fluxon-data/batches/tempest/data/cr2200/wind/cr2200_f1000_radial_bmag_tempest_reinterpolated.dat";
+    # print "~/vscode/fluxons/fluxon-data/batches/tempest/data/cr2200/wind/cr2200_f1000_radial_bmag_tempest_reinterpolated.dat";
     # print "\n";
     # print $file_path;
     # print "\n\n\n\n\n";
