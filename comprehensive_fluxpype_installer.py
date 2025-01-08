@@ -6,6 +6,100 @@ import sys
 from pathlib import Path
 import shutil
 
+############################
+# 1) NEW LOGIC YOU PROVIDED
+############################
+
+
+def update_profile(profile_path, entry, description):
+    """Ensure a specific entry exists in the given profile file."""
+    try:
+        if os.path.exists(profile_path):
+            with open(profile_path, "r") as profile:
+                lines = profile.readlines()
+        else:
+            lines = []
+
+        if entry not in lines:
+            with open(profile_path, "a") as profile:
+                profile.write(f"\n# {description}\n")
+                profile.write(entry)
+            return True
+    except Exception as e:
+        log(f"Error updating {profile_path}: {e}")
+    return False
+
+
+def capture_and_tee(command):
+    """Run a command, print its output live, and return captured output."""
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    output = []
+
+    for line in process.stdout:
+        print(line, end="")  # print live
+        output.append(line.strip())
+
+    process.stdout.close()
+    process.wait()
+
+    if process.returncode != 0:
+        error_output = process.stderr.read()
+        raise RuntimeError(f"Command failed with error: {error_output}")
+
+    return output
+
+
+def extract_flux_paths(output):
+    """Extract paths from the Flux build output."""
+    perl_inc_path = None
+    pdllib_path = None
+
+    for line in output:
+        # Example line: "Will install Flux perl modules into /Users/tester/Library/perl5. Make sure..."
+        if "Will install Flux perl modules into" in line:
+            # Everything after 'into' until the period
+            # e.g. "into /Users/tester/Library/perl5. Make sure ..."
+            # We'll split on 'into' then take the piece after that, strip, and split on '.'
+            perl_inc_path = line.split("into")[-1].strip().split(".")[0]
+            perl_inc_path = perl_inc_path.strip()
+        elif line.startswith("+"):
+            # For example: "+/some/path/PDL"
+            pdllib_path = line.strip()[1:]
+    print(f"{perl_inc_path=} \n{pdllib_path=}")
+    return perl_inc_path, pdllib_path
+
+
+def update_perldlrc(pdllib_path):
+    """Ensure PDLLIB and autoload settings are in ~/.perldlrc."""
+    perldlrc_path = Path.home() / ".perldlrc"
+    required_lines = ["require(q|PDL/default.perldlrc|);", "use PDL::AutoLoader;", "$PDL::AutoLoader::Rescan=1;", "1;"]
+
+    if not pdllib_path:
+        log("No PDLLIB path found in the Flux build output.")
+        return
+
+    # We'll add a line to 'export PDLLIB=+...' to append to PDLLIB
+    pdllib_line = f"export PDLLIB=+{pdllib_path}:$PDLLIB\n"
+
+    existing_lines = []
+    if perldlrc_path.exists():
+        with open(perldlrc_path, "r") as f:
+            existing_lines = f.readlines()
+
+    # We only append lines that aren't already present
+    missing_lines = [line for line in ([pdllib_line] + required_lines) if line not in existing_lines]
+    if missing_lines:
+        with open(perldlrc_path, "a") as f:
+            f.writelines(missing_lines)
+        log("Updated ~/.perldlrc with required settings.")
+    else:
+        log("All required settings already exist in ~/.perldlrc.")
+
+
+############################
+# 2) YOUR ORIGINAL SCRIPT CODE
+############################
+
 
 def log(message, level="INFO"):
     """
@@ -74,18 +168,12 @@ def enable_perl5lib(pl_prefix):
 
     # 2) Persist this in ~/.zprofile
     shell_rc = Path.home() / ".zprofile"
-    # For permanent usage, we typically just append. If you'd like to ensure
-    # *only* one occurrence, you could do a more thorough check.
     perl5lib_line = f'export PERL5LIB="{new_path}:$PERL5LIB"'
     append_to_file_if_not_exists(shell_rc, perl5lib_line)
     log(f"Ensured PERL5LIB is set in {shell_rc}")
 
 
 def check_and_install_homebrew():
-    """
-    Checks if Homebrew is installed, and installs it if it's not. Adds Homebrew to the PATH
-    by updating the ~/.zprofile file idempotently.
-    """
     homebrew_path_1 = "/opt/homebrew/bin"
     homebrew_path_2 = "/usr/local/bin"
     shell_rc = Path.home() / ".zprofile"
@@ -107,7 +195,6 @@ def check_and_install_homebrew():
 
     # Source the updated ~/.zprofile so we have the latest PATH in this session
     run_command(f"source {shell_rc}", shell=True)
-
     log("If the following 'brew' command doesn't work, open a new terminal and try again")
 
     # Update Homebrew before installing packages, so everything is up to date.
@@ -177,11 +264,6 @@ def install_perlbrew(perl_version="perl-5.32.0"):
     else:
         log("Perlbrew already installed.")
 
-    # log(f"Installing Perl version {perl_version}...")
-    # run_command(f"perlbrew --notest install {perl_version}", shell=True, check=False)
-    # run_command(f"perlbrew switch {perl_version}", shell=True, check=False)
-    # run_command(f"perlbrew off", shell=True, check=False)
-
 
 def install_perl():
     """
@@ -238,12 +320,12 @@ def install_perl_modules(pl_prefix):
     run_command(["brew", "install", "gsl"], check=False)
 
     modules = [
-        # Core Modules
+        # Core
         "local::lib",
         "Devel::CheckLib",
         "List::MoreUtils",
         "Capture::Tiny",
-        # Configuration
+        # Config
         "Config::IniFiles",
         # File Handling
         "File::HomeDir",
@@ -251,35 +333,34 @@ def install_perl_modules(pl_prefix):
         "File::ShareDir::Install",
         # Testing
         "Test::Builder",
-        # Parallel Processing
+        # Parallel
         "Parallel::ForkManager",
-        # Math and Statistics
+        # Math
         "Math::GSL::Alien",
         "Math::GSL",
         "Math::Interpolate",
         "Math::Interpolator",
         "Math::RungeKutta",
-        # PDL (Perl Data Language)
+        # PDL
         "PDL",
         "PDL::GSL::INTEG",
         "PDL::Graphics::Gnuplot",
         "PDL::Graphics::Simple",
-        # Inline Programming
+        # Inline
         "Inline",
         "Inline::C",
         "Inline::Python",
-        # Web and Networking
+        # Web
         "Net::SSLeay",
-        # Charting and Graphics
+        # Charts
         "Chart::Gnuplot",
         "Alien::Build::Plugin::Gather::Dino",
-        # CSV Handling
+        # CSV
         "Text::CSV",
-        # Moose-like systems
+        # Moose-like
         "Moo::Role",
     ]
 
-    # Try bulk install with cpanm, passing --notest to skip tests on mac
     try:
         run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=True)
     except Exception as e:
@@ -288,14 +369,18 @@ def install_perl_modules(pl_prefix):
         for module in modules:
             try:
                 run_command(["cpanm", "-l", str(pl_prefix), "--notest", module], check=True)
-            except Exception as e2:
-                # If all else fails, try a forced install
+            except Exception:
                 run_command(["cpanm", "--force", module], check=True)
 
-    # Finally, run the 'eval' step so that newly installed modules in local::lib are recognized
+    # Evaluate local::lib env
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
     run_command(eval_command, shell=True)
+
+
+############################
+# 3) MODIFIED clone_and_build_flux
+############################
 
 
 def clone_and_build_flux(fl_prefix, pl_prefix):
@@ -319,7 +404,30 @@ def clone_and_build_flux(fl_prefix, pl_prefix):
     os.chdir(repo_dir)
     os.environ["FL_PREFIX"] = str(fl_prefix)
     os.environ["PL_PREFIX"] = str(pl_prefix)
-    log(run_command(["make", "everything"], check=False, shell=True, capture_output=True))
+
+    # Instead of run_command(..., capture_output=True), we capture the build output with capture_and_tee:
+    make_output = capture_and_tee(["make", "everything"])
+
+    # Use the new logic to extract the relevant paths:
+    perl_inc_path, pdllib_path = extract_flux_paths(make_output)
+
+    # If we found a new Perl inc path, we can update .zprofile accordingly
+    if perl_inc_path:
+        zprofile_path = Path.home() / ".zprofile"
+        # e.g. 'export PERL5LIB="/Users/tester/Library/perl5:$PERL5LIB"'
+        # We'll call your update_profile:
+        line_to_add = f'export PERL5LIB="{perl_inc_path}:$PERL5LIB"\n'
+        updated = update_profile(zprofile_path, line_to_add, "Flux Perl Inc Path")
+        if updated:
+            log(f"Added new Perl inc path to {zprofile_path}")
+
+    # Also ensure .perldlrc is updated with the PDLLIB lines if we found one:
+    update_perldlrc(pdllib_path)
+
+
+############################
+# 4) REMAINDER OF SCRIPT UNCHANGED
+############################
 
 
 def setup_python_virtualenv():
