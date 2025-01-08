@@ -178,6 +178,7 @@ def check_and_install_homebrew():
     homebrew_path_2 = "/usr/local/bin"
     shell_rc = Path.home() / ".zprofile"
 
+    # 1) Check if brew exists at all:
     if not shutil.which("brew"):
         log("Homebrew not found. Installing...")
         homebrew_install_command = (
@@ -188,17 +189,27 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
-    # Add Homebrew PATH to ~/.zprofile if not already present
+    # 2) Update ~/.zprofile so future shells have these paths
     log("Ensuring Homebrew paths are in the shell RC file...")
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_1}:$PATH"')
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_2}:$PATH"')
 
-    # Source the updated ~/.zprofile so we have the latest PATH in this session
-    run_command(f"source {shell_rc}", shell=True)
-    log("If the following 'brew' command doesn't work, open a new terminal and try again")
+    # 3) Make sure this *current* Python process sees brew in PATH as well:
+    current_path = os.environ.get("PATH", "")
+    # Prepend /opt/homebrew/bin if it's not already in PATH
+    if homebrew_path_1 not in current_path:
+        os.environ["PATH"] = f"{homebrew_path_1}:{os.environ['PATH']}"
+        log(f"Added {homebrew_path_1} to PATH for this session.")
+    # Similarly for /usr/local/bin
+    if homebrew_path_2 not in os.environ["PATH"]:
+        os.environ["PATH"] = f"{homebrew_path_2}:{os.environ['PATH']}"
+        log(f"Added {homebrew_path_2} to PATH for this session.")
 
-    # Update Homebrew before installing packages, so everything is up to date.
+    # 4) Now that 'brew' is definitely on PATH, we can safely run brew commands:
+    log("Updating Homebrew (brew update)...")
     run_command(["brew", "update"], check=False)
+
+    log("Done installing Homebrew. No need to restart the shell for this script to continue.")
 
 
 def install_homebrew_packages():
@@ -493,7 +504,7 @@ def add_perl5lib_to_perldlrc(pl_prefix):
     """
     perldlrc_path = Path.home() / ".perldlrc"
     perl5_append_snippet = f"""
-# Append PL_PREFIX/lib/perl5 to PERL5LIB if it’s not already in there
+# Append PL_PREFIX/lib/perl5 to PERL5LIB if it's not already in there
 if (defined $ENV{{PERL5LIB}}) {{
     if ($ENV{{PERL5LIB}} !~ /{pl_prefix}\\/lib\\/perl5/) {{
         $ENV{{PERL5LIB}} .= ":{pl_prefix}/lib/perl5";
