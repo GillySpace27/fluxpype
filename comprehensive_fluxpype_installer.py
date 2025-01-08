@@ -100,9 +100,6 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
-    # Update Homebrew before installing packages, so everything is up to date.
-    run_command(["brew", "update"], check=False)
-
     # Add Homebrew PATH to ~/.zprofile if not already present
     log("Ensuring Homebrew paths are in the shell RC file...")
     append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_1}:$PATH"')
@@ -110,6 +107,11 @@ def check_and_install_homebrew():
 
     # Source the updated ~/.zprofile so we have the latest PATH in this session
     run_command(f"source {shell_rc}", shell=True)
+
+    log("If the following 'brew' command doesn't work, open a new terminal and try again")
+
+    # Update Homebrew before installing packages, so everything is up to date.
+    run_command(["brew", "update"], check=False)
 
 
 def install_homebrew_packages():
