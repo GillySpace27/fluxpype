@@ -161,35 +161,46 @@ def install_perl_modules(pl_prefix):
     """
     log(f"Installing Perl modules into {pl_prefix} ...")
     modules = [
-        "PDL",
-        "PDL::GSL::INTEG",
-        "Test::Builder",
-        "File::ShareDir::Install",
-        "File::ShareDir",
+        # Core Modules
+        "local::lib",
+        "Devel::CheckLib",
+        "List::MoreUtils",
+        "Capture::Tiny",
+        # Configuration
+        "Config::IniFiles",
+        # File Handling
         "File::HomeDir",
-        "PDL::Graphics::Gnuplot",
-        "PDL::Graphics::Simple",
-        "Math::RungeKutta",
-        "Moo::Role",
-        "Chart::Gnuplot",
-        "Text::CSV",
-        "Math::Interpolate",
-        "Alien::Build::Plugin::Gather::Dino",
-        "Net::SSLeay",
+        "File::ShareDir",
+        "File::ShareDir::Install",
+        # Testing
+        "Test::Builder",
+        # Parallel Processing
+        "Parallel::ForkManager",
+        # Math and Statistics
         "Math::GSL::Alien",
         "Math::GSL",
         "Math::Interpolate",
-        "Config::IniFiles",
-        "Inline::C",
-        "Parallel::ForkManager",
+        "Math::RungeKutta",
+        # PDL (Perl Data Language)
+        "PDL",
+        "PDL::GSL::INTEG",
+        "PDL::Graphics::Gnuplot",
+        "PDL::Graphics::Simple",
+        # Inline Programming
         "Inline",
+        "Inline::C",
         "Inline::Python",
-        "Capture::Tiny",
-        "Devel::CheckLib",
-        "List::MoreUtils",
-        "local::lib",
-        "Config::IniFiles",
+        # Web and Networking
+        "Net::SSLeay",
+        # Charting and Graphics
+        "Chart::Gnuplot",
+        "Alien::Build::Plugin::Gather::Dino",
+        # CSV Handling
+        "Text::CSV",
+        # Moose-like systems
+        "Moo::Role",
     ]
+
     try:
         run_command(["cpanm", "-l", str(pl_prefix)] + modules, check=True)
     except Exception as e:
