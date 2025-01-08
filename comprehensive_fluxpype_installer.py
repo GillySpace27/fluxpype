@@ -78,14 +78,17 @@ def install_homebrew_packages():
     """
     log("Installing required Homebrew packages...")
     packages = [
-        "cpanminus",
         "perl",
+        "cpanminus",
         "gnuplot",
         "fftw",
         "qt",
         "make",
         "gcc",
+        "gsl",
+        "cmake",
         "git",
+        "openssl",
     ]
     run_command(["brew", "install"] + packages)
 
@@ -157,11 +160,14 @@ def install_perl_modules(pl_prefix):
     """
     log(f"Installing Perl modules into {pl_prefix} ...")
     modules = [
+        "PDL",
+        "PDL::GSL::INTEG",
         "Test::Builder",
         "File::ShareDir::Install",
         "File::ShareDir",
         "File::HomeDir",
         "PDL::Graphics::Gnuplot",
+        "PDL::Graphics::Simple",
         "Math::RungeKutta",
         "Moo::Role",
         "Chart::Gnuplot",
@@ -169,8 +175,9 @@ def install_perl_modules(pl_prefix):
         "Math::Interpolate",
         "Alien::Build::Plugin::Gather::Dino",
         "Net::SSLeay",
-        "Math::GSL",
         "Math::GSL::Alien",
+        "Math::GSL",
+        "Math::Interpolate",
         "Config::IniFiles",
         "Inline::C",
         "Parallel::ForkManager",
