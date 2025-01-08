@@ -283,6 +283,7 @@ def install_perl_modules(pl_prefix):
     try:
         run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=True)
     except Exception as e:
+        log(e)
         log("Bulk install failed. Reverting to individual Perl Dependency Installation.")
         for module in modules:
             try:
@@ -318,7 +319,7 @@ def clone_and_build_flux(fl_prefix, pl_prefix):
     os.chdir(repo_dir)
     os.environ["FL_PREFIX"] = str(fl_prefix)
     os.environ["PL_PREFIX"] = str(pl_prefix)
-    run_command(["make", "everything"], check=False, shell=True)
+    log(run_command(["make", "everything"], check=False, shell=True, capture_output=True))
 
 
 def setup_python_virtualenv():
