@@ -80,6 +80,7 @@ def install_homebrew_packages():
     packages = [
         "perl",
         "cpanminus",
+        "pkg-config",
         "gnuplot",
         "fftw",
         "qt",
@@ -147,25 +148,60 @@ def install_perl():
 
 def setup_local_lib(pl_prefix):
     """
-    Sets up local::lib for Perl module management.
+    Sets up local::lib for Perl module management on macOS.
 
     Args:
         pl_prefix (Path): The prefix path for the local::lib installation.
     """
     log(f"Setting up local::lib with PL_PREFIX={pl_prefix} ...")
+
+    # 1) Make sure Homebrew-based Perl dependencies are installed:
+    #    (You can skip or adapt if you already guarantee these elsewhere.)
+    # homebrew_packages = ["cmake", "gsl", "pkg-config", "cpanminus"]
+    # for pkg in homebrew_packages:
+    #     run_command(["brew", "install", pkg], check=False)
+
+    # 2) Set up environment variable so cpanm will put modules under pl_prefix
+    #    Using INSTALL_BASE or --local-lib-contained both work; whichever
+    #    is consistent with the rest of your pipeline.
     os.environ["PERL_MM_OPT"] = f"INSTALL_BASE={pl_prefix}"
-    run_command(["cpanm", "--local-lib-contained", str(pl_prefix), "local::lib"])
+
+    # 3) Install local::lib via cpanm
+    #    On some macOS setups you might want --notest or --force:
+    run_command(
+        [
+            "cpanm",
+            "--notest",  # skip tests if they're problematic on mac
+            "--local-lib-contained",
+            str(pl_prefix),
+            "local::lib",
+        ],
+        check=True,
+    )
+
+    # 4) Update ~/.perldlrc or similar so that local::lib is recognized
+    #    (if your add_perl5lib_to_perldlrc() does that, leave as is)
     add_perl5lib_to_perldlrc(pl_prefix)
 
 
 def install_perl_modules(pl_prefix):
     """
-    Installs the required Perl modules.
+    Installs the required Perl modules on macOS.
 
     Args:
         pl_prefix (Path): The prefix path for the Perl modules installation.
     """
     log(f"Installing Perl modules into {pl_prefix} ...")
+
+    # Potentially relevant Homebrew libs for some of these Perl modules:
+    # (gnuplot, cfitsio, swig, etc. could be relevant for PDL or GSL)
+    brew_deps = ["gnuplot", "cfitsio", "swig"]
+    for pkg in brew_deps:
+        run_command(["brew", "install", pkg], check=False)
+
+    # If you want to guarantee GSL is installed:
+    run_command(["brew", "install", "gsl"], check=False)
+
     modules = [
         # Core Modules
         "local::lib",
@@ -207,16 +243,19 @@ def install_perl_modules(pl_prefix):
         "Moo::Role",
     ]
 
+    # Try bulk install with cpanm, passing --notest to skip problematic tests on mac
     try:
-        run_command(["cpanm", "-l", str(pl_prefix)] + modules, check=True)
+        run_command(["cpanm", "-l", str(pl_prefix), "--notest"] + modules, check=True)
     except Exception as e:
-        log("Reverting to Individual Perl Dependency Installation", level="")
+        log("Bulk install failed. Reverting to individual Perl Dependency Installation.")
         for module in modules:
             try:
-                run_command(["cpanm", "-l", str(pl_prefix), module], check=True)
-            except Exception as e:
-                run_command(["cpanm","--force", module], check=True)
+                run_command(["cpanm", "-l", str(pl_prefix), "--notest", module], check=True)
+            except Exception as e2:
+                # If all else fails, try a forced install
+                run_command(["cpanm", "--force", module], check=True)
 
+    # Finally, run the 'eval' step so that newly installed modules in local::lib are recognized
     eval_command = f"eval `perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix}`"
     log(f"Evaluating local::lib environment with: {eval_command}")
     run_command(eval_command, shell=True)
