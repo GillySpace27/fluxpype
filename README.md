@@ -1,7 +1,7 @@
 # FLUXpype
 
 ## Preamble
-This package is in active development, and acts as a wrapper around the Field Line Universal relaXer (FLUX), a solar magnetic field model. This means that it requires the FLUX perl/C software located [on Github](https://github.com/lowderchris/fluxon-mhd) to be installed separately. Please contact the authors if you struggle with the FLUX installation provided on its page or the integration with FLUXpype here.
+This package is in active development, and acts as a wrapper around the Field Line Universal relaXer (FLUX), a solar magnetic field model. This means that it requires the FLUX perl/C software located [on Github](https://github.com/lowderchris/fluxon-mhd). This version of the fluxpype software and installation instructions should be able to install the entire suite in one go. Please contact Dr. Gilly if you struggle with the installation.
 
 ## Installation
 
@@ -19,7 +19,7 @@ This may ask you to install the developer tools, which you will need. Run the co
 
 > python3 comprehensive_fluxpype_installer.py
 
-This might fail the first time, and you'll just restart the process by opening a new terminal, reactivating the python environment, and running this command again.
+This might fail the first time, but you'll be able to restart the process by opening a new terminal, reactivating the python environment, and running this command again, and it should be good.
 
 Once the package has been locally installed, test it out by typing this from within the fluxpype directory:
 
@@ -27,7 +27,8 @@ Once the package has been locally installed, test it out by typing this from wit
 or \
 > flux-config-run
 
-If python doesn't see the fluxpype module, try running:
+### Troubleshooting
+If python doesn't see the fluxpype module, try running the following in the fluxpype directory:
 
 > python3 -m pip install -e .
 
@@ -41,15 +42,15 @@ If this throws an exception, your FLUX code isn't correctly compiled and linked.
 Editing the configuration file by running the flux-config-edit command is one of the primary ways to interface with the code. The file can also be edited directly. The second line of the config file selects which profile that fluxpype will use. Any settings not redefined in that profile will use the default settings from the first block ("DEFAULT").
 
 To see the details of the current job configuration:
-> flux_config_view
+> flux-config-view
 
 To edit the details of the configuration, modify config.ini. You can find that by typing:
-> flux_config_edit
+> flux-config-edit
 
 ## Running
 The pipe can be invoked in four ways.
 
-> \% flux_config_run
+> \% flux-config-run
 
 > \% python3 fluxpype/config_runner.py
 
