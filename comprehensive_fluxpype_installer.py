@@ -251,8 +251,7 @@ def install_homebrew_packages():
     try:
         run_command(["brew", "install"] + packages)
     except Exception as e:
-        run_command("arch -arm64 brew install" + packages, shell=True)
-
+        run_command("arch -arm64 brew install " + " ".join(packages), shell=True)
 
 def append_to_file_if_not_exists(file_path, content):
     """
@@ -348,6 +347,7 @@ def install_perl_modules(pl_prefix):
         "Devel::CheckLib",
         "List::MoreUtils",
         "Capture::Tiny",
+        "PDL",
         # Config
         "Config::IniFiles",
         # File Handling
@@ -365,7 +365,6 @@ def install_perl_modules(pl_prefix):
         "Math::Interpolator",
         "Math::RungeKutta",
         # PDL
-        "PDL",
         "PDL::GSL::INTEG",
         "PDL::Graphics::Gnuplot",
         "PDL::Graphics::Simple",
