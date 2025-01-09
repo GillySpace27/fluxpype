@@ -202,28 +202,33 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
-    # 2) Update ~/.zprofile so future shells have these paths
-    log("Ensuring Homebrew paths are in the shell RC file...")
-    append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_1}:$PATH"')
-    append_to_file_if_not_exists(shell_rc, f'export PATH="{homebrew_path_2}:$PATH"')
+    ### MODIFIED ###
+    # 2) Only prepend the path that actually exists on this system (Apple Silicon vs. Intel).
+    log("Ensuring Homebrew path is prepended to shell RC and current PATH...")
 
-    # 3) Make sure this *current* Python process sees brew in PATH as well:
     current_path = os.environ.get("PATH", "")
-    # Prepend /opt/homebrew/bin if it's not already in PATH
-    if homebrew_path_1 not in current_path:
-        os.environ["PATH"] = f"{homebrew_path_1}:{os.environ['PATH']}"
-        log(f"Added {homebrew_path_1} to PATH for this session.")
-    # Similarly for /usr/local/bin
-    if homebrew_path_2 not in os.environ["PATH"]:
-        os.environ["PATH"] = f"{homebrew_path_2}:{os.environ['PATH']}"
-        log(f"Added {homebrew_path_2} to PATH for this session.")
 
-    # 4) Now that 'brew' is definitely on PATH, we can safely run brew commands:
+    # If /opt/homebrew/bin exists (Apple Silicon)
+    if Path("/opt/homebrew/bin").exists():
+        # Add to user's shell RC
+        append_to_file_if_not_exists(shell_rc, 'export PATH="/opt/homebrew/bin:$PATH"')
+        # Add to this running script's environment
+        if homebrew_path_1 not in current_path:
+            os.environ["PATH"] = f"{homebrew_path_1}:{os.environ['PATH']}"
+            log(f"Added {homebrew_path_1} to PATH for this session.")
+    # Else if /usr/local/bin exists (Intel)
+    elif Path("/usr/local/bin").exists():
+        append_to_file_if_not_exists(shell_rc, 'export PATH="/usr/local/bin:$PATH"')
+        if homebrew_path_2 not in current_path:
+            os.environ["PATH"] = f"{homebrew_path_2}:{os.environ['PATH']}"
+            log(f"Added {homebrew_path_2} to PATH for this session.")
+    else:
+        log("Neither /opt/homebrew/bin nor /usr/local/bin found. Something unusual about this setup.")
+
+    # 3) Now we know 'brew' is definitely on PATH, we can safely run brew commands:
     log("Updating Homebrew (brew update)...")
     run_command(["brew", "update"], check=False)
-
-
-    log("Done installing Homebrew.")
+    log("Done installing/updating Homebrew.")
 
 
 def install_homebrew_packages():
