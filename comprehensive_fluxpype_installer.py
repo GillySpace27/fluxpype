@@ -96,6 +96,19 @@ def update_perldlrc(pdllib_path):
         log("All required settings already exist in ~/.perldlrc.")
 
 
+def check_command(command):
+    """Check if a command exists on the system."""
+    return shutil.which(command) is not None
+
+
+def check_perl(package):
+    """Check if a Perl package is installed."""
+    answer = subprocess.run(["perl", "-e", f"use {package}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if answer.returncode != 0:
+        log(f"Package '{package}' is not installed in Perl!")
+    return answer.returncode == 0
+
+
 ############################
 # 2) YOUR ORIGINAL SCRIPT CODE
 ############################
@@ -209,7 +222,8 @@ def check_and_install_homebrew():
     log("Updating Homebrew (brew update)...")
     run_command(["brew", "update"], check=False)
 
-    log("Done installing Homebrew. No need to restart the shell for this script to continue.")
+
+    log("Done installing Homebrew.")
 
 
 def install_homebrew_packages():
@@ -231,7 +245,10 @@ def install_homebrew_packages():
         "git",
         "openssl",
     ]
-    run_command(["brew", "install"] + packages)
+    try:
+        run_command(["brew", "install"] + packages)
+    except Exception as e:
+        run_command("arch -arm64 brew install" + packages, shell=True)
 
 
 def append_to_file_if_not_exists(file_path, content):
