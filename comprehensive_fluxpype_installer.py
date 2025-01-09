@@ -244,7 +244,10 @@ def install_homebrew_packages():
         "cmake",
         "git",
         "openssl",
+        "cfitsio",
+        "swig",
     ]
+
     try:
         run_command(["brew", "install"] + packages)
     except Exception as e:
@@ -338,14 +341,6 @@ def install_perl_modules(pl_prefix):
         pl_prefix (Path): The prefix path for the Perl modules installation.
     """
     log(f"Installing Perl modules into {pl_prefix} ...")
-
-    # Potentially relevant Homebrew libs for some of these Perl modules
-    brew_deps = ["gnuplot", "cfitsio", "swig"]
-    for pkg in brew_deps:
-        run_command(["brew", "install", pkg], check=False)
-
-    # If you want to guarantee GSL is installed:
-    run_command(["brew", "install", "gsl"], check=False)
 
     modules = [
         # Core
