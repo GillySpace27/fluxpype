@@ -1055,7 +1055,7 @@ def add_paths(flux_pipe_dir):
 
 
 def make_mag_dir(datdir):
-    mag_dir = os.path.join(datdir, "magnetograms")
+    mag_dir = os.path.expanduser(os.path.join(datdir, "magnetograms"))
 
     if not os.path.exists(mag_dir):
         os.makedirs(mag_dir)
@@ -1117,6 +1117,8 @@ def get_magnetogram_file(
     found_file = False
     inst = "hmi"
     for file in file_list:
+        file = str(file.expanduser())
+        print("\t\t\t", file)
         if str(CR) + "_r1_" in str(file) and inst in str(file).casefold():
             print(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
             found_file = True
@@ -1396,7 +1398,7 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
         # print("\t\t", shorten_path(str(small_file), 2))
         ### WORKING HERE
         print(
-            f"\t\tFound '{os.path.basename(small_file)}' in '{shorten_path(os.path.dirname(small_file))}'"
+            f"\t\tFound '{os.path.basename(small_file)}' in '{os.path.dirname(small_file)}'"
         )
         print("\n\t\t\t```````````````````````````````\n \n\n")
 
