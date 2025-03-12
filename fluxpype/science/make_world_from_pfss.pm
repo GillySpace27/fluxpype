@@ -9,6 +9,15 @@ use strict;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(make_world_from_pfss);
+
+
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
+
 use PDL::AutoLoader;
 use PDL;
 use PDL::Transform;
@@ -16,7 +25,7 @@ use PDL::NiceSlice;
 use PDL::Options;
 use Flux;
 use PDL::IO::Misc;
-# use make_world_sphere qw(make_world_sphere);
+use make_world_sphere qw(make_world_sphere);
 use File::Path;
 use Time::HiRes qw(clock_gettime);
 use File::Basename qw(fileparse);
