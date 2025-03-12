@@ -124,17 +124,23 @@ use warnings;
 use Exporter qw(import);
 use Flux::World qw(read_world);
 
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
+use File::Spec::Functions qw(catfile catdir rel2abs updir);
+use FindBin;
+use Cwd qw(abs_path cwd);
+use File::Basename qw(dirname basename);
+use File::Temp qw(tempfile);
 use PDL;
 use Scalar::Util qw(looks_like_number);
 use List::MoreUtils qw(all);
-use File::Basename qw(dirname basename);
 use Time::Piece;
 use Config::IniFiles;
-use Cwd qw(abs_path cwd);
-use File::Spec::Functions qw(catfile catdir rel2abs);
-use File::Temp qw(tempfile);
 use Carp qw(croak);
-
 no warnings 'redefine';
 
 
@@ -220,12 +226,37 @@ sub configurations {
     return %the_config;
 }
 
-# Locate the configuration file
+
+
+sub find_project_root {
+    my $dir = abs_path(dirname(__FILE__));  # Start from the directory of the current script
+
+    while ($dir ne "/" && $dir ne "C:") {   # Avoid infinite loops on Linux/Windows
+        if (-d catfile($dir, "fluxpype", "fluxpype")) {  # Check if the expected structure exists
+            return $dir;
+        }
+        $dir = dirname($dir);  # Move up one level
+    }
+
+    die "Could not find project root from: " . abs_path(dirname(__FILE__));
+}
+
 sub find_config_file {
-    my ($config_filename) = @_;
-    my $config_path = rel2abs(catfile("fluxpype", $config_filename ));
-    return $config_path if -e $config_path;
-    die "Configuration file not found: $config_path";
+    my $config_filename = "config.ini";
+
+    # Locate the project root dynamically
+    my $project_root = find_project_root();
+
+    # Construct the config file path
+    my $config_path = catfile($project_root, "fluxpype", "fluxpype", $config_filename);
+
+    # Convert to absolute path
+    my $abs_path = abs_path($config_path);
+
+    # Check if the file exists
+    return $abs_path if -e $abs_path;
+
+    die "Configuration file not found at expected location: $abs_path";
 }
 
 # Clean up the configuration file to remove comments and trailing whitespace

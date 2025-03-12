@@ -21,6 +21,13 @@ use File::Path;
 use Time::HiRes qw(clock_gettime);
 use File::Basename qw(fileparse);
 use File::Basename;
+
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+
+
 use pipe_helper qw(shorten_path);
 use plot_world qw(plot_world);
 use Flux::World    qw(read_world);

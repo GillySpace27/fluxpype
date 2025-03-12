@@ -18,11 +18,14 @@ use PDL::IO::Storable;
 use PDL::Graphics::Gnuplot;
 use Chart::Gnuplot;
 
-use lib "fluxpype/science";
-use lib "fluxpype/helpers";
-use lib ".";
+# use local::lib;
+# use lib "fluxpype/science";
+# use lib "fluxpype/helpers";
+# use lib ".";
 
-use local::lib;
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
 
 use gen_fluxon_tflow       qw(gen_fluxon_tflow);
 use gen_fluxon_schonflow   qw(gen_fluxon_schonflow);

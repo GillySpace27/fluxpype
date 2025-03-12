@@ -46,49 +46,55 @@ use strict;
 use warnings;
 
 # Include the setup script to set the @INC paths
-use local::lib;
-use lib ".";
-use lib "..";
+# use local::lib;
+# use lib ".";
+# use lib "..";
 
-use FindBin qw($RealBin);
-use File::Spec;
+# use FindBin qw($RealBin);
+# use File::Spec;
+
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
 
 use Term::ANSIColor;
 print color("magenta");
 
 
 
-use File::Spec::Functions qw(rel2abs);
-BEGIN {
-    # Include relative paths for required modules
-    my @required_modules_paths = ("fluxpype", "fluxpype/science", "fluxpype/plotting", "science", "plotting");
-    foreach my $path (@required_modules_paths) {
-        my $absolute_path = rel2abs($path);
-        print $absolute_path . "\n";
-        unshift @INC, $absolute_path;
-    }
-}
+# use File::Spec::Functions qw(rel2abs);
+# BEGIN {
+#     # Include relative paths for required modules
+#     my @required_modules_paths = ("fluxpype", "fluxpype/science", "fluxpype/plotting", "science", "plotting");
+#     foreach my $path (@required_modules_paths) {
+#         my $absolute_path = rel2abs($path);
+#         print $absolute_path . "\n";
+#         unshift @INC, $absolute_path;
+#     }
+# }
 
-my @required_modules = qw(
-    Flux
-    pipe_helper
-    get_hilbert_footpoints
-    make_world_from_pfss
-    plot_world
-    relax_pfss_world
-);
+# my @required_modules = qw(
+#     Flux
+#     pipe_helper
+#     get_hilbert_footpoints
+#     make_world_from_pfss
+#     plot_world
+#     relax_pfss_world
+# );
 
-foreach my $module (@required_modules) {
-    eval {
-        require "$module.pm";  # Dynamically find and load the module
-        $module->import();     # Explicitly call the import method
-    };
-    if ($@) {
-        die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
-    }
-}
-use lib "..";
-use lib ".";
+# foreach my $module (@required_modules) {
+#     eval {
+#         require "$module.pm";  # Dynamically find and load the module
+#         $module->import();     # Explicitly call the import method
+#     };
+#     if ($@) {
+#         die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
+#     }
+# }
+
 
 use make_world_from_pfss qw(make_world_from_pfss);
 use relax_pfss_world qw(relax_pfss_world);
