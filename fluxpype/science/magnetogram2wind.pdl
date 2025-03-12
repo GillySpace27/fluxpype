@@ -58,11 +58,13 @@ print color("magenta");
 
 
 
+use File::Spec::Functions qw(rel2abs);
 BEGIN {
     # Include relative paths for required modules
-    my @required_modules_paths = ("../fluxpype", "../fluxpype/science", "../fluxpype/plotting");
+    my @required_modules_paths = ("fluxpype", "fluxpype/science", "fluxpype/plotting", "science", "plotting");
     foreach my $path (@required_modules_paths) {
-        my $absolute_path = File::Spec->rel2abs($path);
+        my $absolute_path = rel2abs($path);
+        print $absolute_path . "\n";
         unshift @INC, $absolute_path;
     }
 }
@@ -85,6 +87,9 @@ foreach my $module (@required_modules) {
         die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
     }
 }
+use lib "..";
+use lib ".";
+
 use make_world_from_pfss qw(make_world_from_pfss);
 use relax_pfss_world qw(relax_pfss_world);
 use plot_world qw(plot_worlds);
