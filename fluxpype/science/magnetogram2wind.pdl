@@ -169,6 +169,7 @@ my $max_cycles   = $configs{max_cycles};
 my $do_wind_calc = $configs{do_wind_calc};
 my $print_dirs   = $configs{verbose};
 my $adapt_select = $configs{adapt_select};
+my $base_dir = $configs{base_dir};
 
 my $recompute_string = 'FALSE';
 our ( $this_world_relaxed, $N_actual );
@@ -303,7 +304,7 @@ if (1-$configs{wind_only}){
 
 # # Plot the field map
 my $fmap_command =
-"python fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
+"python $base_dir/fluxpype/fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
 #   print $fmap_command;
 system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
