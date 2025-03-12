@@ -9,19 +9,21 @@ def log(message):
     print(f"[PDL Installer] {message}")
 
 def run_command(command, check=True, shell=False):
-    """Runs a system command and handles errors."""
-    try:
-        result = subprocess.run(command, shell=shell, check=check, capture_output=True, text=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        log(f"Command failed: {command}\n{e.stderr}")
+    """Runs a system command and prints output live."""
+    log(f"Running: {' '.join(command) if isinstance(command, list) else command}")
+
+    result = subprocess.run(command, shell=shell, check=False)  # Allow failure handling manually
+    if result.returncode == 0:
+        log("✅ Success!")
+    else:
+        log(f"❌ Failed with exit code {result.returncode}")
         if check:
             sys.exit(1)
 
 def install_perl_modules():
     """Installs the required Perl modules on macOS or Linux."""
-    # pl_prefix = Path.home() / ".local" / "perl5"  # Default Perl installation prefix
-    log(f"Installing Perl modules...")
+    pl_prefix = Path.home() / ".local" / "perl5"  # Default Perl installation prefix
+    log(f"Installing Perl modules into {pl_prefix} ...")
 
     modules = [
         # Core
@@ -50,23 +52,22 @@ def install_perl_modules():
         "Moo::Role",
     ]
 
-    # Try bulk installation first
-    log("Attempting bulk installation...")
-    try:
-        run_command(["cpanm", "--notest"] + modules, check=False)
-    except Exception as e:
-        log(f"Bulk install failed: {e}")
-        log("Reverting to individual module installation.")
+    log("🚀 Attempting bulk installation...")
+    bulk_install = ["cpanm", "-l", str(pl_prefix), "--notest"] + modules
+    run_command(bulk_install, check=False)
 
-        for module in modules:
-            try:
-                run_command(["cpanm", "--notest", module], check=True)
-            except Exception:
-                run_command(["cpanm", "--force", module], check=True)
+    # Check if bulk install failed and retry one by one
+    log("✅ Bulk installation complete. Verifying individual modules...")
+    for module in modules:
+        log(f"📦 Installing: {module}")
+        install_command = ["cpanm", "-l", str(pl_prefix), "--notest", module]
+        run_command(install_command, check=False)
+
+    log("✅ All Perl dependencies installed successfully!")
 
     # # Set local::lib environment variables
     # eval_command = f"eval $(perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix})"
-    # log(f"Setting up Perl environment with: {eval_command}")
+    # log(f"🔧 Setting up Perl environment with: {eval_command}")
     # run_command(eval_command, shell=True)
 
 if __name__ == "__main__":
