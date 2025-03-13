@@ -113,7 +113,7 @@ sub map_fluxon_b {
     # Output data to disk
     wcols pdl(@fluxon_positions), pdl(@beginning_phis), pdl(@beginning_thetas), pdl(@ending_phis), pdl(@ending_thetas), squeeze(pdl(@beginning_magnetic_fields)), squeeze(pdl(@ending_magnetic_fields)), squeeze(pdl(@area_beginning)), squeeze(pdl(@area_ending)), $output_filename;
 
-    system("python3 fluxpype/plotting/plot_bmag.py");
+    system("python3 fluxpype/fluxpype/plotting/plot_bmag.py");
 
 }
 

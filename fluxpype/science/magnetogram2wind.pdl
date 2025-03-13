@@ -349,7 +349,7 @@ print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 print color("reset");
 
 system(
-"python3 fluxpype/plotting/plot_bmag.py"
+"python3 $base_dir/fluxpype/fluxpype/plotting/plot_bmag.py"
       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
 ) == 0 or ( die "Python script returned error $?", exit );
 
@@ -362,7 +362,7 @@ system(
 
 # This plot shows the actual magnetic fields from all the sims in the batch
 system(
-"python3 fluxpype/plotting/multiplot_bmag_all.py"
+"python3 $base_dir/fluxpype/fluxpype/plotting/multiplot_bmag_all.py"
       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
 ) == 0 or ( die "Python script returned error $?", exit );
 
@@ -375,25 +375,25 @@ system(
 
 # <STDIN>;
       system(
-      "python3 fluxpype/plotting/plot_fr.py"
+      "python3 $base_dir/fluxpype/fluxpype/plotting/plot_fr.py"
             . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
       ) == 0 or ( die "Python script returned error $?", exit );
 
 system(
-"python3 fluxpype/plotting/plot_wind_map_detailed.py"
+"python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_detailed.py"
       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
 
 #       #    . " --open $open_file --closed $closed_file "
 ) == 0 or ( die "Python script returned error $?", exit );
 
 system(
-"python3 fluxpype/plotting/plot_wind_map_square.py"
+"python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_square.py"
       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
 ) == 0 or ( die "Python script returned error $?", exit );
 
 
 system(
-"python3 fluxpype/plotting/plot_wind_solutions.py"
+"python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_solutions.py"
       . " $datdir/batches/$batch_name/data/cr$CR/wind"
 ) == 0 or ( die "Python script returned error $?", exit );
 
