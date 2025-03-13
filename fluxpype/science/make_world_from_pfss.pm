@@ -370,7 +370,8 @@ sub make_world_from_pfss {
 
 
         ## Plot the initial World State ################################
-        # plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
+        print "\t Plotting World!\n";
+        plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
 
 
     } else {
@@ -379,7 +380,6 @@ sub make_world_from_pfss {
         print "\t    $short_world_out_path\n";
 
         my $world = read_world($world_out_path);
-        # print "\t Plotting World!\n";
         # plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
 
     }
