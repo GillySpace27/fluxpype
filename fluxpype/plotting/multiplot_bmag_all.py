@@ -47,6 +47,7 @@ import cv2
 def_files = ["zephyr_2007_2013.sav"]
 def_files.append("fluxpype/zephyr_2007_2013.sav")
 def_files.append("fluxpype/fluxpype/zephyr_2007_2013.sav")
+def_files.append("../zephyr_2007_2013.sav")
 
 from scipy.io import readsav
 
@@ -81,7 +82,7 @@ def load_zephyr():
 def sunspotplot(ax3, crlist=None):
     ### THIRD PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt(f"{base_dir}/fluxpype/fluxpype/SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
