@@ -90,6 +90,7 @@ sub plot_world {
 
         ## Display ####################################################
         print "\n \n\tPlotting the $which World...";
+
         # Set Ranges of Plots
         my $narr_factor = 0.5;
         my $wide_factor = 2.0;
@@ -115,17 +116,22 @@ sub plot_world {
         my $world_png_path_top    = $mid_dir   ."cr$CR\_f". $n_fluxons_wanted. "_$which\_middle.$ext";
         my $world_png_path_wide   = $wide_dir.  "cr$CR\_f". $n_fluxons_wanted. "_$which\_wide.$ext";
 
-        my $window00 = gpwin($renderer,size=>[9,9], output=> $world_png_path_narrow);
+        if (-e $world_png_path_narrow) {
+            print "Skipping existant plots!";
+            return;
+        } else {
+
+        my $window00 = gpwin($renderer ,size=>[9,9],dashed=>0, output=> $world_png_path_narrow);
         $world->render( {'window'=>$window00, range=>$range_inner, view=>[0,0]});
 
-        my $window000 = gpwin($renderer,size=>[9,9], output=> $world_png_path_top);
+        my $window000 = gpwin($renderer,size=>[9,9],dashed=>0, output=> $world_png_path_top);
         $world->render( {'window'=>$window000, range=>$range_middle, view=>[0,0]});
 
-        my $window01 = gpwin($renderer,size=>[9,9], output=> $world_png_path_wide);
+        my $window01 = gpwin($renderer,size=>[9,9],dashed=>0, output=> $world_png_path_wide);
         $world->render( {'window'=>$window01, range=>$range_wide, view=>[0,0]});
         print "\t\tDone!\n";
         }
-
+}
 
 sub plot_worlds {
     our (
@@ -196,6 +202,7 @@ sub plot_worlds {
     if ($do_png) {
 
         print "\tRendering Images...\n";
+        print "$directories";
 
    # my $new_filename_initial2 = $directories . $filename . "_initial-wide.png";
         my $new_filename_relaxed =

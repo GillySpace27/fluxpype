@@ -322,7 +322,6 @@ sub make_world_from_pfss {
         }
         print "\tDone! $open_count open fluxons generated.\n";
 
-
         ## Generate closed fieldlines  ###################################
         print "\n \n\tGenerating closed fluxons from \n\t\t$closed_name_short\n\t ";
         my ($cfln, $cfl) = rle($cflnum);
@@ -347,21 +346,15 @@ sub make_world_from_pfss {
         my $total_fluxons = $open_count + $closed_count;
         print "\n\t    Total fluxons created: $total_fluxons\n";
 
-
-
-
-
-
     ## Generate the world  ############################################
-        print "\n\tGenerating the World...\n \n";
+        print "\n\tGenerating the Initial World...\n \n";
         my $fbg = make_world_sphere(@flines, {rmax=>21.5});
         # my $fbg = make_world_sphere(@flines, {rmax=>215});
 
         $world = str2world($fbg);
 
-
         ## Save the initial world state  ###############################
-        print "\n\tSaving the World...";
+        print "\n\tSaving the Initial World...";
         my $flen = $oflnum->max() + $cflnum->max() + 4; #@flines+0;
         if (! -d $world_out_dir ) {mkpath($world_out_dir) or die "Failed to create directory: $world_out_dir $!\n";}
         $world->write_world($world_out_path);
@@ -370,17 +363,18 @@ sub make_world_from_pfss {
 
 
         ## Plot the initial World State ################################
-        print "\t Plotting World!\n";
+        print "\t Plotting the Initial World!\n";
         plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
 
 
     } else {
-        print "\n\n \tSkipped! World already exists:\n";
+        print "\n\n \tSkipped conversion! World already exists:\n";
         my $short_world_out_path = shorten_path($world_out_path);
         print "\t    $short_world_out_path\n";
 
         my $world = read_world($world_out_path);
-        # plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
+
+        plot_world($world, $datdir, $batch_name, $CR, $reduction, $n_fluxons_wanted, $adapt, $force_make_world, $lim, $lim2, $configs, "initial");
 
     }
 

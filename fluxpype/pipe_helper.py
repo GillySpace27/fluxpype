@@ -667,7 +667,7 @@ def reduce_fits_image(
             data = hdul[1].data
 
         current_resolution = max(data.shape)
-        print("\t\tOriginal Shape: ", data.shape)
+        print("\t\tOriginal Shape:\t", data.shape)
 
         # Calculate the reduction amount if target resolution is specified
         if target_resolution is not None:
@@ -1118,7 +1118,7 @@ def get_magnetogram_file(
     inst = "hmi"
     for file in file_list:
         file = str(file.expanduser())
-        print("\t\t\t", file)
+        # print("\t\t\t", file)
         if str(CR) + "_r1_" in str(file) and inst in str(file).casefold():
             print(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
             found_file = True
@@ -1130,7 +1130,7 @@ def get_magnetogram_file(
         else:
             small_path = reduce_mag_file(file, reduce, force=force_download)
             return file, small_path
-
+    print("\t\tFile not found...")
     c = drms.Client()
     # Generate a search
     crot = a.jsoc.PrimeKey("CAR_ROT", str(CR))
@@ -1483,7 +1483,7 @@ def reduce_fits_image(
         # useheader['CDELT1'] = 360 / small_image.shape[1]  ## DEGREES
         # useheader['CDELT2'] = np.deg2rad(360 / (small_image.shape[0] * np.pi)) #RADIANS
 
-        print("\tFinal Shape:    ", small_image.shape)
+        print("\tFinal Shape: ", small_image.shape)
 
         print("\tSaving  ", small_file)
         fits.writeto(small_file, small_image, useheader, overwrite=True)

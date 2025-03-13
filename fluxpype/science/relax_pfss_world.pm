@@ -92,7 +92,6 @@ L<pipe_helper>, L<Storable>, L<File::Path>, L<Time::HiRes>
 
 =cut
 
-
 sub relax_pfss_world {
     my (
         $world_out_dir, $full_world_path,  $do_relax,
@@ -114,6 +113,7 @@ sub relax_pfss_world {
 
     my $directory = dirname($full_world_path);
     my $file_name_relaxed;
+
     if ($second_file_present) {
         print "\tFound a relaxed file: $file_path_relaxed\n";
         $file_name_relaxed = $file_path_relaxed;
@@ -187,9 +187,15 @@ sub relax_pfss_world {
         return $this_world_orig, $this_world_relaxed, $stepnum;
 
     } else {
-        print "\n\tSkipped relaxation! Already have relaxed file. Loading...\n\n";
+        print "\n\tSkipped relaxation! Already have relaxed file.\n\n";
 
-        print "\t\tLoading relaxed world...\n";
+        # Check if relaxed file actually exists before attempting to read
+        if (!-e $file_name_relaxed) {
+            print "Error: Couldn't open file '$file_name_relaxed'. File does not exist.\n";
+            die;
+        }
+
+        print "\t\tLoading relaxed world from: $file_name_relaxed\n";
         my $this_world_relaxed = read_world($file_name_relaxed);
 
         if ($file_name_relaxed =~ /_s(\d+)\.flux$/) {
