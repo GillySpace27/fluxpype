@@ -11,6 +11,7 @@ use Exporter qw(import);
 our @EXPORT_OK = qw(relax_pfss_world);
 use File::Basename;
 use File::Path qw(mkpath);
+use File::Spec;
 use pipe_helper qw(find_highest_numbered_file check_second_file_presence);
 use Flux::World qw(read_world);
 use Time::HiRes qw(clock_gettime);
@@ -116,7 +117,8 @@ sub relax_pfss_world {
 
     if ($second_file_present) {
         print "\tFound a relaxed file: $file_path_relaxed\n";
-        $file_name_relaxed = $directory . $file_path_relaxed;
+        # $file_name_relaxed = $directory . $file_path_relaxed;
+        $file_name_relaxed = File::Spec->catfile($directory, $file_path_relaxed);
     } else {
         print "\tNo relaxed file found, so we will relax the world (fairly slow).\n\n";
         my ($basename, $dirname) = fileparse($full_world_path);
