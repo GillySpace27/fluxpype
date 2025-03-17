@@ -116,12 +116,13 @@ sub relax_pfss_world {
 
     if ($second_file_present) {
         print "\tFound a relaxed file: $file_path_relaxed\n";
-        $file_name_relaxed = $file_path_relaxed;
+        $file_name_relaxed = $directory . $file_path_relaxed;
     } else {
         print "\tNo relaxed file found, so we will relax the world (fairly slow).\n\n";
         my ($basename, $dirname) = fileparse($full_world_path);
         $basename =~ s/(\.\w+)?$//;  # Remove file extension
         $file_name_relaxed = "${dirname}${basename}_relaxed";
+        print "Relaxing to $file_name_relaxed";
         $stepnum = 0;
     }
 
