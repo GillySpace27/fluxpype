@@ -539,7 +539,7 @@ sub calculate_directories {
     my $batchdir = catdir($data_dir, "batches", $batch_name);
     my $logfile = catfile($batchdir, "pipe_log.txt");
 
-    print "542 pipe_helper.pm:magg: $magdir\n";
+    print "542 pipe_helper.pm:203: $magdir\n";
 
     my $home_dir = $ENV{'HOME'};
     s{^~}{$home_dir} for ($data_dir, $pdldir, $magdir, $batchdir, $logfile);
