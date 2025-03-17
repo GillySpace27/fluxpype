@@ -530,10 +530,12 @@ sub calculate_directories {
     my $pipedir = catdir("fluxpype", "fluxpype");
     my $pdldir = catdir("pdl", "PDL");
 
+
     my $magdir = catdir($data_dir, "magnetograms");
     my $batchdir = catdir($data_dir, "batches", $batch_name);
     my $logfile = catfile($batchdir, "pipe_log.txt");
 
+    print "HELLO MAG DIR HYPO $magdir";
     my $home_dir = $ENV{'HOME'};
     s{^~}{$home_dir} for ($data_dir, $pdldir, $magdir, $batchdir, $logfile);
 
