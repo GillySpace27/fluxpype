@@ -200,6 +200,8 @@ sub configurations {
     $the_config{'base_dir'} = $base_dir;
     resolve_placeholders( \%the_config, { base_dir => $base_dir } );
 
+    print "203 pipe_helper.pm:data: $the_config{'data_dir'}\n";
+
     $the_config{"run_script"} = catfile( $the_config{"fl_mhdlib"}, $the_config{"run_script"} );
 
     $the_config{"rotations"} = parse_list_or_range( $the_config{"rotations"} );
@@ -222,6 +224,8 @@ sub configurations {
 
     calculate_directories( \%the_config );
     configs_update_magdir( \%the_config );
+
+    print "227 pipe_helper.pm:magg: $the_config{'mag_dir'}\n";
 
     return %the_config;
 }
@@ -535,7 +539,8 @@ sub calculate_directories {
     my $batchdir = catdir($data_dir, "batches", $batch_name);
     my $logfile = catfile($batchdir, "pipe_log.txt");
 
-    print "HELLO MAG DIR HYPO $magdir";
+    print "542 pipe_helper.pm:magg: $magdir\n";
+
     my $home_dir = $ENV{'HOME'};
     s{^~}{$home_dir} for ($data_dir, $pdldir, $magdir, $batchdir, $logfile);
 
