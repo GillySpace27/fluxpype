@@ -130,6 +130,10 @@ print "FLUX is located at: $module_path\n";
 print "Reading configurations...\n";
 my %configs = pipe_helper::configurations();
 
+print "From configs 133\n";
+print $configs{datdir};
+print "\n";
+
 
 my $CR = $ARGV[0] // ( $configs{rotations}->at(0) );
 $configs{CR} = $CR;
@@ -178,9 +182,6 @@ our ( $this_world_relaxed, $N_actual );
 my ( $pipedir, $pdldir, $datdir, $magdir, $batchdir, $logfile ) =
   @configs{qw/pipe_dir pdl_dir datdir mag_dir batch_dir logfile/};
 
-print "\n";
-print $datdir;
-print "\n";
 
 #############################################################################
 #### Initialize Environment #################################################
