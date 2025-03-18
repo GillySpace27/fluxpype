@@ -240,6 +240,7 @@ sub configurations {
     print "227 pipe_helper.pm:magg: $the_config{'mag_dir'}\n";
 
     return %the_config;
+}
 
 
 sub find_project_root {
