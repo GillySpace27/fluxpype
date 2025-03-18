@@ -143,6 +143,7 @@ use Config::IniFiles;
 use Carp qw(croak);
 no warnings 'redefine';
 
+use File::HomeDir;
 
 our @EXPORT_OK = qw(
     shorten_path
@@ -297,10 +298,25 @@ sub load_config_section {
     return %config;
 }
 
-# Resolve the base directory dynamically
+# # Resolve the base directory dynamically
+# sub resolve_base_dir {
+#     my ($config_path) = @_;
+#     return abs_path(File::Spec->catdir(dirname($config_path), "..", ".."));
+# }
+
+
+
 sub resolve_base_dir {
     my ($config_path) = @_;
-    return abs_path(File::Spec->catdir(dirname($config_path), "..", ".."));
+
+    # Expand ~ to home directory
+    if ($config_path =~ /^~\//) {
+        my $home_dir = File::HomeDir->my_home;
+        $config_path =~ s/^~/$home_dir/;
+    }
+
+    # Return the absolute path
+    return abs_path($config_path);
 }
 
 
