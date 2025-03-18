@@ -174,7 +174,6 @@ sub shorten_path {
     return $string;
 }
 
-# Reads and processes a configuration file
 sub configurations {
     my ( $adapt, $debug, $config_name, $config_filename ) = @_;
     $adapt             //= 0;
@@ -195,7 +194,7 @@ sub configurations {
     %the_config = ( %the_config, load_config_section( $cfg, $config_name ) );
 
     $the_config{'adapt'} = $adapt;
-    $the_config{'abs_rc_path'} = glob( $the_config{'rc_path'} );
+    $the_config{'abs_rc_path'} = glob($the_config{'rc_path'});
 
     print "From configs 199:";
     print $the_config{datdir} . "\n";
@@ -212,7 +211,7 @@ sub configurations {
 
     print "203 pipe_helper.pm:data: $the_config{'data_dir'}\n";
 
-    $the_config{"run_script"} = catfile( $the_config{"fl_mhdlib"}, $the_config{"run_script"} );
+    $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
 
     $the_config{"rotations"} = parse_list_or_range( $the_config{"rotations"} );
     $the_config{"fluxon_count"} = parse_list_or_range( $the_config{"fluxon_count"} );
@@ -239,7 +238,6 @@ sub configurations {
 
     return %the_config;
 }
-
 
 
 sub find_project_root {
@@ -315,7 +313,8 @@ sub resolve_base_dir {
         $config_path =~ s/^~/$home_dir/;
     }
 
-    return $config_path;
+    # Convert to absolute path
+    return abs_path($config_path);
 }
 
 
