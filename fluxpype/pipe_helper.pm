@@ -400,26 +400,6 @@ sub parse_list_or_range { # line 261
     }
 }
 
-# # Resolve placeholders in configuration values
-# sub resolve_placeholders {
-#     my ($config, $placeholders) = @_;
-#     foreach my $key (keys %{$config}) {
-#         if (ref $config->{$key} eq '') { # Process scalar values
-#             my $value = $config->{$key} // '';
-#             foreach my $placeholder (keys %{$placeholders}) {
-#                 my $replacement = $placeholders->{$placeholder};
-#                 if (defined $replacement && defined $value) {
-#                     $value =~ s/\$\{$placeholder\}/$replacement/g;
-#                 }
-#             }
-#             $config->{$key} = $value;
-#         }
-#     }
-# }
-
-
-
-
 # Debugging function
 sub print_debug_info {
     my ($config_ref) = @_;
