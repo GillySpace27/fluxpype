@@ -196,21 +196,10 @@ sub configurations {
     $the_config{'adapt'} = $adapt;
     $the_config{'abs_rc_path'} = glob($the_config{'rc_path'});
 
-    print "From configs 199:";
-    print $the_config{datdir} . "\n";
-    print $the_config{base_dir};
-    print "\n";
-
     # Correctly resolve the base directory
     my $base_path = $the_config{base_dir} || '~';
     my $base_dir = resolve_base_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
-
-    resolve_placeholders( \%the_config, { base_dir => $base_dir } );
-    print "From configs 206:";
-    print $the_config{datdir} . "\n";
-    print $the_config{base_dir};
-    print "\n";
 
     print "203 pipe_helper.pm:data: $the_config{'data_dir'}\n";
 
@@ -236,8 +225,6 @@ sub configurations {
 
     calculate_directories( \%the_config );
     configs_update_magdir( \%the_config );
-
-    print "227 pipe_helper.pm:magg: $the_config{'mag_dir'}\n";
 
     return %the_config;
 }
@@ -564,8 +551,6 @@ sub calculate_directories {
     my $magdir = catdir($data_dir, "magnetograms");
     my $batchdir = catdir($data_dir, "batches", $batch_name);
     my $logfile = catfile($batchdir, "pipe_log.txt");
-
-    print "542 pipe_helper.pm:203: $magdir\n";
 
     my $home_dir = $ENV{'HOME'};
     s{^~}{$home_dir} for ($data_dir, $pdldir, $magdir, $batchdir, $logfile);

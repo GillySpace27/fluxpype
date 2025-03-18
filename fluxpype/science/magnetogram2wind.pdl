@@ -130,9 +130,6 @@ print "FLUX is located at: $module_path\n";
 print "Reading configurations...\n";
 my %configs = pipe_helper::configurations();
 
-print "From configs 133\n";
-print $configs{datdir};
-print "\n";
 
 
 my $CR = $ARGV[0] // ( $configs{rotations}->at(0) );
