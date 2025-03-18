@@ -308,14 +308,14 @@ sub load_config_section {
 
 sub resolve_base_dir {
     my ($config_path) = @_;
-    # Expand ~ to home directory
+
+    # Check if the path starts with ~ and expand it
     if ($config_path =~ /^~\//) {
         my $home_dir = File::HomeDir->my_home;
         $config_path =~ s/^~/$home_dir/;
     }
 
-    # Return the absolute path
-    return abs_path($config_path);
+    return $config_path;
 }
 
 
