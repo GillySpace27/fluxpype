@@ -178,6 +178,10 @@ our ( $this_world_relaxed, $N_actual );
 my ( $pipedir, $pdldir, $datdir, $magdir, $batchdir, $logfile ) =
   @configs{qw/pipe_dir pdl_dir datdir mag_dir batch_dir logfile/};
 
+print "\n";
+print $datdir;
+print "\n";
+
 #############################################################################
 #### Initialize Environment #################################################
 #############################################################################
