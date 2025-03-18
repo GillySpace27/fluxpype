@@ -198,7 +198,7 @@ sub configurations {
     $the_config{'abs_rc_path'} = glob( $the_config{'rc_path'} );
 
     print "From configs 199:";
-    print $the_config{datdir};
+    print $the_config{datdir} . "\n";
     print $the_config{base_dir};
     print "\n";
 
@@ -206,7 +206,7 @@ sub configurations {
     $the_config{'base_dir'} = $base_dir;
     resolve_placeholders( \%the_config, { base_dir => $base_dir } );
     print "From configs 206:";
-    print $the_config{datdir};
+    print $the_config{datdir} . "\n";
     print $the_config{base_dir};
     print "\n";
 
@@ -223,7 +223,7 @@ sub configurations {
         $the_config{"flow_method"} = $the_config{"flow_method"}->[0];
     }
 
-    print_debug_info( \%the_config ) if $debug;
+    print_debug_info( \%the_config ) if 1;
 
     die "Rotations is not a PDL object" unless ref( $the_config{'rotations'} ) eq 'PDL';
     die "Fluxon Count is not a PDL object" unless ref( $the_config{'fluxon_count'} ) eq 'PDL';
