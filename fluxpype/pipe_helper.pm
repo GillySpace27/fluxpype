@@ -201,8 +201,11 @@ sub configurations {
     print $the_config{base_dir};
     print "\n";
 
-    my $base_dir = resolve_base_dir($config_path);
+    # Correctly resolve the base directory
+    my $base_path = $the_config{base_dir} || '~';
+    my $base_dir = resolve_base_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
+
     resolve_placeholders( \%the_config, { base_dir => $base_dir } );
     print "From configs 206:";
     print $the_config{datdir} . "\n";
@@ -237,7 +240,6 @@ sub configurations {
     print "227 pipe_helper.pm:magg: $the_config{'mag_dir'}\n";
 
     return %the_config;
-}
 
 
 sub find_project_root {
@@ -307,7 +309,7 @@ sub load_config_section {
 sub resolve_base_dir {
     my ($config_path) = @_;
 
-    # Check if the path starts with ~ and expand it
+    # Expand ~ to home directory
     if ($config_path =~ /^~\//) {
         my $home_dir = File::HomeDir->my_home;
         $config_path =~ s/^~/$home_dir/;
