@@ -182,18 +182,16 @@ use File::HomeDir;
 use File::Spec::Functions qw(catfile catdir);
 use File::Basename qw(dirname);
 
-# Function to expand and resolve paths correctly
+# Function to expand ~ to the home directory
 sub expand_home_dir {
     my ($path) = @_;
 
-    # Replace ~ with the home directory
-    if ($path =~ /^~\//) {
+    if ($path =~ /^~($|\/)/) {
         my $home_dir = File::HomeDir->my_home;
         $path =~ s/^~/$home_dir/;
     }
 
-    # Return the absolute path
-    return abs_path($path);
+    return $path;
 }
 
 # Function to resolve placeholders in configuration values
@@ -204,7 +202,9 @@ sub resolve_placeholders {
             my $value = $config->{$key} // '';  # Ensure $value is defined
             foreach my $placeholder (keys %{$placeholders}) {
                 my $replacement = $placeholders->{$placeholder};
-                $value =~ s/\$\{$placeholder\}/$replacement/g if defined $replacement;
+                if (defined $replacement) {
+                    $value =~ s/\$\{$placeholder\}/$replacement/g;
+                }
             }
             $config->{$key} = expand_home_dir($value);
         }
