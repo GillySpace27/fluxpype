@@ -308,7 +308,6 @@ sub load_config_section {
 
 sub resolve_base_dir {
     my ($config_path) = @_;
-    return $config_path;
     # Expand ~ to home directory
     if ($config_path =~ /^~\//) {
         my $home_dir = File::HomeDir->my_home;
