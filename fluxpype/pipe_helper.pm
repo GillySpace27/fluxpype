@@ -201,7 +201,8 @@ sub configurations {
     my $base_dir = resolve_base_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
 
-    print "203 pipe_helper.pm:data: $the_config{'data_dir'}\n";
+    resolve_placeholders(\%the_config, { base_dir => $base_dir });
+    # debug_paths("After resolving placeholders:", %the_config);
 
     $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
 
@@ -214,7 +215,7 @@ sub configurations {
         $the_config{"flow_method"} = $the_config{"flow_method"}->[0];
     }
 
-    print_debug_info( \%the_config ) if 1;
+    print_debug_info( \%the_config ) if 0;
 
     die "Rotations is not a PDL object" unless ref( $the_config{'rotations'} ) eq 'PDL';
     die "Fluxon Count is not a PDL object" unless ref( $the_config{'fluxon_count'} ) eq 'PDL';
@@ -354,16 +355,19 @@ sub parse_list_or_range { # line 261
 sub resolve_placeholders {
     my ($config, $placeholders) = @_;
     foreach my $key (keys %{$config}) {
-        if (ref $config->{$key} eq '') {  # Only process scalar values
-            my $value = $config->{$key} // '';  # Ensure $value is defined
+        if (ref $config->{$key} eq '') { # Process scalar values
+            my $value = $config->{$key} // '';
             foreach my $placeholder (keys %{$placeholders}) {
                 my $replacement = $placeholders->{$placeholder};
-                $value =~ s/\$\{$placeholder\}/$replacement/g if defined $value;
+                if (defined $replacement && defined $value) {
+                    $value =~ s/\$\{$placeholder\}/$replacement/g;
+                }
             }
             $config->{$key} = $value;
         }
     }
 }
+
 
 
 
