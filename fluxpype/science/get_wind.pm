@@ -61,7 +61,7 @@ use Flux::World    qw(read_world);
 use PDL::IO::FITS;
 use Text::CSV;
 use PDL;
-use PDL::Graphics::Simple;
+# use PDL::Graphics::Simple;
 use PDL::IO::Misc;
 
 
