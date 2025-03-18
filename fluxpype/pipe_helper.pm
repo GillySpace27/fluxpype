@@ -196,9 +196,18 @@ sub configurations {
     $the_config{'adapt'} = $adapt;
     $the_config{'abs_rc_path'} = glob( $the_config{'rc_path'} );
 
+    print "From configs 199:";
+    print $the_config{datdir};
+    print $the_config{base_dir};
+    print "\n";
+
     my $base_dir = resolve_base_dir($config_path);
     $the_config{'base_dir'} = $base_dir;
     resolve_placeholders( \%the_config, { base_dir => $base_dir } );
+    print "From configs 206:";
+    print $the_config{datdir};
+    print $the_config{base_dir};
+    print "\n";
 
     print "203 pipe_helper.pm:data: $the_config{'data_dir'}\n";
 
