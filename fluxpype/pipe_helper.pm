@@ -169,63 +169,112 @@ our @EXPORT_OK = qw(
 # Shortens the given file path by replacing the DATAPATH environment variable.
 sub shorten_path {
     my ($string) = @_;
+    return $string;
     my $data_path = $ENV{'DATAPATH'} // '';
     $string =~ s/\Q$data_path\E/~/;
     return $string;
 }
 
+use strict;
+use warnings;
+use Cwd 'abs_path';
+use File::HomeDir;
+use File::Spec::Functions qw(catfile catdir);
+use File::Basename qw(dirname);
+
+# Function to expand and resolve paths correctly
+sub expand_home_dir {
+    my ($path) = @_;
+
+    # Replace ~ with the home directory
+    if ($path =~ /^~\//) {
+        my $home_dir = File::HomeDir->my_home;
+        $path =~ s/^~/$home_dir/;
+    }
+
+    # Return the absolute path
+    return abs_path($path);
+}
+
+# Function to resolve placeholders in configuration values
+sub resolve_placeholders {
+    my ($config, $placeholders) = @_;
+    foreach my $key (keys %{$config}) {
+        if (ref $config->{$key} eq '') {  # Only process scalar values
+            my $value = $config->{$key} // '';  # Ensure $value is defined
+            foreach my $placeholder (keys %{$placeholders}) {
+                my $replacement = $placeholders->{$placeholder};
+                $value =~ s/\$\{$placeholder\}/$replacement/g if defined $replacement;
+            }
+            $config->{$key} = expand_home_dir($value);
+        }
+    }
+}
+
+# Ensuring correct path handling in relevant function
 sub configurations {
-    my ( $adapt, $debug, $config_name, $config_filename ) = @_;
-    $adapt             //= 0;
-    $config_name       //= "DEFAULT";
-    $config_filename   //= "config.ini";
-    $debug             //= 0;
+    my ($adapt, $debug, $config_name, $config_filename) = @_;
+    $adapt = 0 unless defined $adapt;
+    $config_name = "DEFAULT" unless defined $config_name;
+    $config_filename = "config.ini" unless defined $config_filename;
+    $debug = 0 unless defined $debug;
 
     my $config_path = find_config_file($config_filename);
     my $clean_config = clean_config_file($config_path);
-    my $cfg = Config::IniFiles->new( -file => $clean_config )
-      or die "Failed to parse configuration file: $config_path";
+    my $cfg = Config::IniFiles->new(-file => $clean_config) or die "Failed to parse configuration file: $config_path";
 
-    $config_name = $cfg->val( 'DEFAULT', 'config_name' ) if $config_name eq 'DEFAULT';
+    $config_name = $cfg->val('DEFAULT', 'config_name') if $config_name eq 'DEFAULT';
     die "Configuration section '$config_name' not found in $config_filename"
       unless $cfg->SectionExists($config_name);
 
-    my %the_config = load_config_section( $cfg, 'DEFAULT' );
-    %the_config = ( %the_config, load_config_section( $cfg, $config_name ) );
+    my %the_config = load_config_section($cfg, 'DEFAULT');
+    %the_config = (%the_config, load_config_section($cfg, $config_name));
 
     $the_config{'adapt'} = $adapt;
-    $the_config{'abs_rc_path'} = glob($the_config{'rc_path'});
+    $the_config{'abs_rc_path'} = expand_home_dir(glob($the_config{'rc_path'}));
 
-    # Correctly resolve the base directory
+    print "From configs 199:";
+    print $the_config{datdir} . "\n";
+    print $the_config{base_dir};
+    print "\n";
+
     my $base_path = $the_config{base_dir} || '~';
-    my $base_dir = resolve_base_dir($base_path);
+    my $base_dir = expand_home_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
 
     resolve_placeholders(\%the_config, { base_dir => $base_dir });
-    # debug_paths("After resolving placeholders:", %the_config);
+    print "From configs 206:";
+    print $the_config{datdir} . "\n";
+    print $the_config{base_dir};
+    print "\n";
+
+    print "203 pipe_helper.pm:data: " . $the_config{'data_dir'} . "\n";
 
     $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
 
-    $the_config{"rotations"} = parse_list_or_range( $the_config{"rotations"} );
-    $the_config{"fluxon_count"} = parse_list_or_range( $the_config{"fluxon_count"} );
-    $the_config{"adapts"} = parse_list_or_range( $the_config{"adapts"} );
-    $the_config{"flow_method"} = parse_list_or_range( $the_config{"flow_method"} );
+    $the_config{"rotations"} = parse_list_or_range($the_config{"rotations"});
+    $the_config{"fluxon_count"} = parse_list_or_range($the_config{"fluxon_count"});
+    $the_config{"adapts"} = parse_list_or_range($the_config{"adapts"});
+    $the_config{"flow_method"} = parse_list_or_range($the_config{"flow_method"});
 
-    if ( ref( $the_config{"flow_method"} ) eq 'ARRAY' && scalar @{ $the_config{"flow_method"} } == 1 ) {
+    if (ref($the_config{"flow_method"}) eq 'ARRAY' && scalar @{$the_config{"flow_method"}} == 1) {
         $the_config{"flow_method"} = $the_config{"flow_method"}->[0];
     }
 
-    print_debug_info( \%the_config ) if 0;
+    print_debug_info(\%the_config) if $debug;
 
-    die "Rotations is not a PDL object" unless ref( $the_config{'rotations'} ) eq 'PDL';
-    die "Fluxon Count is not a PDL object" unless ref( $the_config{'fluxon_count'} ) eq 'PDL';
-    die "Adapts is not a PDL object" unless ref( $the_config{'adapts'} ) eq 'PDL';
+    die "Rotations is not a PDL object" unless ref($the_config{'rotations'}) eq 'PDL';
+    die "Fluxon Count is not a PDL object" unless ref($the_config{'fluxon_count'}) eq 'PDL';
+    die "Adapts is not a PDL object" unless ref($the_config{'adapts'}) eq 'PDL';
 
     $the_config{'n_jobs'} = $the_config{'rotations'}->nelem *
-        $the_config{'fluxon_count'}->nelem * $the_config{'adapts'}->nelem;
+                            $the_config{'fluxon_count'}->nelem *
+                            $the_config{'adapts'}->nelem;
 
-    calculate_directories( \%the_config );
-    configs_update_magdir( \%the_config );
+    calculate_directories(\%the_config);
+    configs_update_magdir(\%the_config);
+
+    print "227 pipe_helper.pm:magg: " . $the_config{'mag_dir'} . "\n";
 
     return %the_config;
 }
@@ -351,22 +400,22 @@ sub parse_list_or_range { # line 261
     }
 }
 
-# Resolve placeholders in configuration values
-sub resolve_placeholders {
-    my ($config, $placeholders) = @_;
-    foreach my $key (keys %{$config}) {
-        if (ref $config->{$key} eq '') { # Process scalar values
-            my $value = $config->{$key} // '';
-            foreach my $placeholder (keys %{$placeholders}) {
-                my $replacement = $placeholders->{$placeholder};
-                if (defined $replacement && defined $value) {
-                    $value =~ s/\$\{$placeholder\}/$replacement/g;
-                }
-            }
-            $config->{$key} = $value;
-        }
-    }
-}
+# # Resolve placeholders in configuration values
+# sub resolve_placeholders {
+#     my ($config, $placeholders) = @_;
+#     foreach my $key (keys %{$config}) {
+#         if (ref $config->{$key} eq '') { # Process scalar values
+#             my $value = $config->{$key} // '';
+#             foreach my $placeholder (keys %{$placeholders}) {
+#                 my $replacement = $placeholders->{$placeholder};
+#                 if (defined $replacement && defined $value) {
+#                     $value =~ s/\$\{$placeholder\}/$replacement/g;
+#                 }
+#             }
+#             $config->{$key} = $value;
+#         }
+#     }
+# }
 
 
 
