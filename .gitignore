@@ -152,3 +152,4 @@ perl_lib/
 fluxpype/fluxpype/data/
 fluxpype/data/
 src/science/_Inline/*
+!zephyr_2007_2013.sav
