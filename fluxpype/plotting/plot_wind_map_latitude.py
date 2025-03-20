@@ -26,8 +26,14 @@ Functions:
 
 import numpy as np
 import matplotlib as mpl
-mpl.use("qt5agg")
-import matplotlib.pyplot as plt
+try:
+    mpl.use("qt5agg")
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+except ImportError as e:
+    print(e)
+    print("Loading agg instead")
+    mpl.use("agg")
 import argparse
 import os
 
@@ -35,7 +41,7 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from pipe_helper import (configurations, load_fits_magnetogram,
+from fluxpype.pipe_helper import (configurations, load_fits_magnetogram,
                          load_magnetogram_params, get_fixed_coords, get_ax)
 
 from fluxpype.plotting.plot_fieldmap import magnet_plot

@@ -26,12 +26,17 @@ Functions:
 
 import numpy as np
 import matplotlib as mpl
-mpl.use("qt5agg")
-import matplotlib.pyplot as plt
+try:
+    mpl.use("qt5agg")
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+except ImportError as e:
+    print(e)
+    print("Loading agg instead")
+    mpl.use("agg")
 import argparse
 import os
 import cv2
-import os
 from tqdm import tqdm
 import os.path as path
 from scipy.interpolate import griddata

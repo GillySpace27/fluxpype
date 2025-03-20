@@ -61,7 +61,10 @@ from tqdm import tqdm
 
 from fluxpype.pipe_helper import load_fits_magnetogram, read_fits_data, shorten_path
 
-mpl.use("qt5agg")
+try:
+    mpl.use("qt5agg")
+except ImportError:
+    mpl.use("Agg")
 
 # A note from the original author:
     # We can now use SunPy to load the HMI fits file, and extract the magnetic field data. Interpolate the data down to a more reasonable resolution.

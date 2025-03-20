@@ -15,11 +15,19 @@ package get_wind;
 use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(get_wind);
-use local::lib;
-use lib ".";
-use lib "..";
-# use lib "fluxpype/fluxpype/helpers/";
-# use lib "fluxpype/fluxpype/science/";
+# use local::lib;
+# use lib ".";
+# use lib "..";
+# # use lib "fluxpype/fluxpype/helpers/";
+# # use lib "fluxpype/fluxpype/science/";
+
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
+
 use Term::ANSIColor;
 
 my @required_modules = qw(
@@ -53,7 +61,7 @@ use Flux::World    qw(read_world);
 use PDL::IO::FITS;
 use Text::CSV;
 use PDL;
-use PDL::Graphics::Simple;
+# use PDL::Graphics::Simple;
 use PDL::IO::Misc;
 
 

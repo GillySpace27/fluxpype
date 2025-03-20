@@ -27,6 +27,8 @@ from rich.panel import Panel
 from rich.console import Console
 import timeout_decorator
 
+os.nice(16)
+
 # Initialize Rich console and logger
 console = Console()
 logging.basicConfig(
@@ -127,8 +129,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         logging.warning("PERL5LIB environment variable is not set. Execution may fail.")
 
     command = [
-        "bash",
-        "fluxpype/run_pdl.sh",
+        "perl",
         run_script_path,
         str(rotation),
         str(fluxon_count),

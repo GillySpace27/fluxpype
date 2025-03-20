@@ -43,59 +43,58 @@ import shutil
 from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
-
-def_files = ["zephyr_2007_2013.sav"]
-def_files.append("fluxpype/zephyr_2007_2013.sav")
-def_files.append("fluxpype/fluxpype/zephyr_2007_2013.sav")
-
+import os
+import numpy as np
 from scipy.io import readsav
-
-def_files = ["zephyr_2007_2013.sav", "fluxpype/zephyr_2007_2013.sav", "fluxpype/fluxpype/zephyr_2007_2013.sav"]
+import sunpy.coordinates
+from scipy.io import readsav
 
 
 def load_zephyr():
-    for file in def_files:
-        try:
-            data = readsav(file)
-            print(f"\t\tSuccessfully loaded file: {file}")
-            return data
-        except FileNotFoundError:
-            print(f"\tFile not found: {file}")
-    raise FileNotFoundError("None of the specified files could be found.")
+    """
+    Loads the Zephyr data from zephyr_2007_2013.sav,
+    assumed to be in the same directory as this script.
+    """
+    # Determine the directory of the *current* script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path  = os.path.join(script_dir, "zephyr_2007_2013.sav")
 
-    # return data
-    # nz ()
-    # nmods ()
-    # model_year (319,)
-    # tag1 (319,)
-    # tag2 (319,)
-    # rx (1300,)
-    # rho (319, 1300)
-    # uu (319, 1300)
-    # valf (319, 1300)
-    # t (319, 1300)
-    # br (319, 1300)
-    # [print(k, data[k].shape) for k in data.keys()]
+    # Load the SAV file
+    data = readsav(file_path)
+    print(f"Successfully loaded Zephyr data from: {file_path}")
+
+    # Return the entire data structure
+    return data
 
 
 def sunspotplot(ax3, crlist=None):
-    ### THIRD PLOT ###
-    # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
-    ## https://sidc.be/SILSO/datafiles#total ##
-    import sunpy.coordinates
+    """
+    Loads and plots sunspot data from SN_m_tot_V2.0.tsv,
+    assumed to be in the same directory as this script.
+    Draws vertical lines for the current CR and any provided CR list.
+    """
+    # Determine the directory of the *current* script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path  = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
+
+    # Load sunspot data (transpose as in your original code)
+    carrington = np.loadtxt(file_path).T
+
+    # Extract date and sunspot columns
     date = carrington[2]
     sunspots = carrington[3]
-    this_date = sunpy.coordinates.sun.carrington_rotation_time(args.cr)
-    ax3.axvline(this_date.decimalyear, ls=":", c='k', zorder=1000000)
 
+    # Mark the Carrington rotation time for args.cr
+    this_date = sunpy.coordinates.sun.carrington_rotation_time(args.cr)
+    ax3.axvline(this_date.decimalyear, ls="--", c='k', zorder=1000000)
+
+    # If multiple CRs were passed, mark each one
     if crlist:
         for cr in crlist:
-            this_date = sunpy.coordinates.sun.carrington_rotation_time(cr)
-            ax3.axvline(this_date.decimalyear, ls=":", c='k', zorder=1000000)
+            cr_date = sunpy.coordinates.sun.carrington_rotation_time(cr)
+            ax3.axvline(cr_date.decimalyear, ls=":", c='k', zorder=1000000)
 
-    # CR = int(sunpy.coordinates.sun.carrington_rotation_number(date))
-
+    # Plot sunspot data
     ax3.plot(date, sunspots, label="Sunspots")
     ax3.set_xlabel("Year")
     ax3.set_ylabel("Sunspots")

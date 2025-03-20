@@ -1,5 +1,5 @@
 from fluxpype.science.read_world import rdworld
-from pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 configs = configurations()
 
 # Path: fluxon-mhd/fluxpype/fluxpype/plotting/plot_flux_mag.py

@@ -12,6 +12,8 @@ use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(gen_fluxon_flow);
 
+use PDL::AutoLoader;
+use local::lib;
 use PDL::NiceSlice;
 use PDL::Options;  ## This is where the 'parse' function comes from
 use PDL::ImageND;  ## This is where the ConvolveND comes from

@@ -354,7 +354,7 @@ def plot_reinterpolated_velocity(original_data_file, ax=None, show=False):
 
 
 
-from pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 
 def parse_args():
     # Create the argument parser

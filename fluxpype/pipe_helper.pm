@@ -124,19 +124,26 @@ use warnings;
 use Exporter qw(import);
 use Flux::World qw(read_world);
 
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
+use File::Spec::Functions qw(catfile catdir rel2abs updir);
+use FindBin;
+use Cwd qw(abs_path cwd);
+use File::Basename qw(dirname basename);
+use File::Temp qw(tempfile);
 use PDL;
 use Scalar::Util qw(looks_like_number);
 use List::MoreUtils qw(all);
-use File::Basename qw(dirname basename);
 use Time::Piece;
 use Config::IniFiles;
-use Cwd qw(abs_path cwd);
-use File::Spec::Functions qw(catfile catdir rel2abs);
-use File::Temp qw(tempfile);
 use Carp qw(croak);
-
 no warnings 'redefine';
 
+use File::HomeDir;
 
 our @EXPORT_OK = qw(
     shorten_path
@@ -162,70 +169,146 @@ our @EXPORT_OK = qw(
 # Shortens the given file path by replacing the DATAPATH environment variable.
 sub shorten_path {
     my ($string) = @_;
+    return $string;
     my $data_path = $ENV{'DATAPATH'} // '';
     $string =~ s/\Q$data_path\E/~/;
     return $string;
 }
 
-# Reads and processes a configuration file
+use strict;
+use warnings;
+use Cwd 'abs_path';
+use File::HomeDir;
+use File::Spec::Functions qw(catfile catdir);
+use File::Basename qw(dirname);
+
+# Function to expand ~ to the home directory
+sub expand_home_dir {
+    my ($path) = @_;
+
+    if ($path =~ /^~($|\/)/) {
+        my $home_dir = File::HomeDir->my_home;
+        $path =~ s/^~/$home_dir/;
+    }
+
+    return $path;
+}
+
+# Function to resolve placeholders in configuration values
+sub resolve_placeholders {
+    my ($config, $placeholders) = @_;
+    foreach my $key (keys %{$config}) {
+        if (ref $config->{$key} eq '') {  # Only process scalar values
+            my $value = $config->{$key} // '';  # Ensure $value is defined
+            foreach my $placeholder (keys %{$placeholders}) {
+                my $replacement = $placeholders->{$placeholder};
+                if (defined $replacement) {
+                    $value =~ s/\$\{$placeholder\}/$replacement/g;
+                }
+            }
+            $config->{$key} = expand_home_dir($value);
+        }
+    }
+}
+
+# Ensuring correct path handling in relevant function
 sub configurations {
-    my ( $adapt, $debug, $config_name, $config_filename ) = @_;
-    $adapt             //= 0;
-    $config_name       //= "DEFAULT";
-    $config_filename   //= "config.ini";
-    $debug             //= 0;
+    my ($adapt, $debug, $config_name, $config_filename) = @_;
+    $adapt = 0 unless defined $adapt;
+    $config_name = "DEFAULT" unless defined $config_name;
+    $config_filename = "config.ini" unless defined $config_filename;
+    $debug = 0 unless defined $debug;
 
     my $config_path = find_config_file($config_filename);
     my $clean_config = clean_config_file($config_path);
-    my $cfg = Config::IniFiles->new( -file => $clean_config )
-      or die "Failed to parse configuration file: $config_path";
+    my $cfg = Config::IniFiles->new(-file => $clean_config) or die "Failed to parse configuration file: $config_path";
 
-    $config_name = $cfg->val( 'DEFAULT', 'config_name' ) if $config_name eq 'DEFAULT';
+    $config_name = $cfg->val('DEFAULT', 'config_name') if $config_name eq 'DEFAULT';
     die "Configuration section '$config_name' not found in $config_filename"
       unless $cfg->SectionExists($config_name);
 
-    my %the_config = load_config_section( $cfg, 'DEFAULT' );
-    %the_config = ( %the_config, load_config_section( $cfg, $config_name ) );
+    my %the_config = load_config_section($cfg, 'DEFAULT');
+    %the_config = (%the_config, load_config_section($cfg, $config_name));
 
     $the_config{'adapt'} = $adapt;
-    $the_config{'abs_rc_path'} = glob( $the_config{'rc_path'} );
+    $the_config{'abs_rc_path'} = expand_home_dir(glob($the_config{'rc_path'}));
 
-    my $base_dir = resolve_base_dir($config_path);
+    # print "From configs 199:";
+    # print $the_config{datdir} . "\n";
+    # print $the_config{base_dir};
+    # print "\n";
+
+    my $base_path = $the_config{base_dir} || '~';
+    my $base_dir = expand_home_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
-    resolve_placeholders( \%the_config, { base_dir => $base_dir } );
 
-    $the_config{"run_script"} = catfile( $the_config{"fl_mhdlib"}, $the_config{"run_script"} );
+    resolve_placeholders(\%the_config, { base_dir => $base_dir });
+    # print "From configs 206:";
+    # print $the_config{datdir} . "\n";
+    # print $the_config{base_dir};
+    # print "\n";
 
-    $the_config{"rotations"} = parse_list_or_range( $the_config{"rotations"} );
-    $the_config{"fluxon_count"} = parse_list_or_range( $the_config{"fluxon_count"} );
-    $the_config{"adapts"} = parse_list_or_range( $the_config{"adapts"} );
-    $the_config{"flow_method"} = parse_list_or_range( $the_config{"flow_method"} );
+    # print "203 pipe_helper.pm:data: " . $the_config{'data_dir'} . "\n";
 
-    if ( ref( $the_config{"flow_method"} ) eq 'ARRAY' && scalar @{ $the_config{"flow_method"} } == 1 ) {
+    $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
+
+    $the_config{"rotations"} = parse_list_or_range($the_config{"rotations"});
+    $the_config{"fluxon_count"} = parse_list_or_range($the_config{"fluxon_count"});
+    $the_config{"adapts"} = parse_list_or_range($the_config{"adapts"});
+    $the_config{"flow_method"} = parse_list_or_range($the_config{"flow_method"});
+
+    if (ref($the_config{"flow_method"}) eq 'ARRAY' && scalar @{$the_config{"flow_method"}} == 1) {
         $the_config{"flow_method"} = $the_config{"flow_method"}->[0];
     }
 
-    print_debug_info( \%the_config ) if $debug;
+    print_debug_info(\%the_config) if $debug;
 
-    die "Rotations is not a PDL object" unless ref( $the_config{'rotations'} ) eq 'PDL';
-    die "Fluxon Count is not a PDL object" unless ref( $the_config{'fluxon_count'} ) eq 'PDL';
-    die "Adapts is not a PDL object" unless ref( $the_config{'adapts'} ) eq 'PDL';
+    die "Rotations is not a PDL object" unless ref($the_config{'rotations'}) eq 'PDL';
+    die "Fluxon Count is not a PDL object" unless ref($the_config{'fluxon_count'}) eq 'PDL';
+    die "Adapts is not a PDL object" unless ref($the_config{'adapts'}) eq 'PDL';
 
     $the_config{'n_jobs'} = $the_config{'rotations'}->nelem *
-        $the_config{'fluxon_count'}->nelem * $the_config{'adapts'}->nelem;
+                            $the_config{'fluxon_count'}->nelem *
+                            $the_config{'adapts'}->nelem;
 
-    calculate_directories( \%the_config );
-    configs_update_magdir( \%the_config );
+    calculate_directories(\%the_config);
+    configs_update_magdir(\%the_config);
+
+    # print "227 pipe_helper.pm:magg: " . $the_config{'mag_dir'} . "\n";
 
     return %the_config;
 }
 
-# Locate the configuration file
+
+sub find_project_root {
+    my $dir = abs_path(dirname(__FILE__));  # Start from the directory of the current script
+
+    while ($dir ne "/" && $dir ne "C:") {   # Avoid infinite loops on Linux/Windows
+        if (-d catfile($dir, "fluxpype", "fluxpype")) {  # Check if the expected structure exists
+            return $dir;
+        }
+        $dir = dirname($dir);  # Move up one level
+    }
+
+    die "Could not find project root from: " . abs_path(dirname(__FILE__));
+}
+
 sub find_config_file {
-    my ($config_filename) = @_;
-    my $config_path = rel2abs(catfile("fluxpype", $config_filename ));
-    return $config_path if -e $config_path;
-    die "Configuration file not found: $config_path";
+    my $config_filename = "config.ini";
+
+    # Locate the project root dynamically
+    my $project_root = find_project_root();
+
+    # Construct the config file path
+    my $config_path = catfile($project_root, "fluxpype", "fluxpype", $config_filename);
+
+    # Convert to absolute path
+    my $abs_path = abs_path($config_path);
+
+    # Check if the file exists
+    return $abs_path if -e $abs_path;
+
+    die "Configuration file not found at expected location: $abs_path";
 }
 
 # Clean up the configuration file to remove comments and trailing whitespace
@@ -253,10 +336,25 @@ sub load_config_section {
     return %config;
 }
 
-# Resolve the base directory dynamically
+# # Resolve the base directory dynamically
+# sub resolve_base_dir {
+#     my ($config_path) = @_;
+#     return abs_path(File::Spec->catdir(dirname($config_path), "..", ".."));
+# }
+
+
+
 sub resolve_base_dir {
     my ($config_path) = @_;
-    return abs_path(File::Spec->catdir(dirname($config_path), "..", ".."));
+
+    # Expand ~ to home directory
+    if ($config_path =~ /^~\//) {
+        my $home_dir = File::HomeDir->my_home;
+        $config_path =~ s/^~/$home_dir/;
+    }
+
+    # Convert to absolute path
+    return abs_path($config_path);
 }
 
 
@@ -301,23 +399,6 @@ sub parse_list_or_range { # line 261
         die "Invalid value: '$value'. Expected numeric, list, or range.";
     }
 }
-
-# Resolve placeholders in configuration values
-sub resolve_placeholders {
-    my ($config, $placeholders) = @_;
-    foreach my $key (keys %{$config}) {
-        if (ref $config->{$key} eq '') {  # Only process scalar values
-            my $value = $config->{$key} // '';  # Ensure $value is defined
-            foreach my $placeholder (keys %{$placeholders}) {
-                my $replacement = $placeholders->{$placeholder};
-                $value =~ s/\$\{$placeholder\}/$replacement/g if defined $value;
-            }
-            $config->{$key} = $value;
-        }
-    }
-}
-
-
 
 # Debugging function
 sub print_debug_info {
@@ -498,6 +579,7 @@ sub calculate_directories {
 
     my $pipedir = catdir("fluxpype", "fluxpype");
     my $pdldir = catdir("pdl", "PDL");
+
 
     my $magdir = catdir($data_dir, "magnetograms");
     my $batchdir = catdir($data_dir, "batches", $batch_name);
