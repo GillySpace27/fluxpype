@@ -444,7 +444,7 @@ def plot_wind_map_latitude(configs):
 
 
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt("SN_m_tot_V2.0.tsv").T
 
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
