@@ -1723,7 +1723,7 @@ def decimal_years_to_datetimes(decimal_years):
 
 def sunspotplot(carr_ax, cr=None, use_years=False):
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt("SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     from sunpy.coordinates.sun import (
         carrington_rotation_time as crt,

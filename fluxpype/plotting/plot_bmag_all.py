@@ -230,7 +230,7 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
 
     ### THIRD PLOT ###
     # Plot the Sunspot Number
-    carrington = np.loadtxt("fluxpype/SN_m_tot_V2.0.tsv").T
+    carrington = np.loadtxt("SN_m_tot_V2.0.tsv").T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
