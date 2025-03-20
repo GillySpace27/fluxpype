@@ -26,11 +26,11 @@ Functions:
 
 import numpy as np
 import matplotlib as mpl
-try:
-    mpl.use("qt5agg")
-except ImportError as e:
-    print(e)
-    mpl.use("agg")
+# try:
+#     mpl.use("qt5agg")
+# except ImportError as e:
+#     print(e)
+#     mpl.use("agg")
 
 import matplotlib.pyplot as plt
 import argparse
