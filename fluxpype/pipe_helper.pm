@@ -233,22 +233,22 @@ sub configurations {
     $the_config{'adapt'} = $adapt;
     $the_config{'abs_rc_path'} = expand_home_dir(glob($the_config{'rc_path'}));
 
-    print "From configs 199:";
-    print $the_config{datdir} . "\n";
-    print $the_config{base_dir};
-    print "\n";
+    # print "From configs 199:";
+    # print $the_config{datdir} . "\n";
+    # print $the_config{base_dir};
+    # print "\n";
 
     my $base_path = $the_config{base_dir} || '~';
     my $base_dir = expand_home_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
 
     resolve_placeholders(\%the_config, { base_dir => $base_dir });
-    print "From configs 206:";
-    print $the_config{datdir} . "\n";
-    print $the_config{base_dir};
-    print "\n";
+    # print "From configs 206:";
+    # print $the_config{datdir} . "\n";
+    # print $the_config{base_dir};
+    # print "\n";
 
-    print "203 pipe_helper.pm:data: " . $the_config{'data_dir'} . "\n";
+    # print "203 pipe_helper.pm:data: " . $the_config{'data_dir'} . "\n";
 
     $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
 
@@ -274,7 +274,7 @@ sub configurations {
     calculate_directories(\%the_config);
     configs_update_magdir(\%the_config);
 
-    print "227 pipe_helper.pm:magg: " . $the_config{'mag_dir'} . "\n";
+    # print "227 pipe_helper.pm:magg: " . $the_config{'mag_dir'} . "\n";
 
     return %the_config;
 }

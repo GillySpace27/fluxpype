@@ -667,7 +667,7 @@ def reduce_fits_image(
             data = hdul[1].data
 
         current_resolution = max(data.shape)
-        print("\t\tOriginal Shape:\t", data.shape)
+        print("\t\tOriginal Shape:  ", data.shape)
 
         # Calculate the reduction amount if target resolution is specified
         if target_resolution is not None:
@@ -706,7 +706,7 @@ def reduce_fits_image(
             360 / (small_image.shape[0] * np.pi)
         )  # RADIANS
 
-        print("\t\tFinal Shape:    ", small_image.shape)
+        print("\t\tFinal Shape:     ", small_image.shape)
 
         print("\tSaving  ", small_file)
         fits.writeto(small_file, small_image, useheader, overwrite=True)

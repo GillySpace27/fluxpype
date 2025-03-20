@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from pipe_helper import load_fits_magnetogram, get_fixed_coords
+from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
