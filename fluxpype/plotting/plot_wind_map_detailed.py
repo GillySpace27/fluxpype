@@ -32,6 +32,7 @@ try:
     fig = plt.figure()
 except ImportError as e:
     print(e)
+    print("Loading agg instead")
     mpl.use("agg")
 
 import argparse
