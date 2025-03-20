@@ -30,6 +30,7 @@ try:
     mpl.use("qt5agg")
 except ImportError as e:
     print(e)
+    mpl.use("agg")
 
 import matplotlib.pyplot as plt
 import argparse
