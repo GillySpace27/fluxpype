@@ -37,7 +37,6 @@ except ImportError as e:
 import argparse
 import os
 import cv2
-import os
 from tqdm import tqdm
 import os.path as path
 from scipy.interpolate import griddata
