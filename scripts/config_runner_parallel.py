@@ -1,6 +1,6 @@
 import subprocess
 from tqdm import tqdm
-from pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 import timeout_decorator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing

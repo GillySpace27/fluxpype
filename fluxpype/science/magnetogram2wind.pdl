@@ -46,45 +46,56 @@ use strict;
 use warnings;
 
 # Include the setup script to set the @INC paths
-use local::lib;
-use lib ".";
-use lib "..";
+# use local::lib;
+# use lib ".";
+# use lib "..";
 
-use FindBin qw($RealBin);
-use File::Spec;
+# use FindBin qw($RealBin);
+# use File::Spec;
+
+use FindBin;
+use lib $FindBin::Bin;       # Adds the script's directory
+use lib "$FindBin::Bin/..";  # Adds the parent directory
+use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
+use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
+
 
 use Term::ANSIColor;
 print color("magenta");
 
 
 
-BEGIN {
-    # Include relative paths for required modules
-    my @required_modules_paths = ("../fluxpype", "../fluxpype/science", "../fluxpype/plotting");
-    foreach my $path (@required_modules_paths) {
-        my $absolute_path = File::Spec->rel2abs($path);
-        unshift @INC, $absolute_path;
-    }
-}
+# use File::Spec::Functions qw(rel2abs);
+# BEGIN {
+#     # Include relative paths for required modules
+#     my @required_modules_paths = ("fluxpype", "fluxpype/science", "fluxpype/plotting", "science", "plotting");
+#     foreach my $path (@required_modules_paths) {
+#         my $absolute_path = rel2abs($path);
+#         print $absolute_path . "\n";
+#         unshift @INC, $absolute_path;
+#     }
+# }
 
-my @required_modules = qw(
-    Flux
-    pipe_helper
-    get_hilbert_footpoints
-    make_world_from_pfss
-    plot_world
-    relax_pfss_world
-);
+# my @required_modules = qw(
+#     Flux
+#     pipe_helper
+#     get_hilbert_footpoints
+#     make_world_from_pfss
+#     plot_world
+#     relax_pfss_world
+# );
 
-foreach my $module (@required_modules) {
-    eval {
-        require "$module.pm";  # Dynamically find and load the module
-        $module->import();     # Explicitly call the import method
-    };
-    if ($@) {
-        die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
-    }
-}
+# foreach my $module (@required_modules) {
+#     eval {
+#         require "$module.pm";  # Dynamically find and load the module
+#         $module->import();     # Explicitly call the import method
+#     };
+#     if ($@) {
+#         die "Required module $module not found or failed to load. Please ensure it is installed and accessible.\nError: $@\n";
+#     }
+# }
+
+
 use make_world_from_pfss qw(make_world_from_pfss);
 use relax_pfss_world qw(relax_pfss_world);
 use plot_world qw(plot_worlds);
@@ -118,6 +129,7 @@ print "FLUX is located at: $module_path\n";
 # Read configurations from disk
 print "Reading configurations...\n";
 my %configs = pipe_helper::configurations();
+
 
 
 my $CR = $ARGV[0] // ( $configs{rotations}->at(0) );
@@ -158,6 +170,7 @@ my $max_cycles   = $configs{max_cycles};
 my $do_wind_calc = $configs{do_wind_calc};
 my $print_dirs   = $configs{verbose};
 my $adapt_select = $configs{adapt_select};
+my $base_dir = $configs{base_dir};
 
 my $recompute_string = 'FALSE';
 our ( $this_world_relaxed, $N_actual );
@@ -165,6 +178,7 @@ our ( $this_world_relaxed, $N_actual );
 
 my ( $pipedir, $pdldir, $datdir, $magdir, $batchdir, $logfile ) =
   @configs{qw/pipe_dir pdl_dir datdir mag_dir batch_dir logfile/};
+
 
 #############################################################################
 #### Initialize Environment #################################################
@@ -211,8 +225,10 @@ if (1-$configs{wind_only}){
     my $this_dir     = $FindBin::RealBin;
     my $get_mag_path = "$this_dir/get_magnetograms.py";
     my $the_dat_dir = $datdir;
-    print $the_dat_dir;
+    print $the_dat_dir . "\n\n\n";
     my $mag_command = "python3 $get_mag_path --cr $CR --reduce $reduction --do_download $do_download --adapt $adapt";
+    print $mag_command . "\n\n\n";
+
 
     system($mag_command) == 0 or ( die "Python script returned error $?", exit );
 
@@ -292,7 +308,7 @@ if (1-$configs{wind_only}){
 
 # # Plot the field map
 my $fmap_command =
-"python fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
+"python $base_dir/fluxpype/fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
 #   print $fmap_command;
 system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
@@ -330,60 +346,129 @@ if ($plot_stiff){
 
 if (1) {
 
+use File::Spec::Functions qw(catfile);
+use Term::ANSIColor;
+
+# Print header with color formatting
 print color("bright_cyan");
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 print("(py) Plotting Solar Wind Maps for CR$CR\n");
 print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 print color("reset");
 
-system(
-"python3 fluxpype/plotting/plot_bmag.py"
-      . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt"
-) == 0 or ( die "Python script returned error $?", exit );
+
+# Define common plotting directory
+my $plot_dir = catfile($base_dir, "fluxpype", "fluxpype", "plotting");
+
+print "Plotting to $plot_dir\n\n";
+
+# Define common command-line options shared by most plotting commands
+my $common_opts = " --cr $CR --nwant $n_fluxons_wanted --adapt $adapt";
+
+# Utility subroutine to execute a command and report errors with context
+sub run_command {
+    my ($cmd) = @_;
+    # print "*********  Running: $cmd\n";  # Optional logging for debugging
+    system($cmd) == 0 or die "Error executing command:\n  $cmd\nReturn code: $?\n";
+}
+
+# Subroutine that groups all plotting commands
+sub run_all_plots {
+    my @commands = (
+        # Plot magnetic fields
+        "python3 " . catfile($plot_dir, "plot_bmag.py") .           " --file $out_b" . $common_opts,
+
+        # Multi-plot of all magnetic fields from the batch
+        "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
+
+        # # Plot magnetic fields in the fluxon world
+        # "python3 " . catfile($plot_dir, "plot_bmag_all.py") .       " --file $out_b_all" . $common_opts,
+
+        # # Plot with many panels showing geometric expansion of the fields
+        # "python3 " . catfile($plot_dir, "plot_bmag_fill.py") .      " --file $out_b_all" . $common_opts,
+
+        # Plot FR
+        "python3 " . catfile($plot_dir, "plot_fr.py") .               " --file $out_fr" . $common_opts,
+
+        # Detailed wind map plot
+        "python3 " . catfile($plot_dir, "plot_wind_map_detailed.py") . " --file $out_wind" . $common_opts,
+
+        # Wind map square (with additional wind method option)
+        "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
+
+        # Plot wind solutions (using a different file structure for input data)
+        "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind"
+    );
+
+    # Execute each plotting command sequentially
+    for my $cmd (@commands) {
+        run_command($cmd);
+    }
+}
+
+# Execute all plotting commands
+run_all_plots();
 
 
-# This plot shows the actual magnetic fields in the fluxon world
+
+
+
+
+
+
+
+
+
+
+# # This is the first script that plots the magnetic fields
+# my $plot_bmag_cmd = "python3 $base_dir/fluxpype/fluxpype/plotting/plot_bmag.py"
+#       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt";
+
+# system($plot_bmag_cmd) == 0 or ( die "Python script returned error $?", exit );
+
+
+# # This plot shows the actual magnetic fields from all the sims in the batch
+# my $plot_bmag_mall_cmd = "python3 $base_dir/fluxpype/fluxpype/plotting/multiplot_bmag_all.py"
+#       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt";
+# system($plot_bmag_mall_cmd) == 0 or ( die "Python script returned error $?", exit );
+
+
+# # This plot shows the actual magnetic fields in the fluxon world
 # system(
 # "python3 fluxpype/plotting/plot_bmag_all.py"
 #       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt")
 #       == 0 or ( die "Python script returned error $?", exit );
 
-# This plot shows the actual magnetic fields from all the sims in the batch
-system(
-"python3 fluxpype/plotting/multiplot_bmag_all.py"
-      . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
-) == 0 or ( die "Python script returned error $?", exit );
 
-
-# This is the plot with many panels showing the expansion of the fields geometrically
+# # This is the plot with many panels showing the expansion of the fields geometrically
 # system(
 # "python3 fluxpype/plotting/plot_bmag_fill.py"
 #       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
 # ) == 0 or ( die "Python script returned error $?", exit );
 
-# <STDIN>;
-      system(
-      "python3 fluxpype/plotting/plot_fr.py"
-            . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
-      ) == 0 or ( die "Python script returned error $?", exit );
 
-system(
-"python3 fluxpype/plotting/plot_wind_map_detailed.py"
-      . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
-
-#       #    . " --open $open_file --closed $closed_file "
-) == 0 or ( die "Python script returned error $?", exit );
-
-system(
-"python3 fluxpype/plotting/plot_wind_map_square.py"
-      . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
-) == 0 or ( die "Python script returned error $?", exit );
+# system(
+# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_fr.py"
+#       . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
+# ) == 0 or ( die "Python script returned error $?", exit );
 
 
-system(
-"python3 fluxpype/plotting/plot_wind_solutions.py"
-      . " $datdir/batches/$batch_name/data/cr$CR/wind"
-) == 0 or ( die "Python script returned error $?", exit );
+# system(
+# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_detailed.py"
+#       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
+# ) == 0 or ( die "Python script returned error $?", exit );
+
+
+# system(
+# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_square.py"
+#       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
+# ) == 0 or ( die "Python script returned error $?", exit );
+
+
+# system(
+# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_solutions.py"
+#       . " $datdir/batches/$batch_name/data/cr$CR/wind"
+# ) == 0 or ( die "Python script returned error $?", exit );
 
 
   print color("bright_cyan");

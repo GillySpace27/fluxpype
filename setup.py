@@ -14,7 +14,7 @@ class CustomInstallCommand(install):
 
         # Run the unified installer script after dependencies are installed
         try:
-            installer_path = os.path.join(os.path.dirname(__file__), "fluxpype", "unified_installer.py")
+            installer_path = os.path.join(os.path.dirname(__file__), "fluxpype", "comprehensive_fluxpype_installer.py")
             if os.path.exists(installer_path):
                 print("Running unified installer...")
                 subprocess.run([sys.executable, installer_path], check=True)

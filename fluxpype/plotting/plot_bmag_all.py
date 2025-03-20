@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import numpy as np
 import shutil
-from pipe_helper import load_fits_magnetogram, get_fixed_coords
+from fluxpype.pipe_helper import load_fits_magnetogram, get_fixed_coords
 import sunpy.coordinates
 import cv2
 
@@ -335,7 +335,7 @@ def run_plots(args, times=0):
 if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=
