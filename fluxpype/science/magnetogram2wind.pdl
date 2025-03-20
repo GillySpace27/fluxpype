@@ -368,7 +368,7 @@ my $common_opts = " --cr $CR --nwant $n_fluxons_wanted --adapt $adapt";
 # Utility subroutine to execute a command and report errors with context
 sub run_command {
     my ($cmd) = @_;
-    print "Running: $cmd\n";  # Optional logging for debugging
+    print "*********  Running: $cmd\n";  # Optional logging for debugging
     system($cmd) == 0 or die "Error executing command:\n  $cmd\nReturn code: $?\n";
 }
 
@@ -381,11 +381,11 @@ sub run_all_plots {
         # Multi-plot of all magnetic fields from the batch
         "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
 
-        # Plot magnetic fields in the fluxon world
-        "python3 " . catfile($plot_dir, "plot_bmag_all.py") .       " --file $out_b_all" . $common_opts,
+        # # Plot magnetic fields in the fluxon world
+        # "python3 " . catfile($plot_dir, "plot_bmag_all.py") .       " --file $out_b_all" . $common_opts,
 
-        # Plot with many panels showing geometric expansion of the fields
-        "python3 " . catfile($plot_dir, "plot_bmag_fill.py") .      " --file $out_b_all" . $common_opts,
+        # # Plot with many panels showing geometric expansion of the fields
+        # "python3 " . catfile($plot_dir, "plot_bmag_fill.py") .      " --file $out_b_all" . $common_opts,
 
         # Plot FR
         "python3 " . catfile($plot_dir, "plot_fr.py") .               " --file $out_fr" . $common_opts,

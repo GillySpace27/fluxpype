@@ -7,23 +7,22 @@ from fluxpype.pipe_helper import configurations
 from scipy.interpolate import interp1d
 from rich import print
 import re
-def_file = "fluxpype/zephyr_2007_2013.sav"
+from scipy.io import readsav
 
-def load_zephyr(file = def_file):
-    from scipy.io import readsav
-    data = readsav(file)
-    # nz ()
-    # nmods ()
-    # model_year (319,)
-    # tag1 (319,)
-    # tag2 (319,)
-    # rx (1300,)
-    # rho (319, 1300)
-    # uu (319, 1300)
-    # valf (319, 1300)
-    # t (319, 1300)
-    # br (319, 1300)
-    # [print(k, data[k].shape) for k in data.keys()]
+def load_zephyr():
+    """
+    Loads the Zephyr data from zephyr_2007_2013.sav,
+    assumed to be in the same directory as this script.
+    """
+    # Determine the directory of the *current* script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path  = os.path.join(script_dir, "zephyr_2007_2013.sav")
+
+    # Load the SAV file
+    data = readsav(file_path)
+    print(f"Successfully loaded Zephyr data from: {file_path}")
+
+    # Return the entire data structure
     return data
 
 def plot_full_velocity_profiles(directory=None):
@@ -36,15 +35,18 @@ def plot_full_velocity_profiles(directory=None):
     dat_dir = configs.get("data_dir")
     directory = directory or f'{dat_dir}/batches/{batch}/data/'
     # list all of the directories in the data directory
-    rotations = os.listdir(directory)
+    # rotations = os.listdir(directory)
     # filter out the directories that are not of the form cr#
-    rotations = [d[-4:] for d in rotations if re.match(r'cr\d+', d)]
+    # rotations = [d[-4:] for d in rotations if re.match(r'cr\d+', d)]
+    rotations = configs.get("rotations", [])
+    rotations = rotations if isinstance(rotations, list) else [rotations]
 
     # Use regular expression to find the integer value following 'cr'
     # match = re.search(r'/cr(\d+)/', directory)
     # cr_value = int(match.group(1))
     file = 'cr{}/wind/full_velocity_profiles/'
     rot_dirs = [directory + file.format(cr) for cr in rotations]
+    print(f"{rot_dirs = }")
 
     for rot, cr_value in zip(rot_dirs, rotations):
         file_pattern = os.path.join(rot, pattern)

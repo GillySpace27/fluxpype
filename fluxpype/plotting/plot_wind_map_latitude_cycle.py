@@ -35,7 +35,7 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from pipe_helper import (configurations, load_fits_magnetogram,
+from fluxpype.pipe_helper import (configurations, load_fits_magnetogram,
                          load_magnetogram_params, get_fixed_coords, get_ax)
 from fluxpype.science.pfss_funcs import get_fluxon_locations
 

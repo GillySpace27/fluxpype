@@ -185,7 +185,7 @@ def get_regular_pfss(configs=None):
 
     configs = configs or configurations()
 
-    from pipe_helper import update_magdir_paths
+    from fluxpype.pipe_helper import update_magdir_paths
     configs = update_magdir_paths(configs)
 
     # Extract arguments or use defaults from configs
@@ -332,7 +332,7 @@ def get_regular_pfss2(configs=None):
 
     configs = configs or configurations()
 
-    from pipe_helper import update_magdir_paths
+    from fluxpype.pipe_helper import update_magdir_paths
     configs = update_magdir_paths(configs)
 
     # Extract arguments or use defaults from configs

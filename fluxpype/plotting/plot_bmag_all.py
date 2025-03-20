@@ -335,7 +335,7 @@ def run_plots(args, times=0):
 if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
-    from pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations
     configs = configurations()
 
     parser = argparse.ArgumentParser(description=

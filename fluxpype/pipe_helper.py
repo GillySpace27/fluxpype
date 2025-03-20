@@ -55,7 +55,7 @@ import pipe_helper as ph
 result = ph.convert_value("42")
 
 # Example usage of the configurations module
-from pipe_helper import configurations
+from fluxpype.pipe_helper import configurations
 configs = configurations()
 
 
@@ -80,7 +80,7 @@ from pathlib import PosixPath, Path
 import pandas as pd
 import re
 
-# from pipe_helper import convert_value
+# from fluxpype.pipe_helper import convert_value
 import numpy as np
 import matplotlib.pyplot as plt
 
