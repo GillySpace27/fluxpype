@@ -27,6 +27,8 @@ from rich.panel import Panel
 from rich.console import Console
 import timeout_decorator
 
+os.nice(16)
+
 # Initialize Rich console and logger
 console = Console()
 logging.basicConfig(
