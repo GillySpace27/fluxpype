@@ -422,39 +422,39 @@ sub map_fluxon_flow_parallel_master {
     return;
 }
 
-# If this file is run directly, do a small example/demo (optional):
-if ($0 eq __FILE__) {
-    use PDL::AutoLoader;
-    use PDL;
-    use PDL::Transform;
-    use PDL::NiceSlice;
-    use PDL::Options;
-    use Flux;
-    use PDL::IO::Misc;
-    use File::Path;
-    use Time::HiRes qw(clock_gettime);
-    use File::Basename qw(fileparse);
-    use pipe_helper qw(configurations);
+# # If this file is run directly, do a small example/demo (optional):
+# if ($0 eq __FILE__) {
+#     use PDL::AutoLoader;
+#     use PDL;
+#     use PDL::Transform;
+#     use PDL::NiceSlice;
+#     use PDL::Options;
+#     use Flux;
+#     use PDL::IO::Misc;
+#     use File::Path;
+#     use Time::HiRes qw(clock_gettime);
+#     use File::Basename qw(fileparse);
+#     use pipe_helper qw(configurations);
 
-    my %configs  = configurations();
-    my $datdir   = $configs{datdir};
-    my $cr       = 2160;
-    my $batch_name = "fluxon_paperfigs";
+#     my %configs  = configurations();
+#     my $datdir   = $configs{datdir};
+#     my $cr       = 2160;
+#     my $batch_name = "fluxon_paperfigs";
 
-    my $world_out_dir     = $datdir . "$batch_name/cr$cr/rlx/";
-    my $full_world_path   = $world_out_dir . "cr2160_relaxed_s4000.flux";
-    my $wind_out_dir      = $datdir . "$batch_name/cr$cr/wind";
-    my $wind_out_file     = "$wind_out_dir/radial_wind.dat";
+#     my $world_out_dir     = $datdir . "$batch_name/cr$cr/rlx/";
+#     my $full_world_path   = $world_out_dir . "cr$cr\_relaxed_s4000.flux";
+#     my $wind_out_dir      = $datdir . "$batch_name/cr$cr/wind";
+#     my $wind_out_file     = "$wind_out_dir/radial_wind.dat";
 
-    # Load world
-    my $this_world_relaxed = read_world($full_world_path);
-    $this_world_relaxed->update_force(0);
+#     # Load world
+#     my $this_world_relaxed = read_world($full_world_path);
+#     $this_world_relaxed->update_force(0);
 
-    my @fluxons = $this_world_relaxed->fluxons;
+#     my @fluxons = $this_world_relaxed->fluxons;
 
-    # Example call
-    map_fluxon_flow_parallel_master($wind_out_file, \@fluxons, 'parker', $cr, 100);
-}
+#     # Example call
+#     map_fluxon_flow_parallel_master($wind_out_file, \@fluxons, 'parker', $cr, 100);
+# }
 
 1;
 

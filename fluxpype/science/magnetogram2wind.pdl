@@ -368,7 +368,7 @@ my $common_opts = " --cr $CR --nwant $n_fluxons_wanted --adapt $adapt";
 # Utility subroutine to execute a command and report errors with context
 sub run_command {
     my ($cmd) = @_;
-    print "*********  Running: $cmd\n";  # Optional logging for debugging
+    # print "*********  Running: $cmd\n";  # Optional logging for debugging
     system($cmd) == 0 or die "Error executing command:\n  $cmd\nReturn code: $?\n";
 }
 
