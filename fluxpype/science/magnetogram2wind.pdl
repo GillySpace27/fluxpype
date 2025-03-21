@@ -393,8 +393,8 @@ sub run_all_plots {
         # Detailed wind map plot
         "python3 " . catfile($plot_dir, "plot_wind_map_detailed.py") . " --file $out_wind" . $common_opts,
 
-        # Wind map square (with additional wind method option)
-        "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
+        # # Wind map square (with additional wind method option)
+        # "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
 
         # Plot wind solutions (using a different file structure for input data)
         "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind"

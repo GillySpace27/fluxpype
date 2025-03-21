@@ -450,8 +450,12 @@ def plot_wind_map_latitude(configs):
 
 
     # Plot the Sunspot Number
-    carrington = np.loadtxt("SN_m_tot_V2.0.tsv").T
+    # Determine the directory of the *current* script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path  = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
 
+    # Load sunspot data (transpose as in your original code)
+    carrington = np.loadtxt(file_path).T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
     date = carrington[2]
