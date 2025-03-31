@@ -231,15 +231,10 @@ sub get_wind {
 
         # DB::single;
         # Calculate the radial magnetic field
-        # print "\n\tRadial Magnetic Field (B) Calculation...";
+        print "\n\tRadial Magnetic Field (B) Calculation...";
         map_fluxon_b( $out_b, \@fluxons );
         map_fluxon_b_all( $out_b_all, \@fluxons );
-        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python ~/vscode/fluxons/fluxpype/fluxpype/plotting/plot_bmag_fill.py");
-        # system("/opt/homebrew/anaconda3/envs/fluxenv/bin/python ~/vscode/fluxons/fluxpype/fluxpype/plotting/plot_bmag_all.py");
 
-        # print "Done!\n";
-
-        # print "\t\t...done with radial B!";
 
         # Calculate the radial expansion factor
         print "\n\tRadial Expansion Factor (Fr) Calculation...";
@@ -250,21 +245,9 @@ sub get_wind {
 
         print "\n\n\tRadial Wind Speed Calculation...\n";
         my $do_wind_map = 0 || $recompute || $configs{recompute_wind};
-
         # $do_wind_map=1; #OVERRIDE WIND MAP
 
         if ( !-e $out_wind || !file_has_content($out_wind)) { $do_wind_map = 1; }
-
-#         # if there is not a file at $ch_map_path, then download $ch_map_url to $ch_map_path
-#         if ( !-e $ch_map_path ) {
-#             print "\t\tDownloading CR$CR CH map...\n";
-#             system("wget -nc $ch_map_url -P $datdir/CHmaps");
-# }
-
-        # load the $ch_map_path file, which is an image array.
-        # print "ch_map_path: $ch_map_path\n";
-
-
 
         # Pass the image into the main function
         if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want); }
@@ -272,7 +255,6 @@ sub get_wind {
 
         # #run the python script to plot the angles
         # system("python3 fluxon-mhd/fluxpype/fluxpype/plotting/plot_angles.py");
-
 
     }
     else {

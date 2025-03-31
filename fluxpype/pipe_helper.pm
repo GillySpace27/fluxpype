@@ -143,7 +143,7 @@ use Config::IniFiles;
 use Carp qw(croak);
 no warnings 'redefine';
 
-use File::HomeDir;
+# use File::HomeDir;
 
 our @EXPORT_OK = qw(
     shorten_path
@@ -178,16 +178,15 @@ sub shorten_path {
 use strict;
 use warnings;
 use Cwd 'abs_path';
-use File::HomeDir;
 use File::Spec::Functions qw(catfile catdir);
 use File::Basename qw(dirname);
 
-# Function to expand ~ to the home directory
+# Function to expand ~ to the home directory without File::HomeDir
 sub expand_home_dir {
     my ($path) = @_;
 
     if ($path =~ /^~($|\/)/) {
-        my $home_dir = File::HomeDir->my_home;
+        my $home_dir = $ENV{HOME} || (getpwuid($<))[7];
         $path =~ s/^~/$home_dir/;
     }
 
@@ -344,13 +343,15 @@ sub load_config_section {
 
 
 
+use Cwd 'abs_path';
+
 sub resolve_base_dir {
     my ($config_path) = @_;
 
     # Expand ~ to home directory
-    if ($config_path =~ /^~\//) {
-        my $home_dir = File::HomeDir->my_home;
-        $config_path =~ s/^~/$home_dir/;
+    if ($config_path =~ m{^~/}) {
+        my $home_dir = $ENV{HOME} || (getpwuid($<))[7];
+        $config_path =~ s{^~}{$home_dir};
     }
 
     # Convert to absolute path
@@ -776,7 +777,7 @@ sub load_highest_numbered_world {
             die "World loaded, but contains no fluxons.";
         }
 
-        return ($this_world_relaxed, $this_world_original);    # Successful load
+        return ($this_world_relaxed, $this_world_original, $selected_file_path, $original_file_path);    # Successful load
     } else {
         die "No matching files found.";                          # No file found
     }
