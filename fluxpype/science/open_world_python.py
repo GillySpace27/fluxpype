@@ -1,0 +1,956 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.spatial import cKDTree
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
+import os
+import astropy.units as u
+
+"""
+This module processes FLUX world output data to create visualizations of flux concentrations and fluxons in 3D.
+It defines the Fluxon class for individual fluxon properties and the FluxWorld class to encapsulate
+flux concentrations, fluxons, and associated visualization and computation methods (electron density,
+cross-sectional areas, etc.).
+
+Dependencies:
+    - numpy, matplotlib, scipy, astropy, and mpl_toolkits
+
+Usage:
+    The module can be executed as a script to load a FLUX world file and generate visualizations.
+"""
+
+
+class Fluxon:
+    """
+    Represents an individual fluxon with its endpoints, flux value, spatial coordinates,
+    computed cross-sectional areas, and radial distances. Also determines whether the fluxon
+    is open, closed, or of another type based on its endpoints.
+    """
+    def __init__(self, fid, start_fc, end_fc, flux, x_coords, y_coords, z_coords):
+        """
+        Initialize a Fluxon object.
+
+        Parameters:
+            fid (int): Unique fluxon identifier.
+            start_fc (int): Starting flux concentration indicator (-1 indicates open).
+            end_fc (int): Ending flux concentration indicator (-2 indicates open).
+            flux (float): Flux value associated with the fluxon.
+            x_coords, y_coords, z_coords (list or array): Lists of coordinates for the fluxon's vertices.
+        """
+        self.id = fid
+        self.start_fc = start_fc
+        self.end_fc = end_fc
+        self.flux = flux
+        self.x_coords = np.array(x_coords)
+        self.y_coords = np.array(y_coords)
+        self.z_coords = np.array(z_coords)
+        self.areas = None  # To be filled with computed cross-sectional areas
+        self.radius = np.sqrt(self.x_coords**2 + self.y_coords**2 + self.z_coords**2)
+        self.kind = self.determine_kind()
+
+    def determine_kind(self):
+        """
+        Determine the type of the fluxon based on its endpoints.
+
+        Returns:
+            str: 'open' if exactly one endpoint indicates open, 'closed' if both are not open,
+                 or 'other' for any other combination.
+        """
+        st_open = self.start_fc == -1
+        en_open = self.end_fc == -2
+        if st_open + en_open == 1:
+            self.kind = "open"
+        elif st_open + en_open == 0:
+            self.kind = "closed"
+        else:
+            self.kind = "other"
+        return self.kind
+
+    def get_vertices(self):
+        """
+        Get the spatial vertices of the fluxon.
+
+        Returns:
+            np.ndarray: An (N x 3) array where each row is the (x, y, z) coordinate of a vertex.
+        """
+        return np.column_stack((self.x_coords, self.y_coords, self.z_coords))
+
+    def get_radius(self):
+        """
+        Get the computed radial distances for the fluxon vertices.
+
+        Returns:
+            np.ndarray: The radial distances computed from the fluxon's coordinates.
+        """
+        return self.radius
+
+    def set_areas(self, areas):
+        """
+        Set the cross-sectional areas for the fluxon.
+
+        Parameters:
+            areas (array-like): Computed areas corresponding to each vertex.
+        """
+        self.areas = areas
+        self.fr = self.compute_expansion_factor(self.areas, self.radius)
+
+    def __str__(self):
+        """
+        Return a string representation of the fluxon.
+
+        Returns:
+            str: A summary string of the fluxon including id, flux, and number of vertices.
+        """
+        return f"Fluxon(id={self.id}, flux={self.flux}, n_vertices={len(self.x_coords)})"
+
+    def compute_expansion_factor(self, A, r):
+        """
+        Compute the expansion factor from an array of areas A and radii r.
+
+        The expansion factor is defined as:
+            fr = (A / A[1]) * (r[1]**2 / r**2)
+
+        Parameters:
+        A : array-like
+            Array of areas.
+        r : array-like
+            Array of radii.
+
+        Returns:
+        numpy.ndarray
+            The computed expansion factor.
+
+        Raises:
+        ValueError: If A or r have fewer than 2 elements.
+        """
+        A = np.asarray(A)
+        r = np.asarray(r)
+
+        if A.size < 2 or r.size < 2:
+            raise ValueError("Input arrays must have at least 2 elements.")
+
+        fr = (A / A[1]) * ((r[1] ** 2) / (r**2))
+        return fr
+
+
+def read_flux_world(filename):
+    """
+    Reads FLUX world output data from a file and parses it into a structured FluxWorld object.
+
+    Parameters:
+        filename (str): Path to the file or directory containing FLUX world data.
+
+    Returns:
+        FluxWorld: An object containing parsed flux concentrations and fluxons along with methods
+                   for visualization and computation (e.g., electron density, cross-sectional areas).
+    """
+
+    class FluxWorld:
+        def __init__(self, filename=None):
+            self.concentrations = self.FluxConcentrations()
+            # Use a dictionary to store individual Fluxon objects (keyed by fluxon id)
+            self.fluxons = {}
+            self.tree = None
+            self.coords = None
+            self.densities = None
+            self.name = None
+            self.cr = "unknown"
+            self.nflx = "unknown"
+            self.areas_by_fluxon = None
+            self.filename = filename or None
+            if filename is not None:
+                from os.path import basename
+                import re
+
+                self.name = basename(filename)
+                self.out_dir = os.path.join(filename.split("data/cr")[0], "imgs", "world")
+                match = re.search(r"cr(\d{4})", filename)
+                if match:
+                    self.cr = match.group(1)
+                match_f = re.search(r"_f(\d+)_", filename)
+                if match_f:
+                    self.nflx = match_f.group(1)
+
+        def __str__(self):
+            key_color = "\033[94m"  # blue color for keys
+            reset_color = "\033[0m"  # reset color
+            nm = f" {self.name}" if self.name else ""
+            return (
+                f"{key_color}FluxWorld{reset_color}{nm}: {len(self.concentrations.ids)} concentrations, "
+                f"{len(self.fluxons)} fluxons."
+            )
+
+        def plot_all(self, **kwargs):
+            self.plot_fluxon_areas(save=True)
+            self.plot_world(save=True)
+            self.plot_density(save=True)
+            self.plot_fluxon_id(save=True)
+
+
+        def plot_world(
+            self,
+            color_by="kind",
+            alpha=0.6,
+            save=False,
+            extent=30.0,
+            plot_sphere=True,
+            plot_open_fluxons=True,
+            plot_closed_fluxons=True,
+            plot_concentrations=False,
+            plot_vertices=False,
+        ):
+            """
+            Plots flux concentrations and fluxons in 3D using matplotlib.
+            """
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(111, projection="3d")
+
+            if plot_concentrations:
+                cxs = np.array(self.concentrations.x_coords)
+                cys = np.array(self.concentrations.y_coords)
+                czs = np.array(self.concentrations.z_coords)
+                cflux = np.array(self.concentrations.flux_values)
+                conc_colors = ["red" if f > 0 else "blue" for f in cflux]
+                ax.scatter(cxs, cys, czs, c=conc_colors, s=40, alpha=0.8, marker="o", label="Concentrations")
+
+            all_segments = []
+            all_values_for_coloring = []
+
+            for flux in self.fluxons.values():
+                # Determine fluxon type based on endpoints
+                st_open = flux.start_fc == -1
+                en_open = flux.end_fc == -2
+                if st_open + en_open == 1:
+                    kind = "open"
+                    if not plot_open_fluxons:
+                        continue
+                elif st_open + en_open == 0:
+                    kind = "closed"
+                    if not plot_closed_fluxons:
+                        continue
+                else:
+                    continue
+
+                x_arr = flux.x_coords
+                y_arr = flux.y_coords
+                z_arr = flux.z_coords
+                flux_value = flux.flux
+
+                num_pts = len(x_arr)
+                for j in range(num_pts - 1):
+                    p1 = np.array([x_arr[j], y_arr[j], z_arr[j]])
+                    p2 = np.array([x_arr[j + 1], y_arr[j + 1], z_arr[j + 1]])
+                    all_segments.append([p1, p2])
+                    if color_by == "radial_deviation":
+                        midpoint = 0.5 * (p1 + p2)
+                        radial_vec = midpoint
+                        seg_vec = p2 - p1
+                        if np.linalg.norm(radial_vec) < 1e-12 or np.linalg.norm(seg_vec) < 1e-12:
+                            angle = 0.0
+                        else:
+                            cos_theta = np.dot(radial_vec, seg_vec) / (
+                                np.linalg.norm(radial_vec) * np.linalg.norm(seg_vec)
+                            )
+                            cos_theta = np.clip(cos_theta, -1.0, 1.0)
+                            angle = np.arccos(cos_theta)
+                        all_values_for_coloring.append(angle)
+                    elif color_by == "flux":
+                        all_values_for_coloring.append(flux_value)
+                    elif color_by == "kind":
+                        all_values_for_coloring.append(kind)
+                    else:
+                        all_values_for_coloring.append(0.0)
+
+            line_collection = Line3DCollection(all_segments, linewidth=1.5, alpha=alpha)
+            if color_by in ["radial_deviation", "flux"]:
+                all_values_for_coloring = np.array(all_values_for_coloring)
+                line_collection.set_array(all_values_for_coloring)
+                line_collection.set_cmap("RdYlBu")
+                ax.add_collection3d(line_collection)
+                cbar = plt.colorbar(line_collection, ax=ax, pad=0.1, shrink=0.8)
+                if color_by == "radial_deviation":
+                    cbar.set_label("Angle from radial (radians)")
+                elif color_by == "flux":
+                    cbar.set_label("Flux value")
+            elif color_by == "kind":
+                color_mapping = {"open": "green", "closed": "red"}
+                segment_colors = [color_mapping.get(k, "black") for k in all_values_for_coloring]
+                line_collection.set_color(segment_colors)
+                ax.add_collection3d(line_collection)
+            else:
+                line_collection.set_color("green")
+                ax.add_collection3d(line_collection)
+            if plot_vertices:
+                all_vertex_x = []
+                all_vertex_y = []
+                all_vertex_z = []
+                for flux in self.fluxons.values():
+                    if len(flux.x_coords) > 2:
+                        all_vertex_x.extend(flux.x_coords[1:-1])
+                        all_vertex_y.extend(flux.y_coords[1:-1])
+                        all_vertex_z.extend(flux.z_coords[1:-1])
+                if all_vertex_x:
+                    ax.scatter(all_vertex_x, all_vertex_y, all_vertex_z, c="magenta", s=20, alpha=0.8, label="Vertices")
+
+            u_vals = np.linspace(0, 2 * np.pi, 20)
+            v_vals = np.linspace(0, np.pi, 20)
+            x_sphere = 1.0 * np.outer(np.cos(u_vals), np.sin(v_vals))
+            y_sphere = 1.0 * np.outer(np.sin(u_vals), np.sin(v_vals))
+            z_sphere = 1.0 * np.outer(np.ones_like(u_vals), np.cos(v_vals))
+            if plot_sphere:
+                ax.plot_surface(x_sphere, y_sphere, z_sphere, color="yellow", alpha=1.0)
+
+            all_x = []
+            all_y = []
+            all_z = []
+
+            if plot_concentrations:
+                all_x.append(np.array(self.concentrations.x_coords))
+                all_y.append(np.array(self.concentrations.y_coords))
+                all_z.append(np.array(self.concentrations.z_coords))
+
+            if extent is None:
+                for flux in self.fluxons.values():
+                    all_x.append(flux.x_coords)
+                    all_y.append(flux.y_coords)
+                    all_z.append(flux.z_coords)
+                all_x = np.concatenate(all_x) if all_x else np.array([0])
+                all_y = np.concatenate(all_y) if all_y else np.array([0])
+                all_z = np.concatenate(all_z) if all_z else np.array([0])
+                min_x, max_x = np.min(all_x), np.max(all_x)
+                min_y, max_y = np.min(all_y), np.max(all_y)
+                min_z, max_z = np.min(all_z), np.max(all_z)
+                max_range = max((max_x - min_x), (max_y - min_y), (max_z - min_z))
+                mid_x = 0.5 * (max_x + min_x)
+                mid_y = 0.5 * (max_y + min_y)
+                mid_z = 0.5 * (max_z + min_z)
+                ax.set_xlim(mid_x - 0.5 * max_range, mid_x + 0.5 * max_range)
+                ax.set_ylim(mid_y - 0.5 * max_range, mid_y + 0.5 * max_range)
+                ax.set_zlim(mid_z - 0.5 * max_range, mid_z + 0.5 * max_range)
+            else:
+                ax.set_xlim(-extent, extent)
+                ax.set_ylim(-extent, extent)
+                ax.set_zlim(-extent, extent)
+
+            ax.set_xlabel("X")
+            ax.set_ylabel("Y")
+            ax.set_zlabel("Z")
+            ax.set_title("Flux World Visualization")
+            plt.legend(loc="upper right")
+            plt.tight_layout()
+            if save:
+                plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world.png"))
+                zoom = extent / 5
+                ax.set_xlim(-zoom, zoom)
+                ax.set_ylim(-zoom, zoom)
+                ax.set_zlim(-zoom, zoom)
+                plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom.png"))
+            else:
+                plt.show()
+
+        def generate_coordinate_grid(self, num_points_per_axis=20, padding=0.1):
+            fx_min, fx_max = self.all_fx.min(), self.all_fx.max()
+            fy_min, fy_max = self.all_fy.min(), self.all_fy.max()
+            fz_min, fz_max = self.all_fz.min(), self.all_fz.max()
+            dx = (fx_max - fx_min) * padding
+            dy = (fy_max - fy_min) * padding
+            dz = (fz_max - fz_min) * padding
+            x = np.linspace(fx_min - dx, fx_max + dx, num_points_per_axis)
+            y = np.linspace(fy_min - dy, fy_max + dy, num_points_per_axis)
+            z = np.linspace(fz_min - dz, fz_max + dz, num_points_per_axis)
+            X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+            coords = np.vstack([X.ravel(), Y.ravel(), Z.ravel()]).T * u.R_sun
+            return coords
+
+        def generate_slices(self, num_points=200, extent=1.5 * u.R_sun):
+            lin = np.linspace(-extent.value, extent.value, num_points) * extent.unit
+            planes = {
+                "XY": {"fixed": "z", "xlabel": "X", "ylabel": "Y"},
+                "XZ": {"fixed": "y", "xlabel": "X", "ylabel": "Z"},
+                "YZ": {"fixed": "x", "xlabel": "Y", "ylabel": "Z"},
+            }
+            slices = {}
+            for name, cfg in planes.items():
+                fixed = cfg["fixed"]
+                if fixed == "z":
+                    X, Y = np.meshgrid(lin, lin, indexing="ij")
+                    Z = np.zeros_like(X)
+                    coords = np.stack([X, Y, Z], axis=-1)
+                elif fixed == "y":
+                    X, Z = np.meshgrid(lin, lin, indexing="ij")
+                    Y = np.zeros_like(X)
+                    coords = np.stack([X, Y, Z], axis=-1)
+                elif fixed == "x":
+                    Y, Z = np.meshgrid(lin, lin, indexing="ij")
+                    X = np.zeros_like(Y)
+                    coords = np.stack([X, Y, Z], axis=-1)
+                coords_flat = coords.reshape(-1, 3)
+                densities = self.compute_electron_density(coords_flat).reshape(num_points, num_points)
+                densities = np.log10(densities.to_value())
+                slices[name] = {
+                    "plane": (X, Y) if fixed == "z" else (X, Z) if fixed == "y" else (Y, Z),
+                    "density": densities,
+                    "extent": [-extent.value, extent.value, -extent.value, extent.value],
+                    "xlabel": cfg["xlabel"],
+                    "ylabel": cfg["ylabel"],
+                    "label": name,
+                }
+            return slices
+
+        def plot_density(
+            self, num_points=200, extent=1.5 * u.R_sun, title="Electron Density Visualization", save=False
+        ):
+            import matplotlib.pyplot as plt
+
+            coords = self.generate_coordinate_grid(num_points_per_axis=20)
+            densities = self.compute_electron_density(coords)
+            coords = np.array(coords)
+            densities = np.log10(np.array(densities))
+            norm_densities = (densities - densities.min()) / (densities.max() - densities.min())
+            norm_densities = np.clip(norm_densities, 0.05, 1.0)
+            norm_densities[norm_densities <= np.nanmin(norm_densities)] = 0
+            slice_data = self.generate_slices(num_points=num_points, extent=extent)
+            fig = plt.figure(figsize=(14, 12))
+            fig.suptitle(title)
+            ax3d = fig.add_subplot(2, 2, 1, projection="3d")
+            sc = ax3d.scatter(
+                coords[:, 0], coords[:, 1], coords[:, 2], c=densities, cmap="viridis", alpha=norm_densities
+            )
+            ax3d.set_xlabel("X")
+            ax3d.set_ylabel("Y")
+            ax3d.set_zlabel("Z")
+            fig.colorbar(sc, ax=ax3d, label="Electron Density")
+            slice_keys = ["XY", "XZ", "YZ"]
+            for i, key in enumerate(slice_keys):
+                ax = fig.add_subplot(2, 2, i + 2)
+                data = slice_data[key]
+                im = ax.imshow(
+                    np.log10(data["density"]), extent=data["extent"], origin="lower", cmap="viridis", aspect="equal"
+                )
+                ax.set_xlabel(data["xlabel"])
+                ax.set_ylabel(data["ylabel"])
+                ax.set_title(f"{key} Plane at {data['label']} = 0")
+                fig.colorbar(im, ax=ax, label="Electron Density")
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            if save:
+                plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_density.png"))
+            else:
+                plt.show()
+
+        @u.quantity_input(influence_length=u.R_sun)
+        def compute_electron_density(self, coords=None, influence_length=1 * u.R_sun):
+            if coords is None and self.coords is not None:
+                coords = self.coords
+            elif coords is None:
+                coords = self.generate_coordinate_grid()
+            self.coords = coords
+            if self.tree is None:
+                points = []
+                for flux in self.fluxons.values():
+                    vertices = flux.get_vertices()
+                    for pt in vertices:
+                        points.append(pt)
+                points = np.array(points)
+                self.tree = cKDTree(points)
+            distances, _ = self.tree.query(coords) * coords[0].unit
+            r = np.linalg.norm(coords, axis=1)
+            n0 = 4.2e8 * u.cm**-3
+            base_density = n0 * 10 ** (4.32 * u.R_sun / r.to(u.R_sun))
+            factor = 10 * np.exp(-distances / influence_length)
+            densities = base_density * (1 + factor)
+            return densities
+
+        def compute_fluxon_id(self, coords=None):
+            if coords is None and self.coords is not None:
+                coords = self.coords
+            elif coords is None:
+                coords = self.generate_coordinate_grid()
+            self.coords = coords
+            if not hasattr(self, "id_tree") or self.id_tree is None:
+                points = []
+                vertex_fids = []
+                for flux in self.fluxons.values():
+                    vertices = flux.get_vertices()
+                    for pt in vertices:
+                        points.append(pt)
+                        vertex_fids.append(flux.id)
+                points = np.array(points)
+                self.id_tree = cKDTree(points)
+                self.vertex_fids = np.array(vertex_fids)
+            distances, indices = self.id_tree.query(coords)
+            fids = self.vertex_fids[indices]
+            return fids
+
+        def compute_cross_sectional_areas(self, method="halfplane", k_neighbors=6, smooth=True):
+            """
+            Estimate the perpendicular cross-sectional area at each vertex using either
+            a convex hull method or a half-plane (Voronoi) method.
+
+            Parameters
+            ----------
+            method : str, optional
+                Options are:
+                'convex'    : Use the convex hull of midpoints of the vertex and its neighbors.
+                'halfplane' : Compute the intersection of half-planes defined by the perpendicular bisectors.
+                Default is 'halfplane'.
+            k_neighbors : int, optional
+                Number of nearest neighbors to use (default is 6).
+
+            Returns
+            -------
+            areas_by_fluxon : dict
+                A dictionary mapping each fluxon id to an array of estimated areas for each vertex.
+            """
+            import numpy as np
+            from scipy.spatial import ConvexHull, cKDTree
+            self.method = method
+            def clip_polygon_by_halfplane(polygon, a, b, c):
+                new_polygon = []
+                n = len(polygon)
+                for i in range(n):
+                    curr = polygon[i]
+                    nxt = polygon[(i + 1) % n]
+                    curr_inside = a * curr[0] + b * curr[1] <= c
+                    nxt_inside = a * nxt[0] + b * nxt[1] <= c
+                    if curr_inside and nxt_inside:
+                        new_polygon.append(nxt)
+                    elif curr_inside and not nxt_inside:
+                        d = a * (nxt[0] - curr[0]) + b * (nxt[1] - curr[1])
+                        if d != 0:
+                            t = (c - (a * curr[0] + b * curr[1])) / d
+                            new_point = (curr[0] + t * (nxt[0] - curr[0]), curr[1] + t * (nxt[1] - curr[1]))
+                            new_polygon.append(new_point)
+                    elif not curr_inside and nxt_inside:
+                        d = a * (nxt[0] - curr[0]) + b * (nxt[1] - curr[1])
+                        if d != 0:
+                            t = (c - (a * curr[0] + b * curr[1])) / d
+                            new_point = (curr[0] + t * (nxt[0] - curr[0]), curr[1] + t * (nxt[1] - curr[1]))
+                            new_polygon.append(new_point)
+                        new_polygon.append(nxt)
+                return new_polygon
+
+            def polygon_area(polygon):
+                if len(polygon) < 3:
+                    return np.nan
+                x = np.array([p[0] for p in polygon])
+                y = np.array([p[1] for p in polygon])
+                return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
+
+            # Collect all vertices and store fluxon references as (fluxon_id, vertex_index)
+            all_points = []
+            flux_refs = []
+            for flux in self.fluxons.values():
+                vertices = flux.get_vertices()
+                for j, pt in enumerate(vertices):
+                    all_points.append(pt)
+                    flux_refs.append((flux.id, j))
+            all_points = np.array(all_points)
+
+            tree = cKDTree(all_points)
+
+            self.areas_by_fluxon = {}
+            self.radius_by_fluxon = {}
+            for flux in self.fluxons.values():
+                self.areas_by_fluxon[flux.id] = np.full(len(flux.x_coords), np.nan)
+                self.radius_by_fluxon[flux.id] = self.get_fluxon(flux.id).get_radius()
+
+            from tqdm import tqdm
+            for idx, pt in enumerate(tqdm(all_points)):
+                fid, v_idx = flux_refs[idx]
+                flux_obj = self.get_fluxon(fid)
+                pts = flux_obj.get_vertices()
+                if len(pts) < 2:
+                    continue
+                if v_idx == 0:
+                    tangent = pts[1] - pts[0]
+                elif v_idx == len(pts) - 1:
+                    tangent = pts[-1] - pts[-2]
+                else:
+                    tangent = pts[v_idx + 1] - pts[v_idx - 1]
+                norm = np.linalg.norm(tangent)
+                if norm == 0:
+                    continue
+                tangent = tangent / norm
+
+                arbitrary = np.array([0, 0, 1])
+                if np.allclose(np.abs(np.dot(tangent, arbitrary)), 1.0):
+                    arbitrary = np.array([0, 1, 0])
+                v1 = np.cross(tangent, arbitrary)
+                if np.linalg.norm(v1) == 0:
+                    continue
+                v1 = v1 / np.linalg.norm(v1)
+                v2 = np.cross(tangent, v1)
+
+                distances, indices = tree.query(pt, k=k_neighbors + 1)
+                neighbor_indices = indices[1:]
+                neighbor_points = all_points[neighbor_indices]
+
+                projected_neighbors = []
+                projected_midpoints = []
+                for n_pt in neighbor_points:
+                    diff = n_pt - pt
+                    proj = np.array([np.dot(diff, v1), np.dot(diff, v2)])
+                    projected_neighbors.append(proj)
+                    midpoint = diff / 2.0
+                    projected_midpoints.append(np.array([np.dot(midpoint, v1), np.dot(midpoint, v2)]))
+                projected_neighbors = np.array(projected_neighbors)
+                projected_midpoints = np.array(projected_midpoints)
+
+                if method == "convex":
+                    if projected_midpoints.shape[0] < 3:
+                        area = np.nan
+                    else:
+                        try:
+                            hull = ConvexHull(projected_midpoints)
+                            area = hull.volume
+                        except Exception:
+                            area = np.nan
+                elif method == "halfplane":
+                    L = np.max(np.linalg.norm(projected_neighbors, axis=1)) * 2
+                    polygon = [(-L, -L), (L, -L), (L, L), (-L, L)]
+                    for n in projected_neighbors:
+                        a = n[0]
+                        b = n[1]
+                        c = 0.5 * (a * a + b * b)
+                        polygon = clip_polygon_by_halfplane(polygon, a, b, c)
+                        if len(polygon) < 3:
+                            break
+                    area = polygon_area(polygon)
+                else:
+                    area = np.nan
+
+                self.areas_by_fluxon[fid][v_idx] = area
+
+            for flux in self.fluxons.values():
+
+                flux_obj = self.get_fluxon(flux.id)
+                raw_area = self.areas_by_fluxon[flux.id]
+                save_area = raw_area if smooth is None else self.smooth_areas(raw_area, smooth)
+                flux_obj.set_areas(save_area)
+
+            return self.areas_by_fluxon
+
+        def smooth_areas(self, raw_area, smooth=True, method='gaussian'):
+            """
+            Smooth the cross-sectional area data.
+
+            Parameters:
+                raw_area (array-like): The raw area data to be smoothed.
+                smooth (bool or tuple): If True, use default parameters; if a tuple is provided, use those values.
+                method (str, optional): Smoothing method to use. Options are 'savgol' for Savitzky–Golay filtering (default)
+                                        and 'gaussian' for Gaussian smoothing.
+
+            Returns:
+                np.ndarray: The smoothed area data.
+            """
+            # If Gaussian smoothing is requested
+            if method == 'gaussian':
+                from scipy.ndimage import gaussian_filter1d
+                if smooth is True:
+                    sigma = 2.0
+                elif isinstance(smooth, (tuple, list)) and len(smooth) >= 1:
+                    sigma = smooth[0]
+                else:
+                    return raw_area
+                return gaussian_filter1d(raw_area, sigma=sigma)
+            elif method != 'savgol':
+                # If an unsupported method is provided, return raw_area unmodified.
+                return raw_area
+
+            # Otherwise, use Savitzky–Golay smoothing
+            from scipy.signal import savgol_filter
+
+            # Determine filter parameters based on the 'smooth' parameter
+            if smooth is True:
+                window_length = 7
+                polyorder = 4
+            elif isinstance(smooth, (tuple, list)) and len(smooth) == 2:
+                window_length, polyorder = smooth
+            else:
+                return raw_area
+
+            # Ensure window_length is an odd integer
+            window_length = int(window_length)
+            if window_length % 2 == 0:
+                window_length += 1
+
+            # Adjust window_length if the raw_area length is smaller
+            if len(raw_area) < window_length:
+                window_length = len(raw_area) if len(raw_area) % 2 == 1 else len(raw_area) - 1
+                if window_length < 3:
+                    return raw_area
+
+            if polyorder >= window_length:
+                polyorder = window_length - 1
+
+            try:
+                smoothed_area = savgol_filter(raw_area, window_length=window_length, polyorder=polyorder)
+            except Exception as e:
+                print(e)
+                return raw_area
+            return smoothed_area
+
+        def plot_fluxon_areas(self, save=True):
+            fig, axarray = plt.subplots(4, 1, sharex="all", figsize=(8, 10))
+
+            (ax, ax2, ax3, ax4)  = axarray.flatten()
+
+            for axy in axarray.flatten():
+                axy.set_yscale("log")
+                axy.set_xscale("log")
+                axy.set_xlim(10**-2, 21.5)
+
+            if self.areas_by_fluxon is None:
+                self.compute_cross_sectional_areas(smooth=True)
+
+            cl_ind, open_ind = 0, 0
+            cl_tot, open_tot = 0, 0
+            zr = None
+            iterable = self.fluxons.values()
+
+            for fluxonn in iterable:
+                if fluxonn.kind == "closed":
+                    cl_tot += 1.25
+                elif fluxonn.kind == "open":
+                    open_tot += 1.5
+
+            if zr is None:
+                zr = np.linspace(10**-3, 21.5)
+                ax.plot(zr, (zr) ** 2, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
+                ax3.plot(zr, (zr) ** 2, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
+                ax2.axhline(1, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
+                ax4.axhline(1, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
+
+            for fluxonn in iterable:
+                if fluxonn.kind == "closed":
+                    cl_ind += 1
+                    ax3.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
+                    ax4.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
+                elif fluxonn.kind == "open":
+                    open_ind += 1
+                    ax.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
+                    ax2.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
+
+            fig.suptitle(f"Area determination method: {self.method}")
+            ax.set_title(f"Cross-sectional Area: Open Fields")
+            ax2.set_title(f"Expansion Factor: Open Fields")
+            ax3.set_title(f"Cross-sectional Area: Closed Fields")
+            ax4.set_title(f"Expansion Factor: Closed Fields")
+            plt.tight_layout()
+            if save:
+                plt.savefig(os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_fluxlight_area_{self.method}.png"))
+            else:
+                plt.show()
+
+        @u.quantity_input(displacement=u.R_sun)
+        def plot_fluxon_id(
+            self,
+            num_points=600,
+            extent=3.0 * u.R_sun,
+            title="Fluxon ID Visualization",
+            save=False,
+            displacement=0.25 * u.R_sun,
+        ):
+            coords3d = self.generate_coordinate_grid(num_points_per_axis=num_points//20)
+            fluxon_ids_3d = self.compute_fluxon_id(coords3d)
+            lin = np.linspace(-extent.value, extent.value, num_points) * extent.unit
+            slices = {}
+            planes = {
+                "XY": {"fixed": "z", "xlabel": "X", "ylabel": "Y"},
+                "XZ": {"fixed": "y", "xlabel": "X", "ylabel": "Z"},
+                "YZ": {"fixed": "x", "xlabel": "Y", "ylabel": "Z"},
+            }
+            for name, cfg in planes.items():
+                fixed = cfg["fixed"]
+                if fixed == "z":
+                    X, Y = np.meshgrid(lin, lin, indexing="ij")
+                    Z = np.ones_like(X) + displacement
+                    coords_plane = np.stack([X, Y, Z], axis=-1)
+                elif fixed == "y":
+                    X, Z = np.meshgrid(lin, lin, indexing="ij")
+                    Y = np.ones_like(X) + displacement
+                    coords_plane = np.stack([X, Y, Z], axis=-1)
+                elif fixed == "x":
+                    Y, Z = np.meshgrid(lin, lin, indexing="ij")
+                    X = np.ones_like(Y) + displacement
+                    coords_plane = np.stack([X, Y, Z], axis=-1)
+                coords_flat = coords_plane.reshape(-1, 3)
+                fid_values = self.compute_fluxon_id(coords_flat).reshape(num_points, num_points)
+                slices[name] = {
+                    "plane": (X, Y) if fixed == "z" else (X, Z) if fixed == "y" else (Y, Z),
+                    "fid": fid_values,
+                    "extent": [-extent.value, extent.value, -extent.value, extent.value],
+                    "xlabel": cfg["xlabel"],
+                    "ylabel": cfg["ylabel"],
+                    "label": fixed,
+                }
+            fig = plt.figure(figsize=(14, 12))
+            fig.suptitle(title)
+            ax3d = fig.add_subplot(2, 2, 1, projection="3d")
+            sc = ax3d.scatter(
+                coords3d[:, 0].value, coords3d[:, 1].value, coords3d[:, 2].value, c=fluxon_ids_3d, cmap="prism"
+            )
+            ax3d.set_xlabel("X")
+            ax3d.set_ylabel("Y")
+            ax3d.set_zlabel("Z")
+            fig.colorbar(sc, ax=ax3d, label="Fluxon ID")
+            slice_keys = ["XY", "XZ", "YZ"]
+            for i, key in enumerate(slice_keys):
+                ax = fig.add_subplot(2, 2, i + 2)
+                data = slices[key]
+                im = ax.imshow(data["fid"], extent=data["extent"], origin="lower", cmap="prism", aspect="equal")
+                ax.set_xlabel(data["xlabel"])
+                ax.set_ylabel(data["ylabel"])
+                ax.set_title(f"{key} Plane at {data['label']} = {displacement:0.3f}")
+                fig.colorbar(im, ax=ax, label="Fluxon ID")
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            if save:
+                plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_ID.png"))
+            else:
+                plt.show()
+
+        class FluxConcentrations:
+            def __init__(self):
+                self.ids = []  # Concentration ID Number
+                self.x_coords = []  # Concentration X coordinate
+                self.y_coords = []  # Concentration Y coordinate
+                self.z_coords = []  # Concentration Z coordinate
+                self.flux_values = []  # Flux Value
+
+            def __str__(self):
+                key_color = "\033[94m"
+                reset_color = "\033[0m"
+                return (
+                    f"{key_color}FluxConcentration{reset_color} with {len(self.ids)} entries:\n"
+                    f"{key_color}IDs{reset_color}: Length={len(self.ids)}, First={self.ids[:3]}, Last={self.ids[-3:]}\n"
+                    f"{key_color}Flux values{reset_color}: Length={len(self.flux_values)}, First={self.flux_values[:3]}, Last={self.flux_values[-3:]}"
+                )
+
+        def add_flux_concentration(self, id, x, y, z, flux):
+            self.concentrations.ids.append(id)
+            self.concentrations.x_coords.append(x)
+            self.concentrations.y_coords.append(y)
+            self.concentrations.z_coords.append(z)
+            self.concentrations.flux_values.append(flux)
+
+        def add_fluxon(self, id, start_fc, end_fc, flux, start_pos, end_pos, x, y, z):
+            new_fluxon = Fluxon(
+                id,
+                start_fc,
+                end_fc,
+                flux,
+                [start_pos[0]] + x + [end_pos[0]],
+                [start_pos[1]] + y + [end_pos[1]],
+                [start_pos[2]] + z + [end_pos[2]],
+            )
+            self.fluxons[new_fluxon.id] = new_fluxon
+
+        def get_fluxon(self, fid):
+            return self.fluxons.get(fid, None)
+
+    if os.path.isdir(filename):
+        import re
+        files = os.listdir(filename)
+        largest_file = max(
+            files,
+            key=lambda f: int(re.search(r'_s(\d+)_', f).group(1)) if re.search(r'_s(\d+)_', f) else -1
+        )
+        filename = os.path.join(filename, largest_file)
+
+    # Initialize the FluxWorld object
+    flux_world = FluxWorld(filename)
+
+    # Reading data from the file
+    with open(filename, "r") as file:
+        line_ids = []
+        line_start_fc = []
+        line_end_fc = []
+        line_flux_values = []
+        line_start_pos = []
+        line_end_pos = []
+
+        vertex_line_ids = []
+        vertex_ids = []
+        vertex_positions = []
+        vertex_x_coords = []
+        vertex_y_coords = []
+        vertex_z_coords = []
+
+        for line in file:
+            tokens = line.strip().split()
+            if not tokens:
+                continue
+            if tokens[0] == "NEW":
+                flux_world.add_flux_concentration(
+                    int(tokens[1]), float(tokens[2]), float(tokens[3]), float(tokens[4]), float(tokens[5])
+                )
+            elif tokens[0] == "LINE":
+                if int(tokens[1]) > 0:
+                    line_ids.append(int(tokens[1]))
+                    line_start_fc.append(int(tokens[4]))
+                    line_end_fc.append(int(tokens[5]))
+                    line_flux_values.append(float(tokens[6]))
+                    line_start_pos.append([float(tokens[7]), float(tokens[8]), float(tokens[9])])
+                    line_end_pos.append([float(tokens[10]), float(tokens[11]), float(tokens[12])])
+            elif tokens[0] == "VERTEX":
+                vertex_line_ids.append(int(tokens[1]))
+                vertex_ids.append(int(tokens[2]))
+                vertex_positions.append(int(tokens[3]))
+                vertex_x_coords.append(float(tokens[4]))
+                vertex_y_coords.append(float(tokens[5]))
+                vertex_z_coords.append(float(tokens[6]))
+            elif "VNEIGHBOR" in tokens[0]:
+                break
+
+    line_ids = np.array(line_ids)
+    line_start_fc = np.array(line_start_fc)
+    line_end_fc = np.array(line_end_fc)
+    line_flux_values = np.array(line_flux_values)
+    line_start_pos = np.array(line_start_pos)
+    line_end_pos = np.array(line_end_pos)
+
+    vertex_line_ids = np.array(vertex_line_ids)
+    vertex_ids = np.array(vertex_ids)
+    vertex_positions = np.array(vertex_positions)
+    vertex_x_coords = np.array(vertex_x_coords)
+    vertex_y_coords = np.array(vertex_y_coords)
+    vertex_z_coords = np.array(vertex_z_coords)
+
+    # Create fluxon objects by parsing line and vertex data
+    for lid in line_ids:
+        line_indices = np.where(line_ids == lid)[0]
+        vertex_indices = np.where(vertex_line_ids == lid)[0]
+        flux_world.add_fluxon(
+            lid,
+            line_start_fc[line_indices][0],
+            line_end_fc[line_indices][0],
+            line_flux_values[line_indices][0],
+            line_start_pos[line_indices][0].tolist(),
+            line_end_pos[line_indices][0].tolist(),
+            vertex_x_coords[vertex_indices].tolist(),
+            vertex_y_coords[vertex_indices].tolist(),
+            vertex_z_coords[vertex_indices].tolist(),
+        )
+    print("Flux world loaded:", os.path.basename(filename))
+    print(flux_world)
+    flux_world.all_fx = np.concatenate([flux.x_coords for flux in flux_world.fluxons.values()])
+    flux_world.all_fy = np.concatenate([flux.y_coords for flux in flux_world.fluxons.values()])
+    flux_world.all_fz = np.concatenate([flux.z_coords for flux in flux_world.fluxons.values()])
+    print("Fluxon bounding box (X):", flux_world.all_fx.min(), flux_world.all_fx.max())
+    print("Fluxon bounding box (Y):", flux_world.all_fy.min(), flux_world.all_fy.max())
+    print("Fluxon bounding box (Z):", flux_world.all_fz.min(), flux_world.all_fz.max())
+
+    return flux_world
+
+
+if __name__ == "__main__":
+
+    import sys
+
+    if len(sys.argv) > 1:
+        the_world_file = sys.argv[1]
+    else:
+        the_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2230/world/cr2230_f1000_hmi_relaxed_s800.flux"
+
+    f_world = read_flux_world(the_world_file)
+    # f_world.plot_fluxon_id()
+    f_world.plot_all(save=True)

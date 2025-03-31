@@ -324,7 +324,7 @@ our ( $out_b, $out_fr, $out_wind, $out_b_all );
 
 our $this_world_orig;
 # our $this_world_relaxed;
-$this_world_relaxed, $this_world_orig = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
+my ($this_world_relaxed, $this_world_original, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
 our $use_world = 0;
 my $plot_stiff = 0;
@@ -359,6 +359,7 @@ print color("reset");
 
 # Define common plotting directory
 my $plot_dir = catfile($base_dir, "fluxpype", "fluxpype", "plotting");
+my $sci_dir = catfile($base_dir, "fluxpype", "fluxpype", "science");
 
 print "Plotting to $plot_dir\n\n";
 
@@ -397,7 +398,10 @@ sub run_all_plots {
         # "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
 
         # Plot wind solutions (using a different file structure for input data)
-        "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind"
+        "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
+
+        # "python3 " . catfile($sci_dir, "open_world_python.py") . " $datdir/batches/$batch_name/data/cr$CR/world"
+        "python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path
     );
 
     # Execute each plotting command sequentially
@@ -408,67 +412,6 @@ sub run_all_plots {
 
 # Execute all plotting commands
 run_all_plots();
-
-
-
-
-
-
-
-
-
-
-
-
-# # This is the first script that plots the magnetic fields
-# my $plot_bmag_cmd = "python3 $base_dir/fluxpype/fluxpype/plotting/plot_bmag.py"
-#       . " --cr $CR --file $out_b --nwant $n_fluxons_wanted --adapt $adapt";
-
-# system($plot_bmag_cmd) == 0 or ( die "Python script returned error $?", exit );
-
-
-# # This plot shows the actual magnetic fields from all the sims in the batch
-# my $plot_bmag_mall_cmd = "python3 $base_dir/fluxpype/fluxpype/plotting/multiplot_bmag_all.py"
-#       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt";
-# system($plot_bmag_mall_cmd) == 0 or ( die "Python script returned error $?", exit );
-
-
-# # This plot shows the actual magnetic fields in the fluxon world
-# system(
-# "python3 fluxpype/plotting/plot_bmag_all.py"
-#       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt")
-#       == 0 or ( die "Python script returned error $?", exit );
-
-
-# # This is the plot with many panels showing the expansion of the fields geometrically
-# system(
-# "python3 fluxpype/plotting/plot_bmag_fill.py"
-#       . " --cr $CR --file $out_b_all --nwant $n_fluxons_wanted --adapt $adapt"
-# ) == 0 or ( die "Python script returned error $?", exit );
-
-
-# system(
-# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_fr.py"
-#       . "  --cr $CR --file $out_fr --nwant $n_fluxons_wanted --adapt $adapt"
-# ) == 0 or ( die "Python script returned error $?", exit );
-
-
-# system(
-# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_detailed.py"
-#       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt"
-# ) == 0 or ( die "Python script returned error $?", exit );
-
-
-# system(
-# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_map_square.py"
-#       . " --cr $CR --file $out_wind --nwant $n_fluxons_wanted --adapt $adapt --wind_method $flow_method"
-# ) == 0 or ( die "Python script returned error $?", exit );
-
-
-# system(
-# "python3 $base_dir/fluxpype/fluxpype/plotting/plot_wind_solutions.py"
-#       . " $datdir/batches/$batch_name/data/cr$CR/wind"
-# ) == 0 or ( die "Python script returned error $?", exit );
 
 
   print color("bright_cyan");
