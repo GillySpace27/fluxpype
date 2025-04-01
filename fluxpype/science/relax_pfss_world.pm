@@ -12,12 +12,12 @@ our @EXPORT_OK = qw(relax_pfss_world);
 use File::Basename;
 use File::Path qw(mkpath);
 use File::Spec;
-use pipe_helper qw(find_highest_numbered_file check_second_file_presence);
 use Flux::World qw(read_world);
 use Time::HiRes qw(clock_gettime);
 use simple_relaxer qw(simple_relaxer);
-use pipe_helper qw(shorten_path);
+use pipe_helper qw(shorten_path find_highest_numbered_file check_second_file_presence);
 use Term::ANSIColor;
+use PDL;
 
 =head1 SYNOPSIS
 
@@ -93,6 +93,8 @@ L<pipe_helper>, L<Storable>, L<File::Path>, L<Time::HiRes>
 
 =cut
 
+my %configs = pipe_helper::configurations();
+
 sub relax_pfss_world {
     my (
         $world_out_dir, $full_world_path,  $do_relax,
@@ -100,6 +102,8 @@ sub relax_pfss_world {
         $timefile,      $n_fluxons_wanted, $N_actual,
         $datdir,        $batch_name,       $CR
     ) = @_;
+
+
 
     print color("bright_cyan");
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
@@ -109,49 +113,55 @@ sub relax_pfss_world {
     print color("reset");
 
     # Determine and construct file paths at the beginning
-    my ($found_file_path, $stepnum) = find_highest_numbered_file($world_out_dir);
+    my $found_file_path;
+    my $stepnum;
+    ($found_file_path, $stepnum) = find_highest_numbered_file($world_out_dir);
     my ($second_file_present, $file_path_relaxed) = check_second_file_presence($full_world_path);
 
     my $directory = dirname($full_world_path);
     my $file_name_relaxed;
+    my $movie_f;
 
     if ($second_file_present) {
         print "\tFound a relaxed file: $file_path_relaxed\n";
-        # $file_name_relaxed = $directory . $file_path_relaxed;
         $file_name_relaxed = File::Spec->catfile($directory, $file_path_relaxed);
     } else {
         print "\tNo relaxed file found, so we will relax the world (fairly slow).\n\n";
         my ($basename, $dirname) = fileparse($full_world_path);
+        $movie_f = $dirname . "flux-movie-%5.5d.png";
         $basename =~ s/(\.\w+)?$//;  # Remove file extension
         $file_name_relaxed = "${dirname}${basename}_relaxed";
-        print "Relaxing to $file_name_relaxed";
+        print "Relaxing to $file_name_relaxed.flux";
         $stepnum = 0;
     }
 
     my $do_the_relax = ($do_relax || not $second_file_present);
 
     if ($do_the_relax) {
-        print "\tLoading World...\n\n";
+        my ($nc_curve, $nc_proxi, $broken, $stiff, $flen, $stepnum, $round_stiff) = (0, 0, 0, 100, 0, 0, 100);
+
+        print "\n\tLoading World...\n\n";
         my $this_world_orig = read_world($full_world_path);
 
         use Storable qw(dclone);
-        our $this_world_relaxed = dclone($this_world_orig);
+        my $this_world_relaxed = dclone($this_world_orig);
 
         $this_world_relaxed->forces('f_pressure_equi2b', 'f_curvature', 'f_vertex4', 'b_eqa');  # OLD
         # $this_world_relaxed->forces('b_eqa', 'f_p_eqa_perp', 'f_curv_hm', 'f_vert4'); # NEW
         # $this_world_relaxed->{scale_b_power} = -1.0; ## Default 0
 
-        $this_world_relaxed->{concurrency} = 12;
+        # $this_world_relaxed->forces('f_p_eqa_radial', 'f_curv_hm', 'f_vert', 'b_eqa');
+        # $this_world_relaxed->{scale_b_power} = -1;
 
-        my ($cycle, $stiff, $round_stiff, $broken, $flen) = (0, 100, 100, 0, 0);
+        $this_world_relaxed->{concurrency} = $configs{concurrency};
 
         my $starttime = clock_gettime();
-
+        my $cycle = 0;
         while ($stiff > $relax_threshold and $cycle < $max_cycles and $broken < 3) {
             $cycle += 1;
             print "\n\tRelaxing PFSS model for $do_steps steps to $relax_threshold stiffness...\n\n";
 
-            simple_relaxer($this_world_relaxed, 0, $do_steps, { disp_n => 0, movie_n => 50, print_n => 200 });
+            simple_relaxer($this_world_relaxed, 0, $do_steps, { disp_n => 0, movie_n => 200, print_n => int($do_steps/5), movie_f => $movie_f });
             $relax_threshold *= 1.1;
 
             my $h = $this_world_relaxed->fw_stats;
@@ -160,10 +170,24 @@ sub relax_pfss_world {
             $stepnum = $cycle * $do_steps;
             my $round_time = sprintf("%.2f", (clock_gettime() - $starttime));
 
-            print "\tCumulative relaxation time: $round_time seconds, $stepnum steps\n";
+            print "\tCycle $cycle, Cumulative relaxation time: $round_time seconds, $stepnum steps\n";
+            if ($cycle < $configs{stop_fixing_after}) {
+                print "\nFixing vertex separation....\n";
+                if (ref($configs{fix_curvature}) eq 'PDL' && all($configs{fix_curvature})) {
+                    $nc_curve = $this_world_relaxed->fix_curvature($configs{fix_curvature}->at(0), $configs{fix_curvature}->at(1));
+                } elsif (ref($configs{fix_curvature}) eq 'PDL' && any($configs{fix_curvature})) {
+                    die "CONFIG: both elements of fix_curvature must be non-zero or neither of them must be";
+                }
+                if ($configs{fix_proximity}) {
+                    $nc_proxi = $this_world_relaxed->fix_proximity($configs{fix_proximity});
+                }
+                print "\nCycle $cycle :: Curvature changed $nc_curve vertices, proximity changed $nc_proxi vertices\n";
+            } else {
+                print "\nSkipping fix of vertex separation.\n";
+                $do_steps = $configs{do_steps} * 2;
+            }
 
             $broken = ($stiff > 99) ? $broken + 1 : 0;
-
             if ($broken >= 2) {
                 open my $fhh, ">>", $timefile or die "Cannot open file: $!";
                 print $fhh "n_want: $n_fluxons_wanted, n_actual: $N_actual, n_out: $flen, Success: 0, steps: $stepnum, stiff: $round_stiff";

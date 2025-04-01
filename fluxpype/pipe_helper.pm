@@ -255,6 +255,7 @@ sub configurations {
     $the_config{"fluxon_count"} = parse_list_or_range($the_config{"fluxon_count"});
     $the_config{"adapts"} = parse_list_or_range($the_config{"adapts"});
     $the_config{"flow_method"} = parse_list_or_range($the_config{"flow_method"});
+    $the_config{"fix_curvature"} = parse_list_or_range($the_config{"fix_curvature"});
 
     if (ref($the_config{"flow_method"}) eq 'ARRAY' && scalar @{$the_config{"flow_method"}} == 1) {
         $the_config{"flow_method"} = $the_config{"flow_method"}->[0];
