@@ -148,8 +148,8 @@ def simulate_thomson_scattering(
         num = simpson((factor * G_pol * np.sin(2 * pos_ang_row[:, None])).value, z_array.value, axis=1)
         den = simpson((factor * G_pol * np.cos(2 * pos_ang_row[:, None])).value, z_array.value, axis=1)
         Pol_ang_row = 0.5 * np.arctan2(num, den) * u.radian
-        dev = Pol_ang_row - pos_ang_row
-        dev = dev.to_value()
+        # dev = Pol_ang_row - pos_ang_row
+        # dev = dev.to_value()
         # dev = np.angle(np.exp(1j * (Pol_ang_row - pos_ang_row).to_value()))
         dev = np.angle(np.exp(1j * (Pol_ang_row).to_value()))
         dev = Pol_ang_row.to_value()
