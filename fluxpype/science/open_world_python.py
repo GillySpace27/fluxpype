@@ -36,6 +36,8 @@ class Fluxon:
             flux (float): Flux value associated with the fluxon.
             x_coords, y_coords, z_coords (list or array): Lists of coordinates for the fluxon's vertices.
         """
+        import numpy as np
+
         self.id = fid
         self.start_fc = start_fc
         self.end_fc = end_fc
@@ -45,7 +47,14 @@ class Fluxon:
         self.z_coords = np.array(z_coords)
         self.areas = None  # To be filled with computed cross-sectional areas
         self.radius = np.sqrt(self.x_coords**2 + self.y_coords**2 + self.z_coords**2)
+        # Flip the arrays if the fluxon is reversed so that the smallest radius is first
+        if self.radius[0] > self.radius[-1]:
+            self.x_coords = self.x_coords[::-1]
+            self.y_coords = self.y_coords[::-1]
+            self.z_coords = self.z_coords[::-1]
+            self.radius = self.radius[::-1]
         self.kind = self.determine_kind()
+        self.disabled = False
 
     def determine_kind(self):
         """
@@ -83,15 +92,39 @@ class Fluxon:
         """
         return self.radius
 
-    def set_areas(self, areas):
+    def set_areas(self, areas, raw_radius=None):
         """
-        Set the cross-sectional areas for the fluxon.
+        Set the cross-sectional areas for the fluxon, optionally interpolating them onto the fluxon's internal radius grid.
 
         Parameters:
             areas (array-like): Computed areas corresponding to each vertex.
+            raw_radius (array-like, optional): Raw radius values corresponding to the provided areas. If provided, the areas
+                                               will be interpolated onto the fluxon's internal radius grid (self.radius).
         """
+        import numpy as np
+        if raw_radius is not None:
+            # Interpolate the provided area data onto the fluxon's internal radius grid.
+            areas = np.interp(self.radius, raw_radius, areas, left=areas[0], right=areas[-1])
+
+        # Ensure the fluxon is ordered from the photosphere outward by checking the radius array.
+        if self.radius[0] > self.radius[-1]:
+            self.x_coords = self.x_coords[::-1]
+            self.y_coords = self.y_coords[::-1]
+            self.z_coords = self.z_coords[::-1]
+            self.radius = self.radius[::-1]
+            areas = np.array(areas)[::-1]
+
         self.areas = areas
         self.fr = self.compute_expansion_factor(self.areas, self.radius)
+
+        # Check for suspiciously constant area with height.
+        const_threshold = 0.01  # relative variation threshold
+        mean_area = np.mean(self.areas)
+        if mean_area != 0 and (np.ptp(self.areas) / mean_area) < const_threshold:
+            self.disabled = True
+            # print(f"Fluxon {self.id} rejected: constant area with height.")
+        else:
+            self.disabled = False
 
     def __str__(self):
         """
@@ -157,18 +190,34 @@ def read_flux_world(filename):
             self.nflx = "unknown"
             self.areas_by_fluxon = None
             self.filename = filename or None
+            self.flux_area_file = None
             if filename is not None:
-                from os.path import basename
+                from os.path import basename, dirname, join
+                from os import listdir
+                from pathlib import Path
                 import re
 
                 self.name = basename(filename)
-                self.out_dir = os.path.join(filename.split("data/cr")[0], "imgs", "world")
+
+                self.out_dir = join(filename.split("data/cr")[0], "imgs", "world")
+                self.dat_dir = join(Path(dirname(filename)).parent, "wind")
+
                 match = re.search(r"cr(\d{4})", filename)
                 if match:
                     self.cr = match.group(1)
                 match_f = re.search(r"_f(\d+)_", filename)
                 if match_f:
                     self.nflx = match_f.group(1)
+
+                try:
+                    self.flux_area_file = [
+                        join(self.dat_dir, pp)
+                        for pp in listdir(self.dat_dir)
+                        if (pp.endswith("_radial_fr.dat") and self.cr in pp and self.nflx in pp)
+                    ][0]
+                    pass
+                except Exception as e:
+                    raise e
 
         def __str__(self):
             key_color = "\033[94m"  # blue color for keys
@@ -180,11 +229,12 @@ def read_flux_world(filename):
             )
 
         def plot_all(self, **kwargs):
-            self.plot_fluxon_areas(save=True)
+            self.plot_all_area_methods(save=True)
+            # self.plot_all_fluxon_area_methods(save=True)
+            # self.plot_fluxon_areas(save=True)
             self.plot_world(save=True)
             self.plot_density(save=True)
             self.plot_fluxon_id(save=True)
-
 
         def plot_world(
             self,
@@ -335,7 +385,7 @@ def read_flux_world(filename):
             ax.set_ylabel("Y")
             ax.set_zlabel("Z")
             ax.set_title("Flux World Visualization")
-            plt.legend(loc="upper right")
+            # plt.legend(loc="upper right")
             plt.tight_layout()
             if save:
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world.png"))
@@ -344,6 +394,7 @@ def read_flux_world(filename):
                 ax.set_ylim(-zoom, zoom)
                 ax.set_zlim(-zoom, zoom)
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom.png"))
+                plt.close(fig)
             else:
                 plt.show()
 
@@ -384,7 +435,7 @@ def read_flux_world(filename):
                     X = np.zeros_like(Y)
                     coords = np.stack([X, Y, Z], axis=-1)
                 coords_flat = coords.reshape(-1, 3)
-                densities = self.compute_electron_density(coords_flat).reshape(num_points, num_points)
+                densities = self.compute_electron_density_exp(coords_flat).reshape(num_points, num_points)
                 densities = np.log10(densities.to_value())
                 slices[name] = {
                     "plane": (X, Y) if fixed == "z" else (X, Z) if fixed == "y" else (Y, Z),
@@ -402,7 +453,7 @@ def read_flux_world(filename):
             import matplotlib.pyplot as plt
 
             coords = self.generate_coordinate_grid(num_points_per_axis=20)
-            densities = self.compute_electron_density(coords)
+            densities = self.compute_electron_density_exp(coords)
             coords = np.array(coords)
             densities = np.log10(np.array(densities))
             norm_densities = (densities - densities.min()) / (densities.max() - densities.min())
@@ -433,11 +484,15 @@ def read_flux_world(filename):
             plt.tight_layout(rect=[0, 0, 1, 0.95])
             if save:
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_density.png"))
+                plt.close(fig)
             else:
                 plt.show()
 
+        def compute_electron_density(self, coords=None, **kwargs):
+            return self.compute_electron_density_exp(coords=coords, **kwargs)
+
         @u.quantity_input(influence_length=u.R_sun)
-        def compute_electron_density(self, coords=None, influence_length=1 * u.R_sun):
+        def compute_electron_density_exp(self, coords=None, influence_length=1 * u.R_sun):
             if coords is None and self.coords is not None:
                 coords = self.coords
             elif coords is None:
@@ -503,6 +558,67 @@ def read_flux_world(filename):
             import numpy as np
             from scipy.spatial import ConvexHull, cKDTree
             self.method = method
+
+            if method == "file":
+                # Read ground truth areas from an output file.
+                # The file should have columns: fluxon id, x, y, z, r, theta, phi, A, fr
+                if not hasattr(self, "flux_area_file") or not self.flux_area_file:
+                    raise ValueError(
+                        "flux_area_file not specified. Please set self.flux_area_file to the path of the ground truth data file."
+                    )
+                gt_data = np.loadtxt(self.flux_area_file)
+
+                # Reassign keys in self.fluxons (created from the .flux file) to sequential IDs.
+                # The .flux file produced high-numbered IDs, so we sort those keys and map them
+                # to 0, 1, 2, ... in order.
+                sorted_keys = sorted(self.fluxons.keys())
+                mapping = {old: new for new, old in enumerate(sorted_keys)}
+                new_fluxons = {}
+                for old, flux in self.fluxons.items():
+                    new_id = mapping[old]
+                    flux.id = new_id
+                    new_fluxons[new_id] = flux
+                self.fluxons = new_fluxons
+
+                # Now, use the area file's first column as the new fluxon IDs.
+                # These are "almost sequential" already.
+                area_ids = gt_data[:, 0].astype(int)
+                unique_ids = np.unique(area_ids)
+
+                # Conversion factor: solar radius in meters
+                RS = 696340000.0
+
+                # Group the area file data by its pseudo-sequential IDs,
+                # converting r from m to R☉ and A from m² to R☉².
+                areas_by_fluxon = {}
+                self.radius_by_fluxon = {}
+                for fid in unique_ids:
+                    rows = gt_data[area_ids == fid]
+                    areas_by_fluxon[fid] = rows[:, 7] / (RS**2)
+                    self.radius_by_fluxon[fid] = rows[:, 4] / RS
+                self.areas_by_fluxon = areas_by_fluxon
+
+                # Update existing fluxon objects (now keyed by sequential IDs) or create dummy fluxons
+                # for any IDs in the area file that are missing.
+                found, lost = 0, 0
+                for fid in unique_ids:
+                    if fid in self.fluxons:
+                        self.fluxons[fid].set_areas(areas_by_fluxon[fid], raw_radius=self.radius_by_fluxon[fid])
+                        found += 1
+                    else:
+                        rows = gt_data[area_ids == fid]
+                        # Convert x, y, z positions from m to solar radii
+                        x = rows[:, 1] / RS
+                        y = rows[:, 2] / RS
+                        z = rows[:, 3] / RS
+                        dummy_fluxon = Fluxon(fid, start_fc=-1, end_fc=-2, flux=np.nan, x_coords=x, y_coords=y, z_coords=z)
+                        dummy_fluxon.set_areas(areas_by_fluxon[fid], raw_radius=self.radius_by_fluxon[fid])
+                        dummy_fluxon.kind = "open"  # Force open so it's included in open-field plots.
+                        self.fluxons[fid] = dummy_fluxon
+                        lost += 1
+                print(f"Found = {found}, Created dummy fluxons = {lost}")
+                return self.areas_by_fluxon
+
             def clip_polygon_by_halfplane(polygon, a, b, c):
                 new_polygon = []
                 n = len(polygon)
@@ -554,7 +670,7 @@ def read_flux_world(filename):
                 self.radius_by_fluxon[flux.id] = self.get_fluxon(flux.id).get_radius()
 
             from tqdm import tqdm
-            for idx, pt in enumerate(tqdm(all_points)):
+            for idx, pt in enumerate(tqdm(all_points, desc=f"Computing areas with {method = }")):
                 fid, v_idx = flux_refs[idx]
                 flux_obj = self.get_fluxon(fid)
                 pts = flux_obj.get_vertices()
@@ -646,7 +762,7 @@ def read_flux_world(filename):
             if method == 'gaussian':
                 from scipy.ndimage import gaussian_filter1d
                 if smooth is True:
-                    sigma = 2.0
+                    sigma = 2.5
                 elif isinstance(smooth, (tuple, list)) and len(smooth) >= 1:
                     sigma = smooth[0]
                 else:
@@ -689,7 +805,13 @@ def read_flux_world(filename):
                 return raw_area
             return smoothed_area
 
-        def plot_fluxon_areas(self, save=True):
+        def plot_all_fluxon_area_methods(self, save=True):
+
+            for method in ["file", "convex", "halfplane"]:
+                self.plot_fluxon_areas(method=method)
+                print(f"Saved {method}")
+
+        def plot_fluxon_areas(self, save=True, method="halfplane"):
             fig, axarray = plt.subplots(4, 1, sharex="all", figsize=(8, 10))
 
             (ax, ax2, ax3, ax4)  = axarray.flatten()
@@ -699,8 +821,9 @@ def read_flux_world(filename):
                 axy.set_xscale("log")
                 axy.set_xlim(10**-2, 21.5)
 
-            if self.areas_by_fluxon is None:
-                self.compute_cross_sectional_areas(smooth=True)
+            if self.areas_by_fluxon is None or not self.method == method:
+                self.areas_by_fluxon = None
+                self.compute_cross_sectional_areas(smooth=True, method=method)
 
             cl_ind, open_ind = 0, 0
             cl_tot, open_tot = 0, 0
@@ -721,14 +844,15 @@ def read_flux_world(filename):
                 ax4.axhline(1, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
 
             for fluxonn in iterable:
-                if fluxonn.kind == "closed":
-                    cl_ind += 1
-                    ax3.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
-                    ax4.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
-                elif fluxonn.kind == "open":
-                    open_ind += 1
-                    ax.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
-                    ax2.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
+                if fluxonn.areas is not None and not fluxonn.disabled:
+                    if fluxonn.kind == "closed":
+                        cl_ind += 1
+                        ax3.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
+                        ax4.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Reds_r((cl_ind) / cl_tot), alpha=0.7, zorder=0)
+                    elif fluxonn.kind == "open":
+                        open_ind += 1
+                        ax.plot(fluxonn.radius - 1, fluxonn.areas, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
+                        ax2.plot(fluxonn.radius - 1, fluxonn.fr, color=plt.cm.Greens_r((open_ind) / open_tot), alpha=0.7, zorder=1000)
 
             fig.suptitle(f"Area determination method: {self.method}")
             ax.set_title(f"Cross-sectional Area: Open Fields")
@@ -737,9 +861,188 @@ def read_flux_world(filename):
             ax4.set_title(f"Expansion Factor: Closed Fields")
             plt.tight_layout()
             if save:
-                plt.savefig(os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_fluxlight_area_{self.method}.png"))
+                out = os.path.normpath(os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_fluxlight_area_{self.method}.png"))
+                plt.savefig(out)
+                plt.close(fig)
             else:
                 plt.show()
+
+            plt.close(fig)
+
+        def plot_all_area_methods(self, save=True):
+            for lines in [True, False]:
+                self.plot_all_open_area_methods(save=save, lines=lines)
+
+        def plot_all_open_area_methods(self, save=True, lines=False):
+            """
+            Plot the open-field fluxon cross-sectional areas and expansion factors computed
+            by all three methods ("file", "convex", "halfplane") on the same figure.
+            Each method is plotted in a different color.
+            """
+            import matplotlib.pyplot as plt
+            methods = ["convex", "halfplane", "file"]
+            colors = ["green", "blue", "red"]
+            color_mapping = {
+                "red": {"dark": "darkred", "light": "lightcoral"},
+                "green": {"dark": "darkgreen", "light": "lightgreen"},
+                "blue": {"dark": "darkblue", "light": "skyblue"},
+            }
+            # Dictionaries to store (radius, area) and (radius, expansion factor) for each method.
+            results_area = {method: [] for method in methods}
+            results_fr = {method: [] for method in methods}
+
+            # Compute and store data for each method.
+            fluxy = 0
+            for method in methods:
+                self.compute_cross_sectional_areas(smooth=True, method=method)
+                for flux in self.fluxons.values():
+                    if flux.kind == "open" and flux.areas is not None and not flux.disabled:
+                        fluxy +=1
+                        results_area[method].append((flux.radius.copy(), flux.areas.copy()))
+                        results_fr[method].append((flux.radius.copy(), flux.fr.copy()))
+            print(F"{fluxy = }")
+            # Create a figure with two subplots: one for area, one for expansion factor.
+            fig, (ax_area, ax_fr) = plt.subplots(1, 2, figsize=(12, 6), sharex="all", sharey="none")
+
+            # For legend control (so each method is labeled only once)
+            labels_added_area = {method: False for method in methods}
+            labels_added_fr = {method: False for method in methods}
+
+            # Define a common grid for height (flux.radius - 1)
+            common_grid = np.logspace(np.log10(1e-2), np.log10(21.5), 100)
+
+            # Plot individual fluxon curves and compute mean and std via interpolation
+            for method, color in zip(methods, colors):
+                # Plot individual curves for visual reference
+                for r, area in results_area[method]:
+                    label = method if not labels_added_area[method] else None
+                    if lines:
+                        ax_area.plot(r - 1, area, color=color_mapping[color]["light"], alpha=0.25, label=label)
+                    labels_added_area[method] = True
+
+                # Interpolate each fluxon's area onto the common grid
+                interp_areas = []
+                for r, area in results_area[method]:
+                    # Interpolate fluxon area vs (radius - 1) onto the common grid
+                    interp_area = np.interp(common_grid, r - 1, area, left=area[0], right=area[-1])
+                    interp_areas.append(interp_area)
+                interp_areas = np.array(interp_areas)
+
+                # Compute log-space statistics for error bars
+
+                mean_curve, std_curve = self.log_stats(interp_areas, sig=2)
+
+                err_curve = None if lines else std_curve
+                import matplotlib.colors as mcolors
+
+                transparent_color = None if lines else mcolors.to_rgba(color_mapping[color]["light"], alpha=0.75)
+
+                # Plot the mean curve with error bars
+                ax_area.errorbar(
+                    common_grid,
+                    mean_curve,
+                    yerr=err_curve,
+                    lw=4,
+                    ls="--",
+                    color=color_mapping[color]["dark"],
+                    ecolor=transparent_color,
+                    label=f"{method} mean",
+                    zorder=100000,
+                )
+                ax_area.errorbar(
+                    common_grid, mean_curve, yerr=err_curve, lw=5, ls="-", color=f"white", zorder=99999
+                )
+
+            # --- Plot expansion factor data ---
+            # First, plot individual expansion factor curves for visual reference
+            for method, color in zip(methods, colors):
+                for r, fr in results_fr[method]:
+                    label = method if not labels_added_fr[method] else None
+                    if lines:
+                        ax_fr.plot(r - 1, fr, color=color_mapping[color]["light"], alpha=0.25, label=label)
+                    labels_added_fr[method] = True
+
+            # Define a common grid for interpolation (same as used for areas)
+            # (common_grid already defined above)
+            # Now, compute and plot the errorbar summary for expansion factor data
+            for method, color in zip(methods, colors):
+                interp_fr = []
+                for r, fr in results_fr[method]:
+                    # Interpolate each fluxon's expansion factor (with x-axis given by r - 1) onto the common grid
+                    interp_val = np.interp(common_grid, r - 1, fr, left=fr[0], right=fr[-1])
+                    interp_fr.append(interp_val)
+                interp_fr = np.array(interp_fr)
+                mean_fr, std_fr = self.log_stats(interp_fr)
+
+                err_curve2 = None if lines else np.abs(std_fr)
+                transparent_color = None if lines else mcolors.to_rgba(color_mapping[color]["light"], alpha=0.75)
+
+                ax_fr.errorbar(
+                    common_grid,
+                    mean_fr,
+                    yerr=err_curve2,
+                    fmt="--",
+                    lw=4,
+                    color=color_mapping[color]["dark"],
+                    ecolor=transparent_color,
+                    label=f"{method} mean",
+                    zorder=100000,
+                )
+                ax_fr.errorbar(
+                    common_grid,
+                    mean_fr,
+                    # yerr=std_fr,
+                    fmt="-",
+                    lw=5,
+                    color="white",
+                    # label=f"{method} mean",
+                    zorder=99999,
+                )
+
+            ax_area.set_xlabel("Height above Photosphere [R$_\odot$] - 1")
+            ax_area.set_ylabel("Cross-sectional Area [R$_\odot^2$]")
+            ax_area.set_title("Cross-sectional Area (Open Fields)")
+            ax_area.set_yscale("log")
+            ax_area.set_xscale("log")
+
+            ax_fr.set_xlabel("Height above Photosphere [R$_\odot$] - 1")
+            ax_fr.set_ylabel("Expansion Factor")
+            ax_fr.set_title("Expansion Factor (Open Fields)")
+            ax_fr.set_yscale("linear")
+            ax_fr.set_xscale("log")
+
+            ax_fr.set_xlim(10**-2, 21.5)
+            ax_fr.set_ylim(-1, 16)
+
+            zr = np.linspace(10**-2, 21.5)
+            ax_area.plot(zr, (zr) ** 2, ls="--", c="k", zorder=1000000, lw=3, alpha=0.75, label="$R^2$")
+            ax_area.plot(zr, (zr) ** 2, ls="-", c="w", zorder=999999, lw=4, alpha=0.75)
+            ax_fr.axhline(1, ls="--", c="k", zorder=100000, lw=3, alpha=0.75, label="Unity")
+            ax_fr.axhline(1, ls="-", c="w", zorder=99999, lw=4, alpha=0.75)
+            # ax4.axhline(1, ls="--", c="k", zorder=10000, lw=3, alpha=0.75)
+
+            fig.suptitle(f"Fluxon Expansion for CR {self.cr}")
+
+            ax_area.legend()
+            ax_fr.legend()
+            plt.tight_layout()
+            if save:
+                out = os.path.normpath(os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_open_area_all_methods_{lines=}.png"))
+                plt.savefig(out)
+                print(f"Saved figure to {out} !")
+                plt.close(fig)
+            else:
+                plt.show()
+
+        def log_stats(self, arr, sig=1):
+            log_interp_arr = np.log(arr)
+            mean_log_curve = np.nanmean(log_interp_arr, axis=0)
+            std_log_curve = np.nanstd(log_interp_arr, axis=0)
+            mean_curve = np.exp(mean_log_curve)
+            lower_bound = np.exp(mean_log_curve - sig*std_log_curve)
+            upper_bound = np.exp(mean_log_curve + sig*std_log_curve)
+            std_curve = [mean_curve - lower_bound, upper_bound - mean_curve]
+            return mean_curve, std_curve
 
         @u.quantity_input(displacement=u.R_sun)
         def plot_fluxon_id(
@@ -805,6 +1108,7 @@ def read_flux_world(filename):
             plt.tight_layout(rect=[0, 0, 1, 0.95])
             if save:
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_ID.png"))
+                plt.close(fig)
             else:
                 plt.show()
 
