@@ -274,7 +274,7 @@ sub map_fluxon_flow_parallel_master {
                 my $rounded_remaining  = sprintf("%.1f", $time_remaining);
                 my $rounded_remaining_mins = sprintf("%.1f", $time_remaining / 60);
 
-                print "\rCalculated $flow_method: $highest_fluxon_done of $num_open_fluxons, ($failed skipped), ",
+                print "\rCalculated $flow_method: $highest_fluxon_done of $num_open_fluxons, ",
                       "$rounded_elapsed\(s) elapsed, ",
                       "$rounded_remaining\(s) [$rounded_remaining_mins mins] remaining...  ";
             }
@@ -387,7 +387,9 @@ sub map_fluxon_flow_parallel_master {
     my $new_results_dir = File::Spec->catdir($output_dir, "full_velocity_profiles");
     make_path($new_results_dir) unless -d $new_results_dir;
 
-    print "\n$failed fluxons failed to converge.\n";
+    if ($failed) {
+        print "\n$failed fluxons failed to converge.\n";
+    }
 
     # Build final CSV filename
     my $results_file = File::Spec->catfile($new_results_dir, "results_${flow_method}_full_velocity.dat");
