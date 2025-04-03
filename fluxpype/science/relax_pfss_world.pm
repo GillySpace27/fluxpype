@@ -171,7 +171,7 @@ sub relax_pfss_world {
             my $round_time = sprintf("%.2f", (clock_gettime() - $starttime));
 
             print "\tCycle $cycle, Cumulative relaxation time: $round_time seconds, $stepnum steps\n";
-            if ($cycle < $configs{stop_fixing_after}) {
+            if ($cycle <= $configs{stop_fixing_after}) {
                 print "\nFixing vertex separation....\n";
                 if (ref($configs{fix_curvature}) eq 'PDL' && all($configs{fix_curvature})) {
                     $nc_curve = $this_world_relaxed->fix_curvature($configs{fix_curvature}->at(0), $configs{fix_curvature}->at(1));
