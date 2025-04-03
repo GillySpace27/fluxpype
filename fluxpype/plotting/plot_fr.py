@@ -109,7 +109,6 @@ def plot_fr(args):
         ax1.plot((arr[4,floc]/RS - 1.0), arr[7,floc], c=plt.cm.Oranges((i+1)/nfluxon))
         ax3.plot((arr[4,floc]/RS - 1.0), arr[8,floc], c=plt.cm.Blues((i+1)/nfluxon))
 
-
     ax1.plot(zr, (RS*zr)**2, ls="--", c='k', zorder = 10000, lw=3, alpha=0.75)
     r1 = 1.
     r2 = 21.5
@@ -123,8 +122,6 @@ def plot_fr(args):
     ax1.set_xscale('log')
     ax1.set_ylim((10.0**14, 10.0**23))
 
-
-
     # ax3.axvline(r1, ls=":", c='lightgrey')
     ax3.axvline(r2, ls="--", c='grey')
     ax3.axvline(2.5, ls=":", c='lightgrey')
@@ -134,7 +131,6 @@ def plot_fr(args):
     ax3.set_yscale('log')
     # ax3.set_xscale('log')
     # ax3.set_ylim((10.0**10, 10.0**20))
-
 
     # ax2.set_title(r"Fluxon Area at Low (1R$_\odot$) and High (21.5R$_\odot$) Radii")
 
@@ -154,9 +150,8 @@ def plot_fr(args):
     ax2.set_ylabel('Sine latitude')
     ax2.set_ylim((-1.1,1.1))
     ax1.set_title(r"Cross Sectional Area $A$ [m$^2$]")
-    ax2.set_title(f"Cross Sectional Area $A$ [m$^2$] at {r2} $R_\odot$")
+    ax2.set_title(f"Cross Sectional Area $A$ [m$^2$] at {r2} $R_\{{odot}}$")
     cbar = fig.colorbar(sc01, ax=ax2)
-
 
     clr = np.log10(np.abs(fr1))
     cmean = np.mean(clr)
@@ -182,10 +177,8 @@ def plot_fr(args):
     ax4.set_ylabel('Sine latitude')
     ax4.set_ylim((-1.1,1.1))
     ax3.set_ylim((10**-3,10**3))
-    ax4.set_title(f"Expansion Factor log($F_r$) at {r2} $R_\odot$")
+    ax4.set_title(f"Expansion Factor log($F_r$) at {r2} $R_\{{odot}}$")
     ax3.set_title("Expansion Factor log($F_r$)")
-
-
 
     ax2.axhline(-1, c='lightgrey', zorder=-10)
     ax2.axhline( 1, c='lightgrey', zorder=-10)

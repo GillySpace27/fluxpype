@@ -61,7 +61,7 @@ def load_zephyr():
 
     # Load the SAV file
     data = readsav(file_path)
-    print(f"Successfully loaded Zephyr data from: {file_path}")
+    # print(f"Successfully loaded Zephyr data from: {file_path}")
 
     # Return the entire data structure
     return data

@@ -999,13 +999,13 @@ def read_flux_world(filename):
                     zorder=99999,
                 )
 
-            ax_area.set_xlabel("Height above Photosphere [R$_\odot$] - 1")
-            ax_area.set_ylabel("Cross-sectional Area [R$_\odot^2$]")
+            ax_area.set_xlabel("Height above Photosphere [$R_\{odot}$] - 1")
+            ax_area.set_ylabel("Cross-sectional Area [R$_\{odot}^2$]")
             ax_area.set_title("Cross-sectional Area (Open Fields)")
             ax_area.set_yscale("log")
             ax_area.set_xscale("log")
 
-            ax_fr.set_xlabel("Height above Photosphere [R$_\odot$] - 1")
+            ax_fr.set_xlabel("Height above Photosphere [R$_\{odot}$] - 1")
             ax_fr.set_ylabel("Expansion Factor")
             ax_fr.set_title("Expansion Factor (Open Fields)")
             ax_fr.set_yscale("linear")

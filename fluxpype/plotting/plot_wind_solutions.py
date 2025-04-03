@@ -20,7 +20,7 @@ def load_zephyr():
 
     # Load the SAV file
     data = readsav(file_path)
-    print(f"Successfully loaded Zephyr data from: {file_path}")
+    # print(f"Successfully loaded Zephyr data from: {file_path}")
 
     # Return the entire data structure
     return data
@@ -147,7 +147,7 @@ def plot_full_velocity_profiles(directory=None):
                                 histtype='step', lw=4, density=True, orientation='horizontal', align='mid')
             ax2.legend(fontsize='small')
 
-            ax.set_xlabel('z = r/$R_\odot$ - 1')
+            ax.set_xlabel("z = r/$R_\{odot}$ - 1")
             ax.set_ylabel('Velocity [km/s]')
             ax.set_xscale('log')
             ax.set_ylim(0, 10**3)

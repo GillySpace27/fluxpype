@@ -90,7 +90,7 @@ sub save_full_velocity_profiles {
     my ($results, $file_path) = @_;
 
     # Use Data::Dumper to confirm structure
-    # print "33: Results in save_full_velocity_profiles:\n", Dumper($results);
+    print "\n\nINFO: Writing full velocity profiles to: $results_file\n";
 
     # Ensure $results is an array ref
     die "ERROR: save_full_velocity_profiles expects an ARRAY ref, got: " . ref($results)
@@ -108,13 +108,16 @@ sub save_full_velocity_profiles {
 
     print $fh "fluxon_position,radius,velocity\n";
 
+
+    my $faileds = 0;
     foreach my $result (@sorted_results) {
 
         # Skip if fluxon_position is missing or not a PDL
         unless (   defined $result->{fluxon_position}
                 && ref($result->{fluxon_position}) eq 'PDL' )
         {
-            warn "fluxon_position is missing/undefined for result:\n", Dumper($result);
+            # warn "fluxon_position is missing/undefined for result:\n", Dumper($result);
+            $faileds++;
             next;
         }
         my $fluxon_id = $result->{fluxon_position}->sclr;
@@ -122,10 +125,12 @@ sub save_full_velocity_profiles {
         # Check r and vr
         unless (defined $result->{r} && ref($result->{r}) eq 'PDL') {
             warn "'r' is missing or not a PDL for fluxon $fluxon_id:\n", Dumper($result);
+            $faileds++;
             next;
         }
         unless (defined $result->{vr} && ref($result->{vr}) eq 'PDL') {
             warn "'vr' is missing or not a PDL for fluxon $fluxon_id:\n", Dumper($result);
+            $faileds++;
             next;
         }
 
@@ -135,6 +140,7 @@ sub save_full_velocity_profiles {
         if (scalar(@r) != scalar(@vr)) {
             warn "Mismatched array lengths for fluxon ID $fluxon_id: ",
                  "r length=", scalar(@r), ", vr length=", scalar(@vr);
+            $faileds++;
             next;
         }
 
@@ -144,6 +150,10 @@ sub save_full_velocity_profiles {
     }
 
     close $fh;
+    if ($faileds){
+        my $perc = $faileds / scalar(@sorted_results);
+        warn "There were $faileds failed saves ($perc%)."
+    }
     return;
 }
 
@@ -285,99 +295,99 @@ sub map_fluxon_flow_parallel_master {
 
     # Launch parallel tasks
     for my $fluxon_id (0 .. $max_fluxon_id - 1) {
-
         $fork_manager->start and next;  # child will skip
 
-        my $fluxon = $fluxons[$fluxon_id];
+        eval {
+            my $fluxon = $fluxons[$fluxon_id];
 
-        # Some local variables we expect from the flow subroutines
-        my ($r_vr_scaled, $r_fr_scaled, $thetas, $phis);
+            # Some local variables we expect from the flow subroutines
+            my ($r_vr_scaled, $r_fr_scaled, $thetas, $phis);
 
-        # Dispatch to correct flow subroutine
-        if ($flow_method eq 'wsa') {
-            our $distance_array_degrees;  # Must be "our" for lexical scoping if truly global
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $fluxon_id);
-
-        }
-        elsif ($flow_method eq 'parker') {
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_tflow($fluxon);
-
-        }
-        elsif ($flow_method eq 'schonfeld') {
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_schonflow($fluxon);
-
-        }
-        elsif ($flow_method eq 'psw') {
-            # Presumably gen_fluxon_pswflow exists
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
-
-        }
-        elsif ($flow_method eq 'tempest') {
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                = gen_fluxon_tempestflow($fluxon, $fluxon_id, $output_file_name);
-
-        }
-        elsif ($flow_method eq 'cranmer') {
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                = gen_fluxon_cranmerflow($fluxon, $fluxon_id);
-
-        }
-        elsif ($flow_method eq 'ghosts') {
-            ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                = gen_fluxon_ghostsflow($fluxon, $fluxon_id);
-
-        }
-        else {
-            die "Invalid flow method: $flow_method";
-        }
-
-        # Extract columns from r_vr_scaled / r_fr_scaled
-        our $vr;
-        our $fr;
-        our $rn;
-
-
-        if (!defined $r_vr_scaled) {
-            $failed++;
-            $fork_manager->finish(1);
-        } else {
-            if ($flow_method eq 'parker') {
-                # Parker: dimension layout from gen_fluxon_tflow
-                $vr = $r_vr_scaled(1, :)->transpose;   # row 1 => velocity
-                $rn = $r_vr_scaled(0, :)->transpose;   # row 0 => radius
-                $fr = $r_fr_scaled(:, 1);              # flux expansion in column 1
+            # Dispatch to correct flow subroutine
+            if ($flow_method eq 'wsa') {
+                our $distance_array_degrees;  # Must be "our" for lexical scoping if truly global
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
+                    = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $fluxon_id);
+            }
+            elsif ($flow_method eq 'parker') {
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_tflow($fluxon);
+            }
+            elsif ($flow_method eq 'schonfeld') {
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_schonflow($fluxon);
+            }
+            elsif ($flow_method eq 'psw') {
+                # Presumably gen_fluxon_pswflow exists
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
+            }
+            elsif ($flow_method eq 'tempest') {
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
+                    = gen_fluxon_tempestflow($fluxon, $fluxon_id, $output_file_name);
+            }
+            elsif ($flow_method eq 'cranmer') {
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
+                    = gen_fluxon_cranmerflow($fluxon, $fluxon_id);
+            }
+            elsif ($flow_method eq 'ghosts') {
+                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
+                    = gen_fluxon_ghostsflow($fluxon, $fluxon_id);
             }
             else {
-                # Many flows have $r_vr_scaled(:,0)=r, $r_vr_scaled(:,1)=vr, etc.
-                $vr = $r_vr_scaled(:, 1);
-                $rn = $r_fr_scaled(:, 0);
-                $fr = $r_fr_scaled(:, 1);
+                die "Invalid flow method: $flow_method";
             }
 
-            # The code below sets up a “result” structure to pass back
-            my $zn = $rn - 1;      # Just r/R - 1
-            my $bot_ind = 1;
-            my $top_ind = -2;
+            # Extract columns from r_vr_scaled / r_fr_scaled
+            our $vr;
+            our $fr;
+            our $rn;
 
-            # Create a result hash
-            my $result = {
-                fluxon_position => pdl($fluxon_id),
-                r               => $rn,
-                vr              => $vr,
-                phi_base        => squeeze(pdl($phis(0))),
-                theta_base      => squeeze(pdl($thetas(0))),
-                phi_end         => squeeze(pdl($phis($top_ind))),
-                theta_end       => squeeze(pdl($thetas($top_ind))),
-                radial_velocity_base => squeeze(pdl($vr($bot_ind))),
-                radial_velocity_end  => squeeze(pdl($vr($top_ind))),
-                flux_expansion_base  => squeeze(pdl($fr($bot_ind))),
-                flux_expansion_end   => squeeze(pdl($fr($top_ind))),
-            };
+            if (!defined $r_vr_scaled) {
+                $failed++;
+                $fork_manager->finish(1);
+            }
+            else {
+                if ($flow_method eq 'parker') {
+                    # Parker: dimension layout from gen_fluxon_tflow
+                    $vr = $r_vr_scaled(1, :)->transpose;   # row 1 => velocity
+                    $rn = $r_vr_scaled(0, :)->transpose;       # row 0 => radius
+                    $fr = $r_fr_scaled(:, 1);                  # flux expansion in column 1
+                }
+                else {
+                    # Many flows have $r_vr_scaled(:,0)=r, $r_vr_scaled(:,1)=vr, etc.
+                    $vr = $r_vr_scaled(:, 1);
+                    $rn = $r_fr_scaled(:, 0);
+                    $fr = $r_fr_scaled(:, 1);
+                }
 
-            # Return the result to the parent
-            $fork_manager->finish(0, $result);
-        }
+                # The code below sets up a “result” structure to pass back
+                my $zn = $rn - 1;      # Just r/R - 1
+                my $bot_ind = 1;
+                my $top_ind = -2;
+
+                # Create a result hash
+                my $result = {
+                    fluxon_position => pdl($fluxon_id),
+                    r               => $rn,
+                    vr              => $vr,
+                    phi_base        => squeeze(pdl($phis(0))),
+                    theta_base      => squeeze(pdl($thetas(0))),
+                    phi_end         => squeeze(pdl($phis($top_ind))),
+                    theta_end       => squeeze(pdl($thetas($top_ind))),
+                    radial_velocity_base => squeeze(pdl($vr($bot_ind))),
+                    radial_velocity_end  => squeeze(pdl($vr($top_ind))),
+                    flux_expansion_base  => squeeze(pdl($fr($bot_ind))),
+                    flux_expansion_end   => squeeze(pdl($fr($top_ind))),
+                };
+
+                # Return the result to the parent
+                $fork_manager->finish(0, $result);
+            }
+            1;  # Ensure eval returns true on success
+        } or do {
+            my $error = $@ || 'Unknown error';
+            warn "Error processing fluxon $fluxon_id: $error";
+            $failed++;
+            $fork_manager->finish(1);
+        };
     }
     # Wait for all children
     $fork_manager->wait_all_children;
@@ -393,7 +403,6 @@ sub map_fluxon_flow_parallel_master {
 
     # Build final CSV filename
     my $results_file = File::Spec->catfile($new_results_dir, "results_${flow_method}_full_velocity.dat");
-    print "\nINFO: Writing full velocity profiles to: $results_file\n";
 
     # Save to disk
     save_full_velocity_profiles(\@results, $results_file);
@@ -410,6 +419,7 @@ sub map_fluxon_flow_parallel_master {
     # }
 
     # Sort results by fluxon_position for final console output
+    @results = grep { defined $_->{fluxon_position} && ref($_->{fluxon_position}) eq 'PDL' } @results;
     @results = sort { $a->{fluxon_position} <=> $b->{fluxon_position} } @results;
 
     # Example printing with wcols-like output
