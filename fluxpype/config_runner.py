@@ -92,7 +92,7 @@ def display_splash_screen(configs):
     )
 
 
-@timeout_decorator.timeout(1000)
+@timeout_decorator.timeout(2000)
 def run_pdl_script(rotation, fluxon_count, adaptation, method):
     """
     Executes the specified PDL script with given parameters.
