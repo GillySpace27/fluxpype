@@ -158,7 +158,7 @@ sub relax_pfss_world {
         my $starttime = clock_gettime();
         my $cycle = 0;
         while ($stiff > $relax_threshold and $cycle < $max_cycles and $broken < 3) {
-            $cycle += 1;
+
             print "\n\tRelaxing PFSS model for $do_steps steps to $relax_threshold stiffness...\n\n";
 
             simple_relaxer($this_world_relaxed, 0, $do_steps, { disp_n => 0, movie_n => 200, print_n => int($do_steps/5), movie_f => $movie_f });
@@ -183,7 +183,7 @@ sub relax_pfss_world {
                 }
                 print "\nCycle $cycle :: Curvature changed $nc_curve vertices, proximity changed $nc_proxi vertices\n";
             } else {
-                print "\nSkipping fix of vertex separation.\n";
+                print "\nCycle $cycle :: Skipping fix of vertex separation.\n";
                 $do_steps = $configs{do_steps} * 2;
             }
 
@@ -194,6 +194,7 @@ sub relax_pfss_world {
                 close $fhh;
                 die "\nTOO MANY FLUXONS! Reduce N_flux.\n";
             }
+            $cycle += 1;
         }
         print "\tRelaxation Complete in $stepnum Steps \n";
 
