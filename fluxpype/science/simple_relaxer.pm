@@ -243,7 +243,7 @@ sub simple_relaxer {
                 my $fname = sprintf( $movie_f, $step );
                 $w->render_lines(
                     $opt->{movie_opt} // $opt->{render_opt},
-                    my $gpw = gpwin( $png_term, output => $fname )
+                    my $gpw = gpwin( $png_term, output => $fname, wait => 20)
                 );
                 $gpw->close;
                 print "wrote $fname...\n";
