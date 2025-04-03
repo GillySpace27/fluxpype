@@ -124,7 +124,7 @@ def plot_bmag(configs):
     if not os.path.exists(bdir):
         os.makedirs(bdir)
     pngname = os.path.join(bdir, imagename)
-
+    plt.tight_layout()
     plt.savefig(pngname)
     if configs['verbose']:
         plt.show()
