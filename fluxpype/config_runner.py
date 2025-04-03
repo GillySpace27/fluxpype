@@ -138,9 +138,10 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
     ]
 
     try:
-        logging.info(f"Executing PDL script with parameters: {command}")
+        print("\n")
+        logging.info(f"Executing PDL script with parameters: {command}\n")
         subprocess.run(command, check=True)
-        logging.info("PDL script executed successfully.")
+        # logging.info("PDL script executed successfully.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Error executing PDL script: {e}")
         raise

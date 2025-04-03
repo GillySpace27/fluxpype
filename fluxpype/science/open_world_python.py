@@ -616,7 +616,7 @@ def read_flux_world(filename):
                         dummy_fluxon.kind = "open"  # Force open so it's included in open-field plots.
                         self.fluxons[fid] = dummy_fluxon
                         lost += 1
-                print(f"Found = {found}, Created dummy fluxons = {lost}")
+                # print(f"Found = {found}, Created dummy fluxons = {lost}")
                 return self.areas_by_fluxon
 
             def clip_polygon_by_halfplane(polygon, a, b, c):
@@ -900,7 +900,7 @@ def read_flux_world(filename):
                         fluxy +=1
                         results_area[method].append((flux.radius.copy(), flux.areas.copy()))
                         results_fr[method].append((flux.radius.copy(), flux.fr.copy()))
-            print(F"{fluxy = }")
+            # print(F"{fluxy = }")
             # Create a figure with two subplots: one for area, one for expansion factor.
             fig, (ax_area, ax_fr) = plt.subplots(1, 2, figsize=(12, 6), sharex="all", sharey="none")
 
@@ -999,13 +999,13 @@ def read_flux_world(filename):
                     zorder=99999,
                 )
 
-            ax_area.set_xlabel("Height above Photosphere [$R_\{odot}$] - 1")
-            ax_area.set_ylabel("Cross-sectional Area [R$_\{odot}^2$]")
+            ax_area.set_xlabel("Height above Photosphere [$R_\\odot$] - 1")
+            ax_area.set_ylabel("Cross-sectional Area [R$_\\odot^2$]")
             ax_area.set_title("Cross-sectional Area (Open Fields)")
             ax_area.set_yscale("log")
             ax_area.set_xscale("log")
 
-            ax_fr.set_xlabel("Height above Photosphere [R$_\{odot}$] - 1")
+            ax_fr.set_xlabel("Height above Photosphere [R$_\\odot$] - 1")
             ax_fr.set_ylabel("Expansion Factor")
             ax_fr.set_title("Expansion Factor (Open Fields)")
             ax_fr.set_yscale("linear")
@@ -1029,7 +1029,7 @@ def read_flux_world(filename):
             if save:
                 out = os.path.normpath(os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_open_area_all_methods_{lines=}.png"))
                 plt.savefig(out)
-                print(f"Saved figure to {out} !")
+                print(f"\nSaved figure to {out} !\n")
                 plt.close(fig)
             else:
                 plt.show()
@@ -1239,9 +1239,9 @@ def read_flux_world(filename):
     flux_world.all_fx = np.concatenate([flux.x_coords for flux in flux_world.fluxons.values()])
     flux_world.all_fy = np.concatenate([flux.y_coords for flux in flux_world.fluxons.values()])
     flux_world.all_fz = np.concatenate([flux.z_coords for flux in flux_world.fluxons.values()])
-    print("Fluxon bounding box (X):", flux_world.all_fx.min(), flux_world.all_fx.max())
-    print("Fluxon bounding box (Y):", flux_world.all_fy.min(), flux_world.all_fy.max())
-    print("Fluxon bounding box (Z):", flux_world.all_fz.min(), flux_world.all_fz.max())
+    # print("Fluxon bounding box (X):", flux_world.all_fx.min(), flux_world.all_fx.max())
+    # print("Fluxon bounding box (Y):", flux_world.all_fy.min(), flux_world.all_fy.max())
+    # print("Fluxon bounding box (Z):", flux_world.all_fz.min(), flux_world.all_fz.max())
 
     return flux_world
 

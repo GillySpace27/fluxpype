@@ -159,11 +159,11 @@ def simulate_thomson_scattering(
 
     if parallel:
         results_list = Parallel(n_jobs=-1)(
-            delayed(process_row)(ix) for ix in tqdm(range(npix), desc="Simulating Thomson (Solar-Radii)")
+            delayed(process_row)(ix) for ix in tqdm(range(npix), desc="Simulating Thomson Scattering")
         )
     else:
         results_list = []
-        for ix in tqdm(range(npix), desc="Simulating Thomson (Solar-Radii, Serial)"):
+        for ix in tqdm(range(npix), desc="Simulating Thomson Scattering (Serial)"):
             results_list.append(process_row(ix))
 
     for ix, (B_tot_row, B_pol_row, Pol_ang_row) in enumerate(results_list):

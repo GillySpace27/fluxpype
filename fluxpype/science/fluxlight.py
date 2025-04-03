@@ -13,10 +13,8 @@ from fluxpype.science.thomson_scattering_flux import simulate_thomson_scattering
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f20_hmi_relaxed_s2000.flux"
 def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f400_hmi.flux"
 
-def do_fluxlight(flux_world_file):
-    # output_str = re.sub(r"/data/cr\d+/", "/imgs/", flux_world_file).replace(".flux", ".png")
+def do_fluxlight(flux_world_file, save=True):
     flux_world = read_flux_world(flux_world_file)
-
     flux_world.plot_all()
 
     world_path = flux_world.out_dir
@@ -24,7 +22,6 @@ def do_fluxlight(flux_world_file):
     import os
     if not os.path.exists(light_path):
         os.makedirs(light_path)
-
 
     # print(flux_world)
     # flux_world.plot_fluxon_id()
@@ -48,7 +45,6 @@ def do_fluxlight(flux_world_file):
     X = results["X"]
     Y = results["Y"]
     fov = results["fov"]
-
 
     # Set the uniform colormap for the polarization angle
     colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
@@ -88,9 +84,11 @@ def do_fluxlight(flux_world_file):
 
     plt.suptitle("Forward Modeling of FLUX World")
     plt.tight_layout()
-
-    plt.savefig(f"{light_path}/crXXXX_fluxlight_light.png")
-    plt.show()
+    if save:
+        plt.savefig(f"{light_path}/cr{flux_world.cr}_fluxlight_light.png")
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":

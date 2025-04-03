@@ -26,7 +26,7 @@ def load_zephyr():
     return data
 
 def plot_full_velocity_profiles(directory=None):
-    print("Plotting full velocity profiles...")
+    print("\n\tPlotting full velocity profiles...")
     pattern = "results_*_full_velocity.dat"
     configs = configurations()
 
@@ -147,7 +147,7 @@ def plot_full_velocity_profiles(directory=None):
                                 histtype='step', lw=4, density=True, orientation='horizontal', align='mid')
             ax2.legend(fontsize='small')
 
-            ax.set_xlabel("z = r/$R_\{odot}$ - 1")
+            ax.set_xlabel("z = r/$R_\\odot$ - 1")
             ax.set_ylabel('Velocity [km/s]')
             ax.set_xscale('log')
             ax.set_ylim(0, 10**3)

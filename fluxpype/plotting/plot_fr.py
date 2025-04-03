@@ -143,14 +143,14 @@ def plot_fr(args):
 
     # sc00 = ax2.scatter(ph0, np.sin(th0), s = aa0, c=aa0, cmap="Oranges_r", label=r'A(1.0R$_\odot$),', alpha=0.75, marker='s')
     sc01 = ax2.scatter(ph1, np.sin(th1), s = 100, c=aa1,
-                       cmap="Oranges_r" , label=r'A(21.5R$_\odot$)',
+                       cmap="Oranges_r" , label='A(21.5R$_\\odot$)',
                        edgecolors='lightgrey', alpha=0.75, marker='s',
                        vmin = 100, vmax = 350)
     ax2.set_xlabel('Longitude (Radians)')
     ax2.set_ylabel('Sine latitude')
     ax2.set_ylim((-1.1,1.1))
     ax1.set_title(r"Cross Sectional Area $A$ [m$^2$]")
-    ax2.set_title(f"Cross Sectional Area $A$ [m$^2$] at {r2} $R_\{{odot}}$")
+    ax2.set_title(f"Cross Sectional Area $A$ [m$^2$] at {r2} $R_\\odot$")
     cbar = fig.colorbar(sc01, ax=ax2)
 
     clr = np.log10(np.abs(fr1))
@@ -177,7 +177,7 @@ def plot_fr(args):
     ax4.set_ylabel('Sine latitude')
     ax4.set_ylim((-1.1,1.1))
     ax3.set_ylim((10**-3,10**3))
-    ax4.set_title(f"Expansion Factor log($F_r$) at {r2} $R_\{{odot}}$")
+    ax4.set_title(f"Expansion Factor log($F_r$) at {r2} $R_\\odot$")
     ax3.set_title("Expansion Factor log($F_r$)")
 
     ax2.axhline(-1, c='lightgrey', zorder=-10)

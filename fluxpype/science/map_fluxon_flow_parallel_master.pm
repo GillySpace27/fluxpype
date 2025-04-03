@@ -90,7 +90,7 @@ sub save_full_velocity_profiles {
     my ($results, $file_path) = @_;
 
     # Use Data::Dumper to confirm structure
-    print "\n\nINFO: Writing full velocity profiles to: $results_file\n";
+    print "\n\nINFO: Writing full velocity profiles to: $file_path\n";
 
     # Ensure $results is an array ref
     die "ERROR: save_full_velocity_profiles expects an ARRAY ref, got: " . ref($results)
