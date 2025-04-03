@@ -274,12 +274,14 @@ sub map_fluxon_flow_parallel_master {
                 my $rounded_remaining  = sprintf("%.1f", $time_remaining);
                 my $rounded_remaining_mins = sprintf("%.1f", $time_remaining / 60);
 
-                print "\rCalculated $flow_method: $highest_fluxon_done of $num_open_fluxons, ",
-                      "$rounded_elapsed(s) elapsed, ",
-                      "$rounded_remaining(s) [$rounded_remaining_mins mins] remaining...  ";
+                print "\rCalculated $flow_method: $highest_fluxon_done of $num_open_fluxons, ($failed skipped), ",
+                      "$rounded_elapsed\(s) elapsed, ",
+                      "$rounded_remaining\(s) [$rounded_remaining_mins mins] remaining...  ";
             }
         }
     });
+
+    our $failed = 0;
 
     # Launch parallel tasks
     for my $fluxon_id (0 .. $max_fluxon_id - 1) {
@@ -335,43 +337,48 @@ sub map_fluxon_flow_parallel_master {
         our $fr;
         our $rn;
 
-        if ($flow_method eq 'parker') {
-            # Parker: dimension layout from gen_fluxon_tflow
-            $vr = $r_vr_scaled(1, :)->transpose;   # row 1 => velocity
-            $rn = $r_vr_scaled(0, :)->transpose;   # row 0 => radius
-            $fr = $r_fr_scaled(:, 1);              # flux expansion in column 1
+
+        if (!defined $r_vr_scaled) {
+            $failed++;
+            $fork_manager->finish(1);
+        } else {
+            if ($flow_method eq 'parker') {
+                # Parker: dimension layout from gen_fluxon_tflow
+                $vr = $r_vr_scaled(1, :)->transpose;   # row 1 => velocity
+                $rn = $r_vr_scaled(0, :)->transpose;   # row 0 => radius
+                $fr = $r_fr_scaled(:, 1);              # flux expansion in column 1
+            }
+            else {
+                # Many flows have $r_vr_scaled(:,0)=r, $r_vr_scaled(:,1)=vr, etc.
+                $vr = $r_vr_scaled(:, 1);
+                $rn = $r_fr_scaled(:, 0);
+                $fr = $r_fr_scaled(:, 1);
+            }
+
+            # The code below sets up a “result” structure to pass back
+            my $zn = $rn - 1;      # Just r/R - 1
+            my $bot_ind = 1;
+            my $top_ind = -2;
+
+            # Create a result hash
+            my $result = {
+                fluxon_position => pdl($fluxon_id),
+                r               => $rn,
+                vr              => $vr,
+                phi_base        => squeeze(pdl($phis(0))),
+                theta_base      => squeeze(pdl($thetas(0))),
+                phi_end         => squeeze(pdl($phis($top_ind))),
+                theta_end       => squeeze(pdl($thetas($top_ind))),
+                radial_velocity_base => squeeze(pdl($vr($bot_ind))),
+                radial_velocity_end  => squeeze(pdl($vr($top_ind))),
+                flux_expansion_base  => squeeze(pdl($fr($bot_ind))),
+                flux_expansion_end   => squeeze(pdl($fr($top_ind))),
+            };
+
+            # Return the result to the parent
+            $fork_manager->finish(0, $result);
         }
-        else {
-            # Many flows have $r_vr_scaled(:,0)=r, $r_vr_scaled(:,1)=vr, etc.
-            $vr = $r_vr_scaled(:, 1);
-            $rn = $r_fr_scaled(:, 0);
-            $fr = $r_fr_scaled(:, 1);
-        }
-
-        # The code below sets up a “result” structure to pass back
-        my $zn = $rn - 1;      # Just r/R - 1
-        my $bot_ind = 1;
-        my $top_ind = -2;
-
-        # Create a result hash
-        my $result = {
-            fluxon_position => pdl($fluxon_id),
-            r               => $rn,
-            vr              => $vr,
-            phi_base        => squeeze(pdl($phis(0))),
-            theta_base      => squeeze(pdl($thetas(0))),
-            phi_end         => squeeze(pdl($phis($top_ind))),
-            theta_end       => squeeze(pdl($thetas($top_ind))),
-            radial_velocity_base => squeeze(pdl($vr($bot_ind))),
-            radial_velocity_end  => squeeze(pdl($vr($top_ind))),
-            flux_expansion_base  => squeeze(pdl($fr($bot_ind))),
-            flux_expansion_end   => squeeze(pdl($fr($top_ind))),
-        };
-
-        # Return the result to the parent
-        $fork_manager->finish(0, $result);
     }
-
     # Wait for all children
     $fork_manager->wait_all_children;
 
@@ -379,6 +386,8 @@ sub map_fluxon_flow_parallel_master {
     my ($output_filename, $output_dir) = fileparse($output_file_name);
     my $new_results_dir = File::Spec->catdir($output_dir, "full_velocity_profiles");
     make_path($new_results_dir) unless -d $new_results_dir;
+
+    print "\n$failed fluxons failed to converge.\n";
 
     # Build final CSV filename
     my $results_file = File::Spec->catfile($new_results_dir, "results_${flow_method}_full_velocity.dat");
