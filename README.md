@@ -5,7 +5,7 @@ This package is in active development, and acts as a wrapper around the Field Li
 
 ## Installation
 
-Instructions for installation on Linux or on Macos can be found in the [main FLUX repo here](https://github.com/lowderchris/fluxon-mhd/blob/7ef558f047bd74a8be0f5d38807152000b9adc66/doc).
+Instructions for installation on Linux or on Macos can be found in the [main FLUX repo here](https://github.com/lowderchris/fluxon-mhd/tree/documentation/doc)
 
 
 # (Accuracy below this point is dubious)
