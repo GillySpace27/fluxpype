@@ -715,8 +715,8 @@ def plot_wind_map_latitude(configs):
 
 
     # Set the output file names
-    method = configs.get("wind_method")
-    filename = f"png_cr{CR}_f{nwant}_op{n_open}_radial_wind_{method}.png"
+    method = configs.get("wind_method")[0]
+    filename = f"png_cr{CR}_f{nwant}_op{n_open}_radial_wind_{method}_b.png"
     main_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/{filename}'
     wind_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy'
     label_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt'

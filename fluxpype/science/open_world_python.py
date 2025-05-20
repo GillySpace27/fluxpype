@@ -492,7 +492,7 @@ def read_flux_world(filename):
             return self.compute_electron_density_exp(coords=coords, **kwargs)
 
         @u.quantity_input(influence_length=u.R_sun)
-        def compute_electron_density_exp(self, coords=None, influence_length=1 * u.R_sun):
+        def compute_electron_density_exp(self, coords=None, influence_length=1 * u.R_sun, scale=100):
             if coords is None and self.coords is not None:
                 coords = self.coords
             elif coords is None:
@@ -510,7 +510,7 @@ def read_flux_world(filename):
             r = np.linalg.norm(coords, axis=1)
             n0 = 4.2e8 * u.cm**-3
             base_density = n0 * 10 ** (4.32 * u.R_sun / r.to(u.R_sun))
-            factor = 10 * np.exp(-distances / influence_length)
+            factor = scale * np.exp(-distances / influence_length)
             densities = base_density * (1 + factor)
             return densities
 

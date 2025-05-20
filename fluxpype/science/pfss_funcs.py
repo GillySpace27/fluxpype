@@ -298,7 +298,7 @@ def get_fluxon_locations(floc_path, batch, configs=None, cr=None):
         Fluxon count
     """
 
-    print(f"{floc_path=}")
+    # print(f"{floc_path=}")
     if not configs and not cr:
         # Extract Carrington rotation number from file path if not provided
         if "cr" in floc_path:

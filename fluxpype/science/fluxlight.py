@@ -34,7 +34,9 @@ def do_fluxlight(flux_world_file, save=True):
         flux_world=flux_world,
         lower_bound=1.05,
         upper_bound=3.0,
-        parallel = True
+        parallel = True,
+        influence_length=0.1,
+        scale=500,
     )
 
     # Retrieve simulation outputs and grid information
@@ -92,7 +94,7 @@ def do_fluxlight(flux_world_file, save=True):
 
 
 if __name__ == "__main__":
-
+    print("\n\n\nLET THERE BE LIGHT\n\n")
     import sys
 
     if len(sys.argv) > 1:

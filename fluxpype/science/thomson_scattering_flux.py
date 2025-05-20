@@ -51,7 +51,7 @@ def incident_solar_intensity(r):
 
 
 def simulate_thomson_scattering(
-    npix=500, nz=500, fov=3.0, lower_bound=1.01, upper_bound=3.0,
+    npix=500, nz=500, fov=3.0, lower_bound=1.01, upper_bound=3.0, scale=100,
     flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False
 ):
     """
@@ -130,7 +130,7 @@ def simulate_thomson_scattering(
             ], axis=-1)  # (npix, nz, 3)
             coords_flat = coords.reshape(-1, 3)
             ne_flat = flux_world.compute_electron_density(
-                coords_flat, influence_length=influence_length
+                coords_flat, influence_length=influence_length, scale=scale,
             )
             ne = ne_flat.reshape(rho_row.shape[0], nz)  # * u.cm**-3
         else:

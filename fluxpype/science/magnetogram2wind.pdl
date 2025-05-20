@@ -262,7 +262,7 @@ if (1-$wind_only){
 
     my $pfss_command = "python $get_pfss_path --cr $CR --magpath $mpth --nwant $n_fluxons_wanted --adapt $adapt";
 
-    print "Running the following command: \n $pfss_command";
+    # print "Running the following command: \n $pfss_command";
 
     # print $pfss_command;
     system($pfss_command) == 0
@@ -424,11 +424,11 @@ sub run_all_plots {
 }
 
 # Execute all plotting commands
-if (1){
+if (0){
 run_all_plots();
 }
 
-  # run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
+  run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
 
 
   print color("bright_cyan");
