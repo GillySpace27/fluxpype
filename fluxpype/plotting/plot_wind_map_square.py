@@ -457,8 +457,8 @@ def plot_wind_map_latitude(configs):
 
     sunspotplot(carr_ax, args.cr, False)
 
-    directory_path = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind'  # Change this to your directory's path
-    directory_path = "~/vscode/fluxons/flux-extra/batches/sequential/data/wind"
+    # directory_path = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind'
+    directory_path = f"{dat_dir}/batches/sequential/data/wind"
     big_dict = load_wind_files(directory_path)
     all_phi, all_theta, all_vel, all_hist, all_cr, all_mean, \
     all_std, total_mean, total_std, all_count = parse_big_dict(big_dict)
@@ -759,6 +759,8 @@ def plot_wind_map_latitude(configs):
     to_save = [ph0_clean, th0_clean, fr0_clean, vel0_clean,
                ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean]
 
+
+
     np.save(wind_file, np.vstack(to_save))
 
     with open(label_file, 'w') as file:
@@ -805,7 +807,7 @@ if __name__ == "__main__":
     do_one = True
     for rotation in tqdm(configs["rotations"]):
         parser = argparse.ArgumentParser(description='This script plots the expansion factor of the given radial_fr.dat')
-        parser.add_argument('--cr',     type=int, default=rotation, help='Carrington Rotation')
+        parser.add_argument('--cr',     type=int, default=None, help='Carrington Rotation')
         parser.add_argument('--interp', type=str, default="linear")
         parser.add_argument('--show',   type=int, default=configs["verbose"])
         parser.add_argument('--file',   type=str, default=None, help='select the file name')
@@ -816,7 +818,7 @@ if __name__ == "__main__":
         parser.add_argument('--wind_method', type=str, default=configs["flow_method"][0], help='select the flow method')
         args = parser.parse_args()
         configs = configurations(args=args)
-
+        print(f"\noperating on {configs['cr']}\n")
         import warnings
         from erfa import ErfaWarning
         warnings.filterwarnings("ignore", category=ErfaWarning)

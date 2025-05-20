@@ -271,8 +271,8 @@ def compute_configs(config):
     config["adapts"] = parse_list(config.get("adapts", "[]"))
 
     # Compute derived values
-    config["cr"] = config["rotations"][0]
-    config["nwant"] = config["fluxon_count"][0]
+    # config["cr"] = config["rotations"][0]
+    # config["nwant"] = config["fluxon_count"][0]
     config["n_jobs"] = str(
         len(config["rotations"])
         * len(config["fluxon_count"])
@@ -288,7 +288,7 @@ def parse_list_or_range(value):
         return [item.strip() for item in value.split(",")]
     elif value.startswith("(") and value.endswith(")"):  # Parse range
         start, stop, step = map(int, value.strip("()").split(","))
-        return list(range(start, stop, step))
+        return [str(x) for x in range(start, stop, step)]
     return [value.strip()]  # Single value as list
 
 
@@ -1607,13 +1607,14 @@ def load_fits_magnetogram(
     Header
         Magnetogram header object
     """
+    print(cr)
     configs = configs or configurations()
     if cr is None:
         cr = configs.get("cr", None)
     else:
         # TODO : This is a hack to get around the fact that the configs are not being updated
         configs["cr"] = cr
-
+    print(cr)
     assert cr is not None, "Must specify a Carrington rotation number!"
     update_magdir_paths(configs)
     fname = fname or configs["magpath"].format(cr)

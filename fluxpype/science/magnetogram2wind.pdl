@@ -96,11 +96,11 @@ print color("magenta");
 # }
 
 
+use Alien::Gnuplot;
 use make_world_from_pfss qw(make_world_from_pfss);
 use relax_pfss_world qw(relax_pfss_world);
 use plot_world qw(plot_worlds);
 use get_wind qw(get_wind);
-
 
 use PDL;
 use PDL::AutoLoader;
@@ -133,14 +133,18 @@ print "Success!\n";
 
 
 my $CR = $ARGV[0] // ( $configs{rotations}->at(0) );
+print "\n\n\nTHE CR IS $CR\n\n\n";
 $configs{CR} = $CR;
+$configs{cr} = $CR;
 my $n_fluxons_wanted = $ARGV[1] // ( $configs{fluxon_count}->at(0) );
 $configs{n_fluxons_wanted} = $n_fluxons_wanted;
 my $adapt = $ARGV[2] // ( $configs{adapts}->at(0) );
 my $flow_method = $ARGV[3] // ( $configs{flow_method}->at(0) );
 $configs{flow_method} = $flow_method;
 $configs{adapt} = $adapt;
-# pipe_helper::configs_update_magdir( \%configs );
+pipe_helper::configs_update_magdir( \%configs );
+
+print $configs{magpath};
 # $configs{magdir} = catdir($configs{data_dir}, 'magnetograms');
 
 my $closed_file;
@@ -253,8 +257,12 @@ if (1-$wind_only){
 # into the corona to define an initial placeholder geometry.
 # This lets us extend this into 3d space with real linking topology.
     my $get_pfss_path = "$this_dir/get_pfss.py";
+    my $mpth = $configs{magpath};
 
-    my $pfss_command = "python $get_pfss_path --cr $CR --magpath $configs{magpath} --nwant $n_fluxons_wanted --adapt $adapt";
+
+    my $pfss_command = "python $get_pfss_path --cr $CR --magpath $mpth --nwant $n_fluxons_wanted --adapt $adapt";
+
+    print "Running the following command: \n $pfss_command";
 
     # print $pfss_command;
     system($pfss_command) == 0
@@ -383,7 +391,7 @@ sub run_all_plots {
         "python3 " . catfile($plot_dir, "plot_bmag.py") .           " --file $out_b" . $common_opts,
 
         # Multi-plot of all magnetic fields from the batch
-        "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
+        # "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
 
         # # Plot magnetic fields in the fluxon world
         # "python3 " . catfile($plot_dir, "plot_bmag_all.py") .       " --file $out_b_all" . $common_opts,
@@ -397,8 +405,11 @@ sub run_all_plots {
         # Detailed wind map plot
         "python3 " . catfile($plot_dir, "plot_wind_map_detailed.py") . " --file $out_wind" . $common_opts,
 
-        # # Wind map square (with additional wind method option)
-        # "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
+        # Wind map square (with additional wind method option)
+        "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
+
+        # Wind map square (with additional wind method option)
+        "python3 " . catfile($plot_dir, "plot_wind_map_latitude_cycle.py") . " --file $out_wind" . $common_opts,
 
         # Plot wind solutions (using a different file structure for input data)
         "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
@@ -417,7 +428,7 @@ if (1){
 run_all_plots();
 }
 
-run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
+  # run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
 
 
   print color("bright_cyan");

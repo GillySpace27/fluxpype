@@ -276,7 +276,7 @@ def pixel_to_latlon(mag_map, header, fluxon_location):
     return f_lat, f_lon, f_sgn, n_flux
 
 
-def get_fluxon_locations(floc_path, batch, configs=None):
+def get_fluxon_locations(floc_path, batch, configs=None, cr=None):
     """Loads the fluxon location file
 
     Parameters
@@ -299,9 +299,25 @@ def get_fluxon_locations(floc_path, batch, configs=None):
     """
 
     print(f"{floc_path=}")
+    if not configs and not cr:
+        # Extract Carrington rotation number from file path if not provided
+        if "cr" in floc_path:
+            import re
+            match = re.search(r"cr(\d{4})", floc_path)
+            if match:
+                cr = int(match.group(1))
+            else:
+                raise ValueError("Carrington rotation number not found in floc_path")
+        else:
+            raise ValueError("cr must be provided or inferable from floc_path")
+
 
     fluxon_location = np.genfromtxt(floc_path)
-    magnet, header = load_fits_magnetogram(batch=batch, ret_all=True, configs=configs)
+    if cr is not None:
+        magnet, header = load_fits_magnetogram(batch=batch, ret_all=True, configs=configs, cr=cr)
+    else:
+        magnet, header = load_fits_magnetogram(batch=batch, ret_all=True, configs=configs)
+
     f_lat, f_lon, f_sgn, n_flux = pixel_to_latlon(
         magnet, header, fluxon_location)
     return f_lat, f_lon, f_sgn, n_flux
@@ -346,7 +362,7 @@ def plot_fluxon_locations(br_safe, cr, datdir, fits_path, reduce,
 
     floc_path = f"{datdir}/batches/{batch}/data/cr{cr}/floc/floc_cr{cr}_r{reduce}_f{nwant}.dat"
     print(f"{floc_path = }")
-    f_lat, f_lon, f_sgn, n_flux = get_fluxon_locations(floc_path, batch, cr)
+    f_lat, f_lon, f_sgn, n_flux = get_fluxon_locations(floc_path, batch, cr=cr)
     fluxon_location = np.genfromtxt(floc_path)
 
     if not do_plot:

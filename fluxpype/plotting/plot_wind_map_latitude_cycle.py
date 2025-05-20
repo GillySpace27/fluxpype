@@ -315,7 +315,7 @@ def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=T
     hist_ax.legend(fontsize="small", loc = "center left")
     hist_ax.set_xlabel("Wind Speed [km/s]")
     hist_ax.set_ylabel("Number of Fluxons")
-    fig.suptitle(f'CR{CR}, {len(vel1_clean)} Open Fields, {configs.get("flow_method").title()} wind')
+    fig.suptitle(f'CR{CR}, {len(vel1_clean)} Open Fields, {str(configs.get("flow_method")).title()} wind')
 
     hist_ax.set_xlim((vmin-25, vmax+25))
 
@@ -374,12 +374,16 @@ def plot_wind_map_latitude(configs):
     nwant = configs.get("nwant")
     reduce = configs.get("mag_reduce")
     CR = configs.get("cr")
-    dat_file = configs.get("file", f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind.dat')
+    dat_file = configs.get("file", f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat')
     all_vmin, all_vmax = configs.get("all_vmin", 450), configs.get("all_vmax", 700)
     print(f"\n\tPlotting Windmap {CR} Lat Cycle...", end="\n" if __name__ == "__main__" else "")
 
     # Load the wind file
-    arr = np.loadtxt(dat_file).T
+    try:
+        arr = np.loadtxt(dat_file).T
+    except Exception as e:
+        print("", e)
+        print("Break")
 
     try:
         fid, phi0, theta0, phi1, theta1, vel0, vel1, fr0, fr1, fr1b = arr
@@ -391,7 +395,6 @@ def plot_wind_map_latitude(configs):
         print("IndexError: ", e)
         print("Not enough open field lines. Increase Fluxon count.")
         exit()
-
 
     n_open = len(phi0)
 
@@ -414,7 +417,6 @@ def plot_wind_map_latitude(configs):
     n_outliers = len(vel1[vel1<all_vmin]) + len(vel1[vel1>all_vmax])
     percent_outliers = 100 * n_outliers / n_total
 
-
     pole_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{reduce}_f{nwant}_hmi.dat'
     arr2 = np.loadtxt(pole_file).T
     ffid, pol, _, _, _ = arr2
@@ -428,9 +430,6 @@ def plot_wind_map_latitude(configs):
         polar.append(pol[index])
     polarity = np.array(polar)
 
-
-
-
     import matplotlib.gridspec as gridspec
     # Create a 6x1 grid with custom height ratios
     fig = plt.figure(figsize=(6, 8))
@@ -443,11 +442,6 @@ def plot_wind_map_latitude(configs):
     square_wind_ax =plt.subplot(gs[3])
     dot_wind_ax =   plt.subplot(gs[4])
     hist_ax =       plt.subplot(gs[5])
-
-
-
-
-
 
     # Plot the Sunspot Number
     # Determine the directory of the *current* script
@@ -475,20 +469,11 @@ def plot_wind_map_latitude(configs):
     carr_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     carr_ax.set_ylim(0, 200)
 
-
-
-
-
-
-
-
-
     cmap = mpl.colormaps["autumn"]
     # cmap.set_over('lime')
     # cmap.set_under('darkviolet')
 
     # # Plot R=Rs Magnetogram with Footpoints
-
 
     # Plot magnetogram
     magnet = load_fits_magnetogram(configs=configs, cr=args.cr)
@@ -503,13 +488,10 @@ def plot_wind_map_latitude(configs):
     sc01 = low_lat_ax.scatter(ph0, th0, c=th0, s = 60, cmap=the_cmap, edgecolors='k', linewidths=0.25,
                 alpha=0.75, zorder = 100, marker='o', vmin=-1, vmax=1)
 
-
     # Add a colorbar
     cbar_ax_lat1 = fig.add_axes([0.9, 0.815, 0.03, 0.123])
     cbar01 = plt.colorbar(sc01, cax=cbar_ax_lat1, cmap=the_cmap, aspect=15)
     cbar01.set_label(f"Base Latitude", labelpad=-58)
-
-
 
     sc02 = high_lat_ax.scatter(ph1, th1, c=th0, s = 60, cmap=the_cmap, zorder=100, edgecolors='k', linewidths=0.25,
                 alpha=0.75, label="First Point Latitude", marker='o', vmin=-1, vmax=1)
@@ -518,8 +500,6 @@ def plot_wind_map_latitude(configs):
     cbar_ax_lat2 = fig.add_axes([0.9, 0.651, 0.03, 0.123])
     cbar02 = plt.colorbar(sc02, cax=cbar_ax_lat2, cmap=the_cmap, aspect=15)
     cbar02.set_label(f"Base Latitude", labelpad=-58)
-
-
 
     nwant = configs.get("nwant", None)
     reduce_amt = configs.get("mag_reduce", None)
@@ -532,10 +512,6 @@ def plot_wind_map_latitude(configs):
     floc_path = f"{dat_dir}/batches/{batch}/data/cr{CR}/floc/"
     closed_file = f"{floc_path}floc_closed_cr{CR}_r{reduce_amt}_f{nwant}_{inst}.dat"
     plot_closed_footpoints(low_lat_ax, closed_file)
-
-
-
-
 
     # Interpolated plot of wind speed [Hexagons]
     hex_n = np.max((n_open // 40, 3))
@@ -573,7 +549,7 @@ def plot_wind_map_latitude(configs):
     #     cmap=cmap,
     #     edgecolors='none'
     # )
-#
+    #
     # Scatter plot of wind speed [Circles]
     cont1 = dot_wind_ax.scatter(
         ph1_clean,
@@ -594,7 +570,6 @@ def plot_wind_map_latitude(configs):
     # square_wind_ax.scatter   (ph1b, th1b, color='lightgrey', s=3**2, alpha=1, marker='+')
     # dot_wind_ax.scatter      (ph1b, th1b, color='lightgrey', s=3**2, alpha=1, marker='+')
 
-
     # Create histogram of wind speeds
     n_bins = np.linspace(all_vmin - 200, all_vmax + 300, 48)
     mean1, std1 = hist_plot(
@@ -606,7 +581,6 @@ def plot_wind_map_latitude(configs):
         CR=CR,
         cmap=cmap
     )
-
 
     ## Plot Formatting #####
     # Set Titles
@@ -647,8 +621,6 @@ def plot_wind_map_latitude(configs):
         yy = 0.8 if ii > 0 else 0.6
         this_ax.text(0.02, yy, label, transform=this_ax.transAxes, fontsize=12, va='bottom', ha='left', zorder=1000)
 
-
-
     for jj in [1,2,3]:
         ax_list[jj].set_xticklabels([])
 
@@ -673,12 +645,17 @@ def plot_wind_map_latitude(configs):
         hspace=0.360,
         wspace=0)
 
-
     # Set the output file names
     method = configs.get("flow_method")
+    if type(method) == list:
+        if len(method) == 1:
+            method = method[0]
+        else:
+            raise NotImplementedError
     filename = f"png_cr{CR}_f{nwant}_op{n_open}_radial_wind_{method}.png"
     main_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/{filename}'
-    wind_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy'
+    wind_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
+    wind_file2 = f"{dat_dir}/batches/{batch}/data/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
     label_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt'
     outer_file = f"{dat_dir}/batches/{batch}/imgs/windmap/{filename}"
 
@@ -687,6 +664,9 @@ def plot_wind_map_latitude(configs):
 
     if not os.path.exists(os.path.dirname(wind_file)):
         os.makedirs(os.path.dirname(wind_file))
+
+    if not os.path.exists(os.path.dirname(wind_file2)):
+        os.makedirs(os.path.dirname(wind_file2))
 
     if not os.path.exists(os.path.dirname(outer_file)):
         os.makedirs(os.path.dirname(outer_file))
@@ -706,7 +686,6 @@ def plot_wind_map_latitude(configs):
     # print("\nDone with wind plotting!\n")
     # print("```````````````````````````````\n\n\n")
 
-
     ###################################
 
     vel0_clean = vel0[inds_good]
@@ -720,14 +699,13 @@ def plot_wind_map_latitude(configs):
                ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean]
 
     np.save(wind_file, np.vstack(to_save))
+    np.save(wind_file2, np.vstack(to_save))
+    print(f"SUccessfully saved {wind_file}")
 
     with open(label_file, 'w') as file:
         file.write("""ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean\n
                    <------------ Solar Surface --------------> <----------- Outer Boundary ---------------->""")
     # np.save(wind_file.replace(".npy", "_interp.npy"), grid_z1)
-
-
-
 
 
 ########################################################################
@@ -739,6 +717,7 @@ if __name__ == "__main__":
     configs = configurations()
     do_one = True
     for rotation in configs["rotations"]:
+        print(rotation)
         parser = argparse.ArgumentParser(description='This script plots the expansion factor of the given radial_fr.dat')
         parser.add_argument('--cr',     type=int, default=rotation, help='Carrington Rotation')
         parser.add_argument('--interp', type=str, default="linear")

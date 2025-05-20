@@ -272,7 +272,7 @@ sub configurations {
                             $the_config{'adapts'}->nelem;
 
     calculate_directories(\%the_config);
-    configs_update_magdir(\%the_config);
+    # configs_update_magdir(\%the_config);
 
     # print "227 pipe_helper.pm:magg: " . $the_config{'mag_dir'} . "\n";
 
@@ -385,7 +385,8 @@ sub parse_list_or_range { # line 261
         $value =~ s/[\(\)]//g;  # Remove parentheses
         my ($start, $stop, $step) = split(/\s*,\s*/, $value);
         if (looks_like_number($start) && looks_like_number($stop) && looks_like_number($step)) {
-            return PDL->sequence(int(($stop - $start) / $step + 1))->multiply($step)->plus($start);
+            my @range = ($start .. $stop);
+            return PDL->new(@range);
         } else {
             die "Invalid range values: start, stop, and step must be numeric.";
         }
@@ -422,8 +423,7 @@ sub configs_update_magdir {
 
     my ($config_ref) = @_;
 
-    my $CR = $config_ref->{'cr'} // $config_ref->{'rotations'};
-    # print "This is the CR we are using: $CR\n";
+    my $CR = $config_ref->{'cr'} // $config_ref->{'CR'};
     my $n_fluxons_wanted = $config_ref->{'fluxon_count'};
 
     # Check if critical values are present

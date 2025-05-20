@@ -45,7 +45,7 @@ import numpy as np
 import sunpy.map
 from astropy.coordinates import SkyCoord
 
-def get_pfss(configs=None):
+def get_pfss(configs):
     """
     Main function to generate a fluxon mapping from a given GONG-sourced PFSS coronal field solution.
 
@@ -62,8 +62,8 @@ def get_pfss(configs=None):
 
     configs = configs or configurations()
 
-    from fluxpype.pipe_helper import update_magdir_paths
-    update_magdir_paths(configs)
+    # from fluxpype.pipe_helper import update_magdir_paths
+    # update_magdir_paths(configs)
 
     # Extract arguments or use defaults from configs
     cr =        configs.get("cr")
@@ -81,6 +81,8 @@ def get_pfss(configs=None):
 
     # Print initial message
     from rich import print
+
+    # print(f"\nInside pyfile CR={configs['cr']}")
 
     print(
         "[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]"
@@ -510,6 +512,8 @@ if __name__ == "__main__":
     parser.add_argument('--regular', type=int, default=False, help='use regular footpoints')
     args = parser.parse_args()
     configs = configurations(args=args)
+
+
 
     if args.regular:
         get_regular_pfss2(configs)
