@@ -176,6 +176,7 @@ my $print_dirs   = $configs{verbose};
 my $adapt_select = $configs{adapt_select};
 my $base_dir = $configs{base_dir};
 my $wind_only = $configs{wind_only} // 0;
+my $trace_downward = $configs{trace_downward} // 1;
 
 my $recompute_string = "FALSE";
 our ( $this_world_relaxed, $N_actual );
@@ -246,9 +247,13 @@ if (1-$wind_only){
 
     $configs{force_process_magnetogram} = $force_process_magnetogram;
 
+
+
     # Retrieve the Footpoints using the Hilbert method
-    my $N_actual =
-      get_hilbert_footpoints::get_hilbert_footpoints( %configs );
+    if (1-$trace_downward){
+      my $N_actual =
+        get_hilbert_footpoints::get_hilbert_footpoints( %configs );
+    }
 
 #######################################################################################################
 ## Run the Python PFSS Code ## Trace the Footpoints into the Corona ###################################
@@ -260,7 +265,7 @@ if (1-$wind_only){
     my $mpth = $configs{magpath};
 
 
-    my $pfss_command = "python $get_pfss_path --cr $CR --magpath $mpth --nwant $n_fluxons_wanted --adapt $adapt";
+    my $pfss_command = "python $get_pfss_path --cr $CR --magpath $mpth --nwant $n_fluxons_wanted --adapt $adapt --regular $trace_downward";
 
     # print "Running the following command: \n $pfss_command";
 

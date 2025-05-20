@@ -344,12 +344,9 @@ def get_regular_pfss2(configs=None):
     force_trace=configs.get("force", 0)
     datdir =    configs.get("data_dir")
     mag_reduce =configs.get("mag_reduce")
-    adapt_select =configs.get("adapt_select")
     batch =     configs.get("batch_name")
-    adapt =     configs.get("adapt") == 1
-    # print(configs['cr'])
-
-    # print("\n\n\n")
+    # Only use HMI, ignore adapt logic
+    inst = "hmi"
 
     # Print initial message
     print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
@@ -359,19 +356,11 @@ def get_regular_pfss2(configs=None):
     elapsed = 0
 
     # Load the fits file and format the data and header
-    br_safe, fits_path = load_and_condition_fits_file(magpath, datdir, adapt)
+    br_safe, fits_path = load_and_condition_fits_file(magpath, datdir, False)
 
     ###############################################################################
     # Do the PFSS mapping
     from fluxpype.science.pfss_funcs import load_pfss, compute_pfss
-
-    # Get the fluxon locations
-    if configs.get("adapt"):
-        inst = "adapt"
-        adapt = True
-        mag_reduce = "f"+str(adapt_select)
-    else:
-        inst = "hmi"
 
     pickle_dir = os.path.join(datdir, "pfss")
     if not os.path.exists(pickle_dir): os.makedirs(pickle_dir)
@@ -380,11 +369,10 @@ def get_regular_pfss2(configs=None):
     if not pfss_output:
         pfss_output, elapsed = compute_pfss(br_safe, pickle_path)  # , nrho, rss
 
-
-
     # Trace pfss field lines
-    nwant = "Regular"
-    floc_dir = f"{datdir}/batches/{batch}/data/cr{cr}/floc_regular"
+    # nwant = "Regular"
+    nwant = configs['nwant']
+    floc_dir = f"{datdir}/batches/{batch}/data/cr{cr}/floc"
     if not os.path.exists(floc_dir): os.makedirs(floc_dir)
     open_path   = f"{floc_dir}/floc_open_cr{cr}_r{mag_reduce}_f{nwant}_{inst}.dat"
     closed_path = f"{floc_dir}/floc_closed_cr{cr}_r{mag_reduce}_f{nwant}_{inst}.dat"
@@ -406,23 +394,62 @@ def get_regular_pfss2(configs=None):
             need = True
 
     from pfsspy import tracing
+    import astropy.units as u
+    import astropy.constants as const
+    from astropy.coordinates import SkyCoord
+    import matplotlib.colors as mcolor
+    import matplotlib.pyplot as plt
+    import numpy as np
 
-    r = const.R_sun
-    # Number of steps in cos(latitude)
-    nsteps = 45
-    lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2 + 1)
-    lat_1d = np.arcsin(np.linspace(-1, 1, nsteps + 1))
-    lon, lat = np.meshgrid(lon_1d, lat_1d, indexing='ij')
+    # Create uniform grid in latitude and longitude
+    nlat, nlon = 90, 180  # number of grid points
+    lat_vals = np.linspace(-np.pi/2, np.pi/2, nlat)
+    lon_vals = np.linspace(0, 2*np.pi, nlon)
+    lon, lat = np.meshgrid(lon_vals, lat_vals, indexing='ij')
     lon, lat = lon*u.rad, lat*u.rad
+    r = 2.4 * const.R_sun
     seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_output.coordinate_frame)
 
+    print(seeds)
+    print(len(seeds))
+
     print('Tracing field lines...')
-    tracer = tracing.FortranTracer(max_steps=3000)
+    tracer = tracing.FortranTracer(max_steps=4000)
     field_lines = tracer.trace(seeds, pfss_output)
+    print(f"Traced {len(field_lines.field_lines)} field lines.")
     print('Finished tracing field lines')
 
+    # Save footpoint locations to files
+    floc_path = f"{floc_dir}/floc_cr{cr}_r{mag_reduce}_f{nwant}_{inst}.dat"
+
+    # Create output arrays
+    floc_data = []
+    open_data = []
+    closed_data = []
+    fid = 0
+
+    for fl in field_lines.field_lines:
+        try:
+            if fl.is_open:
+                foot = fl.solar_footpoint
+                pol = fl.polarity
+                open_data.append([fid, pol, foot.lat.to(u.deg).value, foot.lon.to(u.deg).value, foot.radius.to(u.R_sun).value])
+                floc_data.append([foot.lat.to(u.rad).value, foot.lon.to(u.rad).value, pol])
+            else:
+                foot = fl.solar_footpoint
+                pol = fl.polarity
+                closed_data.append([fid, pol, foot.lat.to(u.deg).value, foot.lon.to(u.deg).value, foot.radius.to(u.R_sun).value])
+                floc_data.append([foot.lat.to(u.rad).value, foot.lon.to(u.rad).value, pol])
+            fid += 1
+        except Exception as e:
+            continue
+
+    np.savetxt(floc_path, np.array(floc_data), fmt="%.8f")
+    np.savetxt(open_path, np.array(open_data), fmt="%d %d %.8f %.8f %.8f")
+    np.savetxt(closed_path, np.array(closed_data), fmt="%d %d %.8f %.8f %.8f")
+    print(f"Saved footpoints to:\n  {floc_path}\n  {open_path}\n  {closed_path}")
+
     fig = plt.figure()
-    # m = pfss_in.map
     ax = fig.add_subplot(2, 1, 1)
     ax.imshow(br_safe.data, origin="lower", cmap='gray', vmin=-500, vmax=500)
     ax.set_title('Input GONG magnetogram')
@@ -430,14 +457,19 @@ def get_regular_pfss2(configs=None):
     ax = fig.add_subplot(2, 1, 2)
     cmap = mcolor.ListedColormap(['tab:red', 'black', 'tab:blue'])
     norm = mcolor.BoundaryNorm([-1.5, -0.5, 0.5, 1.5], ncolors=3)
-    pols = field_lines.polarities.reshape(2 * nsteps + 1, nsteps + 1).T
-    ax.contourf(np.rad2deg(lon_1d), np.sin(lat_1d), pols, norm=norm, cmap=cmap)
-    ax.scatter(np.rad2deg(lon), np.sin(lat), s=15, c='g')
+    try:
+        pols = field_lines.polarities.reshape(nlon, nlat).T
+        ax.contourf(np.rad2deg(lon_vals), np.sin(lat_vals), pols, norm=norm, cmap=cmap)
+        ax.scatter(np.rad2deg(lon), np.sin(lat), s=15, c='g')
+    except Exception as e:
+        print(f"Could not plot pols: {e}")
 
-
-    new_olat = field_lines.open_field_lines.solar_feet.lat.to(u.rad)
-    new_olon = field_lines.open_field_lines.solar_feet.lon.to(u.rad)
-
+    try:
+        new_olat = field_lines.open_field_lines.solar_feet.lat.to(u.rad)
+        new_olon = field_lines.open_field_lines.solar_feet.lon.to(u.rad)
+    except Exception:
+        new_olat = []
+        new_olon = []
 
     closed_fields = []
     for fl in field_lines.field_lines:
@@ -447,52 +479,15 @@ def get_regular_pfss2(configs=None):
             except IndexError:
                 continue
 
-
-    new_clat, new_clon = zip(*closed_fields)
-    # new_clat, new_clon = new_clat, new_clon
-    ax.scatter(np.rad2deg(new_olon), np.sin(new_olat), s=10, c='r')
-    ax.scatter((new_clon), np.sin((new_clat)), s=10, c='b')
+    if closed_fields:
+        new_clat, new_clon = zip(*closed_fields)
+        ax.scatter(np.rad2deg(new_olon), np.sin(new_olat), s=10, c='r')
+        ax.scatter((new_clon), np.sin((new_clat)), s=10, c='b')
 
     ax.set_ylabel('sin(latitude)')
-
     ax.set_title('Open (blue/red) and closed (black) field')
     ax.set_aspect(0.5 * 360 / 2)
-
     plt.show()
-
-
-    # if need:
-    #     # Trace the lines now
-    #     fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed  = trace_lines(
-    #                                 pfss_output, (f_lon, f_lat, f_sgn), open_path, closed_path, adapt)
-
-    # offid, pol, oth, oph, orad = np.loadtxt(open_path).T
-    # cffid, pol, cth, cph, crad = np.loadtxt(closed_path).T
-
-    # # I want the next line to get the unique values of ffid and then give me the indices of the first element for each unique value
-    # # This will give me the indices of the first element of each fluxon
-    # unique_oinds = np.unique(offid, return_index=True)[1]
-    # unique_oth, unique_oph = oth[unique_oinds], oph[unique_oinds]
-
-    # unique_cinds = np.unique(cffid, return_index=True)[1]
-    # unique_cth, unique_cph = cth[unique_cinds], cph[unique_cinds]
-
-
-    # # photo_op = (1.01 > orad) & (orad > 0.99)
-    # # photo_cl = (1.01 > crad) & (crad > 0.99)
-    # import matplotlib.pyplot as plt
-    # # plt.scatter(f_lon, f_lat, s=10, c=f_sgn, cmap='bwr')
-
-    # plt.scatter(f_lon, f_lat, s=10, c='g')
-    # plt.scatter(unique_oph/180*np.pi, np.sin(np.deg2rad(unique_oth)), s=10, c='r')
-    # plt.scatter(unique_cph/180*np.pi, np.sin(np.deg2rad(unique_cth)), s=10, c='b')
-
-
-    # # plt.scatter(cph[photo_cl]/180*np.pi, np.sin(np.deg2rad(cth[photo_cl])), s=10, c='b')
-    # # plt.scatter(oph[photo_op]/180*np.pi, np.sin(np.deg2rad(oth[photo_op])), s=10, c='r')
-    # # plt.imshow(smaller_br, origin='lower', cmap='gray', zorder=-1)
-    # plt.show()
-
 
     print("\n\t\t\t```````````````````````````````\n \n")
     return True
@@ -505,7 +500,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate a fluxon mapping from a GONG-sourced PFSS coronal field solution.')
     # configs_t = configurations()
     parser.add_argument('--cr', type=int, default=None, help='Carrington Rotation')
-    parser.add_argument('--nwant', type=int, default=3000, help='Number of fluxons wanted')
+    parser.add_argument('--nwant', type=int, default=2000, help='Number of fluxons wanted')
     parser.add_argument('--magpath', type=str, default=None, help='Magnetogram file')
     parser.add_argument('--force', type=int, default=0, help='Force computation of PFSS mapping')
     parser.add_argument('--adapt', type=int, default=0, help='Use ADAPT magnetograms')
