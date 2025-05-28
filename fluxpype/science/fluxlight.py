@@ -6,16 +6,21 @@ import numpy as np
 # Import the modules (adjust the import paths as needed)
 from fluxpype.science.open_world_python import read_flux_world
 from fluxpype.science.thomson_scattering_flux import simulate_thomson_scattering, load_scientific_colormap
+from sunkit_image.radial import rhef
+from sunpy.map import Map
 
 # Load the flux world data
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Force_test/data/cr2265/world/cr2265_f1002_hmi_relaxed_s400.flux"
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Force_test/data/cr2268/world/cr2268_f500_hmi_relaxed_s4000.flux"
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f20_hmi_relaxed_s2000.flux"
-def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f400_hmi.flux"
+# def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f400_hmi.flux"
+def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2150/world/cr2150_f1000_hmi_relaxed_s300.flux"
+method = "vertex"
+
 
 def do_fluxlight(flux_world_file, save=True):
     flux_world = read_flux_world(flux_world_file)
-    flux_world.plot_all()
+    # flux_world.plot_all()
 
     world_path = flux_world.out_dir
     light_path = world_path.replace("world","light")
@@ -27,22 +32,25 @@ def do_fluxlight(flux_world_file, save=True):
     # flux_world.plot_fluxon_id()
 
     # Run the Thomson scattering simulation, informing the model with the flux world
+    print("Starting Fluxlight...")
     results = simulate_thomson_scattering(
-        npix=500,
-        nz=500,
+        npix=250,
+        nz=250,
         fov=3.0,
         flux_world=flux_world,
         lower_bound=1.05,
         upper_bound=3.0,
         parallel = True,
-        influence_length=0.1,
+        influence_length=0.05,
         scale=500,
+        method=method
     )
-
+    print("Fluxlight Complete.")
     # Retrieve simulation outputs and grid information
     B_total = results["B_total"]
     B_polarized = results["B_polarized"]
     Polarization_angle = results["Polarization_angle"]
+    Column_Density = results["Column_Density"]
     Polarization_fraction = results["Polarization_fraction"]
     X = results["X"]
     Y = results["Y"]
@@ -68,9 +76,11 @@ def do_fluxlight(flux_world_file, save=True):
     axs[0, 1].set_title("Log Polarized Brightness (pB)")
     fig.colorbar(im2, ax=axs[0, 1], label="Intensity")
 
-    im3 = axs[1, 0].imshow(Polarization_angle, origin="lower", extent=extent_val, cmap=scientific_cmap)
-    axs[1, 0].set_title("Linear Polarization Angle")
-    fig.colorbar(im3, ax=axs[1, 0], label="Radians")
+    # Placeholder for plane-of-sky density: show redundant brightness
+    cd = Column_Density.to_value()
+    im3 = axs[1, 0].imshow(rhef(Map(cd)), origin="lower", extent=extent_val, cmap="plasma")
+    axs[1, 0].set_title("Redundant Total Brightness")
+    fig.colorbar(im3, ax=axs[1, 0], label="Intensity")
 
     im4 = axs[1, 1].imshow(Polarization_fraction, origin="lower", extent=extent_val, cmap="viridis")
     axs[1, 1].set_title("Polarization Fraction (pB/tB)")
@@ -87,7 +97,7 @@ def do_fluxlight(flux_world_file, save=True):
     plt.suptitle("Forward Modeling of FLUX World")
     plt.tight_layout()
     if save:
-        plt.savefig(f"{light_path}/cr{flux_world.cr}_fluxlight_light.png")
+        plt.savefig(f"{light_path}/cr{flux_world.cr}_fluxlight_light_{method}.png")
         plt.close(fig)
     else:
         plt.show()

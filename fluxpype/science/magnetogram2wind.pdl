@@ -370,7 +370,7 @@ print color("reset");
 
 # Define common plotting directory
 my $plot_dir = catfile($base_dir, "fluxpype", "fluxpype", "plotting");
-my $sci_dir = catfile($base_dir, "fluxpype", "fluxpype", "science");
+our $sci_dir = catfile($base_dir, "fluxpype", "fluxpype", "science");
 
 print "Plotting to $plot_dir\n\n";
 
@@ -409,10 +409,10 @@ sub run_all_plots {
         "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
 
         # Wind map square (with additional wind method option)
-        "python3 " . catfile($plot_dir, "plot_wind_map_latitude_cycle.py") . " --file $out_wind" . $common_opts,
+        "python3 " . catfile($plot_dir, "plot_wind_map_latitude_cycle.py") . " --file $out_wind --resave_from_dat" . $common_opts,
 
         # Plot wind solutions (using a different file structure for input data)
-        "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
+        # "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
 
         # "python3 " . catfile($sci_dir, "open_world_python.py") . " $datdir/batches/$batch_name/data/cr$CR/world"
     );
@@ -424,12 +424,9 @@ sub run_all_plots {
 }
 
 # Execute all plotting commands
-if (0){
+if (1){
 run_all_plots();
 }
-
-  run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
-
 
   print color("bright_cyan");
   print("\nDone with wind plotting!\n");
@@ -441,7 +438,10 @@ run_all_plots();
   print color ("reset");
 } # End of the if (0) block
 
-
+if ($configs{light}){
+  our $sci_dir;
+  run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
+}
 
 
 

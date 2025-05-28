@@ -48,6 +48,46 @@ from fluxpype.science.pfss_funcs import get_fluxon_locations
 from fluxpype.plotting.plot_fieldmap import magnet_plot
 
 
+def generate_clean_wind_data(dat_file, pole_file, method, wind_file2, label_file):
+    arr = np.loadtxt(dat_file).T
+    try:
+        fid, phi0, theta0, phi1, theta1, vel0, vel1, fr0, fr1, fr1b = arr
+    except ValueError:
+        fid, phi0, theta0, phi1, theta1, vel0, vel1, fr0, fr1 = arr
+
+    ph0, th0 = get_fixed_coords(phi0, theta0)
+    ph1, th1 = get_fixed_coords(phi1, theta1)
+    ph0 += np.pi
+    ph1 += np.pi
+    ph0 = np.mod(ph0, 2 * np.pi)
+    ph1 = np.mod(ph1, 2 * np.pi)
+
+    vel1_clean, ph1_clean, th1_clean, fr1_clean, v1b, ph1b, th1b, inds_good = remove_outliers(
+        vel1, ph1, th1, fr1, 3, 2, 1
+    )
+    vel0_clean = vel0[inds_good]
+    ph0_clean = ph0[inds_good]
+    th0_clean = th0[inds_good]
+    fr0_clean = fr0[inds_good]
+    fr1_clean = fr1[inds_good]
+
+    ffid, pol, _, _, _ = np.loadtxt(pole_file).T
+    unique_fid = np.unique(ffid)
+    polar = [pol[np.where(ffid == fid_)[0][0]] for fid_ in unique_fid]
+    polarity = np.array(polar)
+    polarity_clean = polarity[inds_good]
+
+    to_save = [ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean]
+
+    np.save(wind_file2, np.vstack(to_save))
+    with open(label_file, "w") as file:
+        file.write(
+            """ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean\n
+                   <------------ Solar Surface --------------> <----------- Outer Boundary ---------------->"""
+        )
+    print(f"Saved {wind_file2}")
+
+
 def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, power=1):
     """ Scale the data between 0 and 1, then raise to a power, then scale by a factor
 
@@ -727,7 +767,27 @@ if __name__ == "__main__":
         parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='number of fluxons')
         parser.add_argument('--batch',  type=str, default=configs["batch_name"], help='select the batch name')
         parser.add_argument('--adapt',  type=int, default=0, help='Use ADAPT magnetograms')
+        parser.add_argument('--resave_from_dat', action='store_true', help='Just load from .dat and re-save .npy and label files')
         args = parser.parse_args()
+
+        if args.resave_from_dat:
+            configs = configurations(args=args)
+            CR = args.cr
+            batch = args.batch
+            dat_dir = args.dat_dir
+            nwant = args.nwant
+            method = configs.get("flow_method")
+            if isinstance(method, list):
+                method = method[0]
+
+            dat_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat'
+            pole_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{configs.get("mag_reduce")}_f{nwant}_hmi.dat'
+            wind_file2 = f"{dat_dir}/batches/{batch}/data/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
+            label_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt'
+
+            generate_clean_wind_data(dat_file, pole_file, method, wind_file2, label_file)
+            exit()
+
         configs = configurations(args=args)
 
         try:

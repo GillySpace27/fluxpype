@@ -52,7 +52,7 @@ def incident_solar_intensity(r):
 
 def simulate_thomson_scattering(
     npix=500, nz=500, fov=3.0, lower_bound=1.01, upper_bound=3.0, scale=100,
-    flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False
+    flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False, method="fluxel",
 ):
     """
     Simulate Thomson scattering brightness and polarization in the solar corona.
@@ -108,6 +108,15 @@ def simulate_thomson_scattering(
     B_total = np.zeros((npix, npix)) * (u.erg / u.cm**2 / u.s / u.sr)
     B_polarized = np.zeros((npix, npix)) * (u.erg / u.cm**2 / u.s / u.sr)
     Polarization_angle = np.zeros((npix, npix)) #* u.rad
+    Column_Density = np.zeros((npix, npix)) * u.cm**-2
+
+    # Precompute fluxel segment structures if needed (before parallel block)
+    if flux_world is not None and method == "fluxel":
+        print("Precomputing fluxel segment structures...")
+        dummy_coord = np.array([[0, 0, 2]]) * u.R_sun
+        _ = flux_world.compute_electron_density(
+            dummy_coord, influence_length=influence_length, scale=scale, method=method
+        )
 
     def process_row(ix):
         # Impact param row, pos angle row
@@ -130,7 +139,7 @@ def simulate_thomson_scattering(
             ], axis=-1)  # (npix, nz, 3)
             coords_flat = coords.reshape(-1, 3)
             ne_flat = flux_world.compute_electron_density(
-                coords_flat, influence_length=influence_length, scale=scale,
+                coords_flat, influence_length=influence_length, scale=scale, method=method,
             )
             ne = ne_flat.reshape(rho_row.shape[0], nz)  # * u.cm**-3
         else:
@@ -148,6 +157,10 @@ def simulate_thomson_scattering(
         num = simpson((factor * G_pol * np.sin(2 * pos_ang_row[:, None])).value, z_array.value, axis=1)
         den = simpson((factor * G_pol * np.cos(2 * pos_ang_row[:, None])).value, z_array.value, axis=1)
         Pol_ang_row = 0.5 * np.arctan2(num, den) * u.radian
+
+        # Column density calculation
+        column_density = simpson(ne.value, z_array.value, axis=1) * u.cm**-2
+
         # dev = Pol_ang_row - pos_ang_row
         # dev = dev.to_value()
         # dev = np.angle(np.exp(1j * (Pol_ang_row - pos_ang_row).to_value()))
@@ -155,7 +168,7 @@ def simulate_thomson_scattering(
         dev = Pol_ang_row.to_value()
         # dev[dev > 3.1] = dev[dev>3.1] - np.pi
         # dev[dev < -3.1] = dev[dev<-3.1] + np.pi
-        return B_total_row, B_polarized_row, dev
+        return B_total_row, B_polarized_row, dev, column_density
 
     if parallel:
         results_list = Parallel(n_jobs=-1)(
@@ -166,10 +179,11 @@ def simulate_thomson_scattering(
         for ix in tqdm(range(npix), desc="Simulating Thomson Scattering (Serial)"):
             results_list.append(process_row(ix))
 
-    for ix, (B_tot_row, B_pol_row, Pol_ang_row) in enumerate(results_list):
+    for ix, (B_tot_row, B_pol_row, Pol_ang_row, column_dens_row) in enumerate(results_list):
         B_total[ix, :] = B_tot_row
         B_polarized[ix, :] = B_pol_row
         Polarization_angle[ix, :] = Pol_ang_row
+        Column_Density[ix, :] = column_dens_row
 
     # Mask out areas inside lower_bound or outside upper_bound
     inner_mask = impact_parameter <= lower_bound
@@ -192,6 +206,7 @@ def simulate_thomson_scattering(
         "impact_parameter": impact_parameter,
         "position_angle": position_angle,
         "fov": fov,
+        "Column_Density": Column_Density,
     }
 
 

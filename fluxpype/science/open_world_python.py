@@ -177,6 +177,7 @@ def read_flux_world(filename):
                    for visualization and computation (e.g., electron density, cross-sectional areas).
     """
 
+    print(f"Reading FLUX world file: {filename}")
     class FluxWorld:
         def __init__(self, filename=None):
             self.concentrations = self.FluxConcentrations()
@@ -191,6 +192,7 @@ def read_flux_world(filename):
             self.areas_by_fluxon = None
             self.filename = filename or None
             self.flux_area_file = None
+            self.segments = None
             if filename is not None:
                 from os.path import basename, dirname, join
                 from os import listdir
@@ -435,7 +437,7 @@ def read_flux_world(filename):
                     X = np.zeros_like(Y)
                     coords = np.stack([X, Y, Z], axis=-1)
                 coords_flat = coords.reshape(-1, 3)
-                densities = self.compute_electron_density_exp(coords_flat).reshape(num_points, num_points)
+                densities = self.compute_electron_density(coords_flat).reshape(num_points, num_points)
                 densities = np.log10(densities.to_value())
                 slices[name] = {
                     "plane": (X, Y) if fixed == "z" else (X, Z) if fixed == "y" else (Y, Z),
@@ -453,7 +455,7 @@ def read_flux_world(filename):
             import matplotlib.pyplot as plt
 
             coords = self.generate_coordinate_grid(num_points_per_axis=20)
-            densities = self.compute_electron_density_exp(coords)
+            densities = self.compute_electron_density(coords)
             coords = np.array(coords)
             densities = np.log10(np.array(densities))
             norm_densities = (densities - densities.min()) / (densities.max() - densities.min())
@@ -488,11 +490,16 @@ def read_flux_world(filename):
             else:
                 plt.show()
 
-        def compute_electron_density(self, coords=None, **kwargs):
-            return self.compute_electron_density_exp(coords=coords, **kwargs)
+        def compute_electron_density(self, coords=None, method="fluxel", **kwargs):
+            if method == "vertex":
+                return self.compute_electron_density_vertex(coords=coords, **kwargs)
+            elif method == "fluxel":
+                return self.compute_electron_density_fluxel(coords=coords, **kwargs)
+            else:
+                raise ValueError(f"Unknown density method '{method}'")
 
         @u.quantity_input(influence_length=u.R_sun)
-        def compute_electron_density_exp(self, coords=None, influence_length=1 * u.R_sun, scale=100):
+        def compute_electron_density_vertex(self, coords=None, influence_length=1 * u.R_sun, scale=100):
             if coords is None and self.coords is not None:
                 coords = self.coords
             elif coords is None:
@@ -513,6 +520,98 @@ def read_flux_world(filename):
             factor = scale * np.exp(-distances / influence_length)
             densities = base_density * (1 + factor)
             return densities
+
+        @u.quantity_input(influence_length=u.R_sun)
+        def compute_electron_density_fluxel(self, coords=None, influence_length=1 * u.R_sun, scale=100):
+            if coords is None and self.coords is not None:
+                coords = self.coords
+            elif coords is None:
+                coords = self.generate_coordinate_grid()
+            self.coords = coords
+
+            # Re-entry guard
+            if getattr(self, "_currently_computing_density", False):
+                print("Warning: compute_electron_density_fluxel is already running. Skipping re-entry.")
+                return np.zeros(coords.shape[0]) * u.cm**-3
+            self._currently_computing_density = True
+            try:
+                # print(f"Computing electron density using fluxel method for {len(coords)} coordinates...")
+
+                # Build or use cached list of all fluxel segments (pairs of points)
+                if self.segments is None:
+                    print("Building fluxel segments for the first time...")
+                    self.segments = []
+                    for flux in self.fluxons.values():
+                        verts = flux.get_vertices()
+                        self.segments.extend([(verts[i], verts[i + 1]) for i in range(len(verts) - 1)])
+                    self.segments = np.array(self.segments) * u.R_sun
+                    print(f"Built {len(self.segments)} fluxel segments for distance computation.")
+                else:
+                    # print(f"Using cached {len(self.segments)} fluxel segments.")
+                    pass
+                segments = self.segments
+
+                coords_val = coords.to_value(u.R_sun)
+
+                # --- Efficient local search for nearest segments using KD-tree of vertices ---
+                # Build or use cached vertex-to-segments dictionary and KD-tree
+                if not hasattr(self, '_vertex_tree') or self._vertex_tree is None:
+                    print("Building vertex KD-tree and vertex-to-segment lookup...")
+                    all_vertices = []
+                    vertex_to_segments = {}
+                    for seg in self.segments.to_value(u.R_sun):
+                        a = tuple(seg[0])
+                        b = tuple(seg[1])
+                        all_vertices.append(seg[0])
+                        all_vertices.append(seg[1])
+                        for v in (a, b):
+                            vertex_to_segments.setdefault(v, []).append((seg[0], seg[1]))
+                    all_vertices = np.array(all_vertices)
+                    self._vertex_tree = cKDTree(all_vertices)
+                    self._vertex_coords = all_vertices
+                    self._vertex_to_segments = vertex_to_segments
+                else:
+                    vertex_to_segments = self._vertex_to_segments
+
+                def point_to_segments_local(points, all_segments, vertex_tree, k=10):
+                    # Query nearest vertices
+                    distances, indices = vertex_tree.query(points, k=k)
+                    if k == 1:
+                        indices = indices[:, None]
+                    min_dists = np.full(points.shape[0], np.inf)
+                    for i, idxs in enumerate(indices):
+                        segs = []
+                        for idx in np.unique(idxs):
+                            v = tuple(vertex_tree.data[idx])
+                            segs.extend(vertex_to_segments.get(v, []))
+                        if not segs:
+                            continue
+                        segs = np.array(segs)
+                        seg_a = segs[:, 0]
+                        seg_b = segs[:, 1]
+                        ab = seg_b - seg_a
+                        ab_dot = np.sum(ab**2, axis=1)
+                        ap = points[i] - seg_a
+                        t = np.clip(np.sum(ap * ab, axis=1) / ab_dot, 0, 1)
+                        closest = seg_a + t[:, None] * ab
+                        dists = np.linalg.norm(points[i] - closest, axis=1)
+                        min_dists[i] = np.min(dists)
+                    return min_dists
+
+                # print("Computing distances from each point to nearest local fluxel segment...")
+                distances = point_to_segments_local(coords_val, self.segments.to_value(u.R_sun), self._vertex_tree)
+                distances = distances * u.R_sun
+                # print("Distance computation complete. Calculating density profile...")
+
+                r = np.linalg.norm(coords, axis=1)
+                n0 = 4.2e8 * u.cm**-3
+                base_density = n0 * 10 ** (4.32 * u.R_sun / r.to(u.R_sun))
+                factor = scale * np.exp(-distances / influence_length)
+                densities = base_density * (1 + factor)
+                # print("Density computation complete.")
+                return densities
+            finally:
+                self._currently_computing_density = False
 
         def compute_fluxon_id(self, coords=None):
             if coords is None and self.coords is not None:
@@ -1163,6 +1262,7 @@ def read_flux_world(filename):
     # Initialize the FluxWorld object
     flux_world = FluxWorld(filename)
 
+    print("Parsing FLUX world data into memory...")
     # Reading data from the file
     with open(filename, "r") as file:
         line_ids = []
@@ -1205,6 +1305,8 @@ def read_flux_world(filename):
             elif "VNEIGHBOR" in tokens[0]:
                 break
 
+    print("Finished parsing file lines. Creating fluxon objects...")
+
     line_ids = np.array(line_ids)
     line_start_fc = np.array(line_start_fc)
     line_end_fc = np.array(line_end_fc)
@@ -1234,11 +1336,13 @@ def read_flux_world(filename):
             vertex_y_coords[vertex_indices].tolist(),
             vertex_z_coords[vertex_indices].tolist(),
         )
+    print("Fluxons constructed.")
     print("Flux world loaded:", os.path.basename(filename))
     print(flux_world)
     flux_world.all_fx = np.concatenate([flux.x_coords for flux in flux_world.fluxons.values()])
     flux_world.all_fy = np.concatenate([flux.y_coords for flux in flux_world.fluxons.values()])
     flux_world.all_fz = np.concatenate([flux.z_coords for flux in flux_world.fluxons.values()])
+    print("Computed fluxon bounding boxes.")
     # print("Fluxon bounding box (X):", flux_world.all_fx.min(), flux_world.all_fx.max())
     # print("Fluxon bounding box (Y):", flux_world.all_fy.min(), flux_world.all_fy.max())
     # print("Fluxon bounding box (Z):", flux_world.all_fz.min(), flux_world.all_fz.max())

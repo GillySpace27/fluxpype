@@ -181,10 +181,11 @@ sub make_world_from_pfss {
         $ofln = append(0, $ofln);
         my $open_count = 1;
 
-        # my $extend_down = 0;
-        # my $extend_up = 0;
-        # my $num_replications = 7;
-        # my $power = -3;
+        my $extend_down = $configs->{'extend_down'} // 0;
+        my $extend_up = $configs->{'extend_up'} // 0;
+        my $num_replications = $configs->{'num_replications'} // 7;
+        my $power = $configs->{'power'} // -3;
+        my $power_up = $configs->{'power_up'} // 2;
 
         for my $i(0..nelem($ofl)-1){
             # Extract latitude, longitude, and radial arrays for the current flux tube
@@ -194,104 +195,102 @@ sub make_world_from_pfss {
             my $open = pdl($flxlon, $flxlat, $flxrad)->transpose;
 
 
-            # my $print_debug = 0;
-            # if ($extend_down) {
-            #     if ($print_debug) {print "EXTEND DOWN\n";}
-            #     # Deep copy of the first column
-            #     my @replicated_columns;
-            #     for (1..$num_replications) {
-            #         push @replicated_columns, $open->(:, 0)->copy;
-            #     }
-            #     my $replicated_first_col = cat(@replicated_columns)->squeeze;
-            #     if ($print_debug) {print "Replicated first column: $replicated_first_col\n";}
+            my $print_debug = 0;
+            if ($extend_down) {
+                if ($print_debug) {print "EXTEND DOWN\n";}
+                # Deep copy of the first column
+                my @replicated_columns;
+                for (1..$num_replications) {
+                    push @replicated_columns, $open->(:, 0)->copy;
+                }
+                my $replicated_first_col = cat(@replicated_columns)->squeeze;
+                if ($print_debug) {print "Replicated first column: $replicated_first_col\n";}
 
-            #     # Calculate the second lowest value in the radial component
-            #     my $sorted_radial = qsort($open(2, :));
-            #     if ($print_debug) {print "Sorted radial values: $sorted_radial\n";}
+                # Calculate the second lowest value in the radial component
+                my $sorted_radial = qsort($open(2, :));
+                if ($print_debug) {print "Sorted radial values: $sorted_radial\n";}
 
-            #     # Ensure there are at least two unique values
-            #     my $unique_values = $sorted_radial->uniq;
-            #     if (nelem($unique_values) < 2) {
-            #         die "Not enough unique values in the radial component to determine the second lowest value.\n";
-            #     }
+                # Ensure there are at least two unique values
+                my $unique_values = $sorted_radial->uniq;
+                if (nelem($unique_values) < 2) {
+                    die "Not enough unique values in the radial component to determine the second lowest value.\n";
+                }
 
-            #     my $second_min_radial = $unique_values(1);  # The second lowest unique value
-            #     if ($print_debug) {print "Second lowest radial value: $second_min_radial\n";}
+                my $second_min_radial = $unique_values(1);  # The second lowest unique value
+                if ($print_debug) {print "Second lowest radial value: $second_min_radial\n";}
 
-            #     # Calculate the logarithmically spaced values
-            #     my $log_min = log10(1 + 10**$power);
-            #     my $log_max = log10($second_min_radial);
-            #     if ($print_debug) {print "Log min: $log_min, Log max: $log_max\n";}
+                # Calculate the logarithmically spaced values
+                my $log_min = log10(1 + 10**$power);
+                my $log_max = log10($second_min_radial);
+                if ($print_debug) {print "Log min: $log_min, Log max: $log_max\n";}
 
-            #     my $log_values = ($log_min + (pdl(sequence($num_replications)) / ($num_replications - 1)) * ($log_max - $log_min));
-            #     my $log_spaced_values = 10**$log_values;
-            #     if ($print_debug) {print "Log spaced values: $log_spaced_values\n";}
+                my $log_values = ($log_min + (pdl(sequence($num_replications)) / ($num_replications - 1)) * ($log_max - $log_min));
+                my $log_spaced_values = 10**$log_values;
+                if ($print_debug) {print "Log spaced values: $log_spaced_values\n";}
 
-            #     # Ensure the dimensions match for assignment
-            #     $log_spaced_values = $log_spaced_values->reshape($num_replications, 1);
-            #     if ($print_debug) {print "Shape of replicated_first_col before assignment: " . $replicated_first_col->shape . "\n";}
-            #     if ($print_debug) {print "Shape of log_spaced_values: " . $log_spaced_values->shape . "\n";}
+                # Ensure the dimensions match for assignment
+                $log_spaced_values = $log_spaced_values->reshape($num_replications, 1);
+                if ($print_debug) {print "Shape of replicated_first_col before assignment: " . $replicated_first_col->shape . "\n";}
+                if ($print_debug) {print "Shape of log_spaced_values: " . $log_spaced_values->shape . "\n";}
 
-            #     # Directly modify the radial component of the replicated columns
-            #     for my $j (0..($num_replications-1)) {
-            #         $replicated_first_col(2, $j) .= $log_spaced_values(($j));
-            #     }
-            #     if ($print_debug) {print "Modified replicated_first_col: $replicated_first_col\n";}
+                # Directly modify the radial component of the replicated columns
+                for my $j (0..($num_replications-1)) {
+                    $replicated_first_col(2, $j) .= $log_spaced_values(($j));
+                }
+                if ($print_debug) {print "Modified replicated_first_col: $replicated_first_col\n";}
 
-            #     # Remove the last row from replicated_first_col
-            #     $replicated_first_col = $replicated_first_col(:, 0:-2);
-            #     if ($print_debug) {print "Replicated first column after removing last row: $replicated_first_col\n";}
+                # Remove the last row from replicated_first_col
+                $replicated_first_col = $replicated_first_col(:, 0:-2);
+                if ($print_debug) {print "Replicated first column after removing last row: $replicated_first_col\n";}
 
-            #     # Glue the replicated columns to the beginning of the original PDL object
-            #     $open = $replicated_first_col->glue(1, $open)->squeeze;
-            #     if ($print_debug) {print "Extended open: $open\n";}
+                # Glue the replicated columns to the beginning of the original PDL object
+                $open = $replicated_first_col->glue(1, $open)->squeeze;
+                if ($print_debug) {print "Extended open: $open\n";}
+            }
 
-            # }
+            $print_debug = 0;
+            if ($extend_up) {
+                if ($print_debug) {print "EXTEND UP\n";}
+                # Deep copy of the last column
+                my @replicated_columns;
+                for (1..$num_replications) {
+                    push @replicated_columns, $open->(:, -1)->copy;
+                }
+                my $replicated_last_col = cat(@replicated_columns)->squeeze;
+                if ($print_debug) {print "Replicated last column: $replicated_last_col\n";}
 
-            # my $power_up = 2;
-            # $print_debug = 0;
-            # if ($extend_up) {
-            #     if ($print_debug) {print "EXTEND UP\n";}
-            #     # Deep copy of the last column
-            #     my @replicated_columns;
-            #     for (1..$num_replications) {
-            #         push @replicated_columns, $open->(:, -1)->copy;
-            #     }
-            #     my $replicated_last_col = cat(@replicated_columns)->squeeze;
-            #     if ($print_debug) {print "Replicated last column: $replicated_last_col\n";}
+                # Calculate the highest value in the radial component
+                my $max_radial = $open(2, :)->max;
+                if ($print_debug) {print "Maximum radial value: $max_radial\n";}
 
-            #     # Calculate the highest value in the radial component
-            #     my $max_radial = $open(2, :)->max;
-            #     if ($print_debug) {print "Maximum radial value: $max_radial\n";}
+                # Calculate the logarithmically spaced values
+                my $log_min = log10($max_radial);
+                my $log_max = log10(1 + 10**$power_up);
+                if ($print_debug) {print "Log min: $log_min, Log max: $log_max\n";}
 
-            #     # Calculate the logarithmically spaced values
-            #     my $log_min = log10($max_radial);
-            #     my $log_max = log10(1 + 10**$power_up);
-            #     if ($print_debug) {print "Log min: $log_min, Log max: $log_max\n";}
+                my $log_values = ($log_min + (pdl(sequence($num_replications)) / ($num_replications - 1)) * ($log_max - $log_min));
+                my $log_spaced_values = 10**$log_values;
+                if ($print_debug) {print "Log spaced values: $log_spaced_values\n";}
 
-            #     my $log_values = ($log_min + (pdl(sequence($num_replications)) / ($num_replications - 1)) * ($log_max - $log_min));
-            #     my $log_spaced_values = 10**$log_values;
-            #     if ($print_debug) {print "Log spaced values: $log_spaced_values\n";}
+                # Ensure the dimensions match for assignment
+                $log_spaced_values = $log_spaced_values->reshape($num_replications, 1);
+                if ($print_debug) {print "Shape of replicated_last_col before assignment: " . $replicated_last_col->shape . "\n";}
+                if ($print_debug) {print "Shape of log_spaced_values: " . $log_spaced_values->shape . "\n";}
 
-            #     # Ensure the dimensions match for assignment
-            #     $log_spaced_values = $log_spaced_values->reshape($num_replications, 1);
-            #     if ($print_debug) {print "Shape of replicated_last_col before assignment: " . $replicated_last_col->shape . "\n";}
-            #     if ($print_debug) {print "Shape of log_spaced_values: " . $log_spaced_values->shape . "\n";}
+                # Directly modify the radial component of the replicated columns
+                for my $j (0..($num_replications-1)) {
+                    $replicated_last_col(2, $j) .= $log_spaced_values(($j));
+                }
+                if ($print_debug) {print "Modified replicated_last_col: $replicated_last_col\n";}
 
-            #     # Directly modify the radial component of the replicated columns
-            #     for my $j (0..($num_replications-1)) {
-            #         $replicated_last_col(2, $j) .= $log_spaced_values(($j));
-            #     }
-            #     if ($print_debug) {print "Modified replicated_last_col: $replicated_last_col\n";}
+                # Remove the first row from replicated_last_col
+                $replicated_last_col = $replicated_last_col(:, 1:);
+                if ($print_debug) {print "Replicated last column after removing first row: $replicated_last_col\n";}
 
-            #     # Remove the first row from replicated_last_col
-            #     $replicated_last_col = $replicated_last_col(:, 1:);
-            #     if ($print_debug) {print "Replicated last column after removing first row: $replicated_last_col\n";}
-
-            #     # Glue the replicated columns to the end of the original PDL object
-            #     $open = $open->glue(1, $replicated_last_col)->squeeze;
-            #     if ($print_debug) {print "Extended open: $open\n";}
-            # }
+                # Glue the replicated columns to the end of the original PDL object
+                $open = $open->glue(1, $replicated_last_col)->squeeze;
+                if ($print_debug) {print "Extended open: $open\n";}
+            }
             my $print_debug = 0;
 
             # Print radial values before sorting
