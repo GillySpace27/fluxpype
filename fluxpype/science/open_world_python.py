@@ -231,9 +231,10 @@ def read_flux_world(filename):
             )
 
         def plot_all(self, **kwargs):
+            print(f"Saving to {self.out_dir}")
             self.plot_all_area_methods(save=True)
             # self.plot_all_fluxon_area_methods(save=True)
-            # self.plot_fluxon_areas(save=True)
+            self.plot_fluxon_areas(save=True)
             self.plot_world(save=True)
             self.plot_density(save=True)
             self.plot_fluxon_id(save=True)
@@ -386,19 +387,29 @@ def read_flux_world(filename):
             ax.set_xlabel("X")
             ax.set_ylabel("Y")
             ax.set_zlabel("Z")
-            ax.set_title("Flux World Visualization")
+            ax.set_title(f"Flux World CR {self.cr} Visualization")
             # plt.legend(loc="upper right")
             plt.tight_layout()
             if save:
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world.png"))
-                zoom = extent / 5
+                zoom = 3
                 ax.set_xlim(-zoom, zoom)
                 ax.set_ylim(-zoom, zoom)
                 ax.set_zlim(-zoom, zoom)
                 plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom.png"))
+                # plt.show(block=True)
+                # Save six camera angle views for zoomed plot: positive and negative x, y, z
+                for elev, azim, coord in [
+                    (0, 180, "x"), (0, 0, "-x"),
+                    (0, 90, "y"), (0, -90, "-y"),
+                    (90, 0, "z"), (-90, 0, "-z")
+                ]:
+                    ax.view_init(elev=elev, azim=azim)
+                    plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom_{coord}.png"))
                 plt.close(fig)
             else:
                 plt.show()
+            print("Done with world plotting!")
 
         def generate_coordinate_grid(self, num_points_per_axis=20, padding=0.1):
             fx_min, fx_max = self.all_fx.min(), self.all_fx.max()
@@ -1357,8 +1368,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         the_world_file = sys.argv[1]
     else:
-        the_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2230/world/cr2230_f1000_hmi_relaxed_s800.flux"
+        the_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2150/world/cr2150_f1000_hmi_relaxed_s300.flux"
 
     f_world = read_flux_world(the_world_file)
-    # f_world.plot_fluxon_id()
     f_world.plot_all(save=True)

@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import matplotlib.patches as patches
 import numpy as np
+from astropy import units as u
 
 # Import the modules (adjust the import paths as needed)
 from fluxpype.science.open_world_python import read_flux_world
@@ -15,7 +16,7 @@ from sunpy.map import Map
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f20_hmi_relaxed_s2000.flux"
 # def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f400_hmi.flux"
 def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2150/world/cr2150_f1000_hmi_relaxed_s300.flux"
-method = "vertex"
+method = "fluxel" # or "vertex"
 
 
 def do_fluxlight(flux_world_file, save=True):
@@ -34,8 +35,8 @@ def do_fluxlight(flux_world_file, save=True):
     # Run the Thomson scattering simulation, informing the model with the flux world
     print("Starting Fluxlight...")
     results = simulate_thomson_scattering(
-        npix=250,
-        nz=250,
+        npix=300,
+        nz=300,
         fov=3.0,
         flux_world=flux_world,
         lower_bound=1.05,
@@ -69,35 +70,70 @@ def do_fluxlight(flux_world_file, save=True):
     fig, axs = plt.subplots(2, 2, figsize=(12, 10), sharex=True, sharey=True)
 
     im1 = axs[0, 0].imshow(B_total.to_value(), origin="lower", extent=extent_val, cmap="plasma", norm=brightness_norm)
-    axs[0, 0].set_title("Log Total Brightness")
+    axs[0, 0].set_title("Log Total Brightness (tB)")
     fig.colorbar(im1, ax=axs[0, 0], label="Intensity")
 
     im2 = axs[0, 1].imshow(B_polarized.to_value(), origin="lower", extent=extent_val, cmap="plasma", norm=brightness_norm)
     axs[0, 1].set_title("Log Polarized Brightness (pB)")
     fig.colorbar(im2, ax=axs[0, 1], label="Intensity")
 
-    # Placeholder for plane-of-sky density: show redundant brightness
+    # Build a SunPy meta dictionary and apply RHEF to the column density map:
     cd = Column_Density.to_value()
-    im3 = axs[1, 0].imshow(rhef(Map(cd)), origin="lower", extent=extent_val, cmap="plasma")
-    axs[1, 0].set_title("Redundant Total Brightness")
-    fig.colorbar(im3, ax=axs[1, 0], label="Intensity")
+    nx, ny = cd.shape
+    fov_rsun = fov.to_value()
+    pixscale_rsun = (2 * fov_rsun) / nx
+
+    from sunpy.coordinates import sun
+    from astropy import constants as const
+    from astropy import units as u
+    angular_radius = sun.angular_radius().to(u.arcsec)
+    rsun_arcsec = angular_radius.value
+    pixscale_arcsec = pixscale_rsun * rsun_arcsec
+
+    meta = {
+        "cdelt1": pixscale_arcsec,
+        "cdelt2": pixscale_arcsec,
+        "cunit1": "arcsec",
+        "cunit2": "arcsec",
+        "crpix1": nx / 2,
+        "crpix2": ny / 2,
+        "crval1": 0.0,
+        "crval2": 0.0,
+        "ctype1": "HPLN-TAN",
+        "ctype2": "HPLT-TAN",
+        "rsun_ref": rsun_arcsec,
+        "dsun_obs": const.au.to_value(u.m),
+        "hgln_obs": 0.0,
+        "hglt_obs": 0.0,
+        "obsrvtry": "Earth",
+        "naxis1": nx,
+        "naxis2": ny,
+    }
+
+    density_map = Map(cd, meta)
+    filtered_density = rhef(density_map, application_radius=1.05*u.R_sun, upsilon="none")
+    im3 = axs[1, 0].imshow(filtered_density.data, origin="lower", extent=extent_val, cmap="magma")
+    axs[1, 0].set_title("RHEF-filtered Column Density")
+    fig.colorbar(im3, ax=axs[1, 0], label="log(cm⁻²)")
 
     im4 = axs[1, 1].imshow(Polarization_fraction, origin="lower", extent=extent_val, cmap="viridis")
     axs[1, 1].set_title("Polarization Fraction (pB/tB)")
     fig.colorbar(im4, ax=axs[1, 1])
 
     for ax in axs.flat:
-        sun_circle = patches.Circle((0, 0), 1, color="yellow", alpha=0.8, zorder=10)
+        sun_circle = patches.Circle((0, 0), 1, color="yellow", alpha=1.0, zorder=10)
         ax.add_patch(sun_circle)
         ax.set_facecolor("black")
 
         ax.set_xlabel("Solar Radii")
         ax.set_ylabel("Solar Radii")
 
-    plt.suptitle("Forward Modeling of FLUX World")
+    plt.suptitle(f"Forward Modeling of FLUX World CR {flux_world.cr}")
     plt.tight_layout()
     if save:
-        plt.savefig(f"{light_path}/cr{flux_world.cr}_fluxlight_light_{method}.png")
+        lightpath = f"{light_path}/cr{flux_world.cr}_fluxlight_light_{method}.png"
+        print(lightpath)
+        plt.savefig(lightpath)
         plt.close(fig)
     else:
         plt.show()
