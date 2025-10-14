@@ -1,5 +1,5 @@
 #!/usr/bin/python
-#TEMPEST: The Efficient Modified-Parker-Equation-Solving Tool
+# TEMPEST: The Efficient Modified-Parker-Equation-Solving Tool
 #   17 Sep 2014 - Documented version 1.3.7 for public use
 #               Cite Woolsey & Cranmer (2014) ApJ 787, 2, 160
 # copied into fluxpype on 4/24/24 by Gilly
@@ -39,8 +39,9 @@ def main(file=None):
             calculated turbulent efficiency profile
     EXTERNAL PACKAGES: numpy, scipy
     """
+    print(f"TEMPEST Begins...", flush=True)
     init(file)
-    #read in heights and magnetic field models
+    # read in heights and magnetic field models
     #   read_bzin: uses a zephyr_bz.in formatted file
     multiple=2
     nmods,nsteps,B,zx = read_bzin(infile,multiple)
@@ -53,7 +54,8 @@ def main(file=None):
     dBdr = quickDeriv(B,rm,nmods,nsteps)
     T,dTdr,zTR = fitT(B,zx)
     np.savez(filename+'_inputs', zx=zx, B=B, T=T, zTR=zTR)
-    #***************************************************************
+    # ***************************************************************
+    print("MIRANDA", flush=True)
     u1,zC1 = miranda(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR)
 
     itexp=0.1
@@ -63,7 +65,8 @@ def main(file=None):
     uout=np.zeros((nmods,nsteps))
     uin = u1.copy()
 
-    #need to run models individually until each converges
+    # need to run models individually until each converges
+    print("PROSPERO", flush=True)
     Bj = np.zeros((1,nsteps))
     dBdrj = np.zeros((1,nsteps))
     Tj = np.zeros((1,nsteps))
@@ -77,16 +80,21 @@ def main(file=None):
         dTdrj[0,:] = dTdr[j,:].copy()
         uinj[0,:] = uin[j,:].copy()
         while(((changemodels[j] > 0.005) and (it<300)) or (it<10)):
-            uj,zCj = prospero(rm,1,nsteps,Bj,dBdrj,Tj,dTdrj,zTR[j],uinj)
-            #allchange for model j based on a single model run
-            allchange[j,:]=abs((uj[0,:]-uinj[0,:])/uinj[0,:])
-            uinj[0,:]=((uinj[0,:]**(1.0-itexp))*(uj[0,:]**(itexp)))
-            changemodels[j]=np.mean(allchange[j,:])
+            try:
+                uj,zCj = prospero(rm,1,nsteps,Bj,dBdrj,Tj,dTdrj,zTR[j],uinj)
+                # allchange for model j based on a single model run
+                allchange[j,:]=abs((uj[0,:]-uinj[0,:])/uinj[0,:])
+
+                uinj[0,:]=((uinj[0,:]**(1.0-itexp))*(uj[0,:]**(itexp)))
+                changemodels[j]=np.mean(allchange[j,:])
+            except FloatingPointError as e:
+                print(f"Floating point error: {e}")
             it += 1
         uout[j,:] = uinj[0,:].copy()
         print (j,', # iterations:',it,', conv:',changemodels[j])
 
     u,zC = prospero(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR,uout)
+    print("Saving Prospero Model...")
     np.savez(filename+'_prospero', u=u, zC=zC)
 
 def init(file=None):
@@ -596,10 +604,10 @@ def fullRHS(r,models,steps,B,dBdr,T,dTdr,zTR,u):
     tref = np.zeros((models,steps))
     teddy = np.zeros((models,steps))
     eff = np.zeros((models,steps))
-    #mass flux conservation: rho(r) = (rhoTR*uTR/BTR)*(B(r)/u(r))
+    # mass flux conservation: rho(r) = (rhoTR*uTR/BTR)*(B(r)/u(r))
     iTR = np.zeros(models)
     if models == 1:
-        #convert scalar variable to numpy array
+        # convert scalar variable to numpy array
         zTR1 = np.zeros(1)
         zTR1[0] = zTR
         zTR = zTR1.copy()
@@ -615,13 +623,15 @@ def fullRHS(r,models,steps,B,dBdr,T,dTdr,zTR,u):
         iTR[j] = int(TRcheck.argmin())
         iTRint = int(iTR[j])
         rho[j,iTRint] = 10**rhoTRexp # * 1.4?
-        rho[j,:] = ((rho[j,iTRint]*u[j,iTRint]/B[j,iTRint])*
-                    (B[j,:]/u[j,:]))
-
-    #wave action conservation (Cranmer 2010, eq. 29):
+        try:
+            rho[j,:] = ((rho[j,iTRint]*u[j,iTRint]/B[j,iTRint])*
+                        (B[j,:]/u[j,:]))
+        except FloatingPointError as e:
+            print(e)
+    # wave action conservation (Cranmer 2010, eq. 29):
     #   (u(r)+VA)**2 UA / (VA*B(r)) = constant, Sbase in init()
     limit = 10.0
-    rho = np.abs(rho)
+    rho = np.abs(rho) + 1e-4 * np.abs(rho)
     B = np.abs(B)
     VA = B/np.sqrt(4*np.pi*rho)
     UA,QA = waveaction(r,B,zTR,u,rho,VA,Sbase,np.ones((models,steps)))
@@ -961,6 +971,8 @@ def plot_tempest(file, ax=None):
     if not os.path.exists(this_dir):
         os.makedirs(this_dir)
 
+    print(f"{this_dir = }")
+
     # Define the regex pattern to find 'cr' followed by numbers
     pattern = r'cr(\d+)'
 
@@ -1001,7 +1013,7 @@ def plot_tempest(file, ax=None):
     return zx, zTR, zcrit, u_miranda, u_prospero, rho
 
 
-def_file = "fluxpype/zephyr_2007_2013.sav"
+def_file = "fluxpype/plotting/zephyr_2007_2013.sav"
 
 def load_zephyr(file = def_file):
     from scipy.io import readsav
@@ -1020,7 +1032,6 @@ def load_zephyr(file = def_file):
     # [print(k, data[k].shape) for k in data.keys()]
 
     return data
-
 
 
 def write_interpolated_file(filename, tempest_file):
@@ -1072,8 +1083,8 @@ def write_interpolated_file(filename, tempest_file):
         print(f"Mag Plotting {outfile}")
         if not os.path.exists(os.path.dirname(outfile)):
             os.makedirs(os.path.dirname(outfile))
-        # plt.show(block=True)
         plt.savefig(outfile)
+        plt.show(block=True)
         plt.close(fig)
 
 
@@ -1087,8 +1098,6 @@ def write_interpolated_file(filename, tempest_file):
             f.write(f"\n{i+1}  {len(fine_radial_distance)}")
             for bb in b_mag_list[i]:
                 f.write(f"\n{bb:0.8e}")
-
-
 
 
 def reinterpolate_velocity(tempest_file, original_data_file):
@@ -1118,6 +1127,7 @@ def reinterpolate_velocity(tempest_file, original_data_file):
         results = pd.concat([results, temp_df], ignore_index=True)
 
     # Optionally, return or save the DataFrame
+    print(f"{original_data_file = }")
     results.to_csv(original_data_file.replace('bmag_all.dat', 'wind_tempest_reinterpolated.dat'), sep=' ', index=False)
     return results
 
@@ -1225,16 +1235,16 @@ def run_tempest():
     filename, configs = parse_args()
 
     # print(filename)
-    tempest_file = filename.replace("all.dat", "tempest.dat")
-    result_file = filename.replace("all.dat", "tempest_result_inputs.npz")
-    if not os.path.exists(tempest_file) or not os.path.exists(result_file):
+    tempest_file = filename.replace("bmag_all.dat", "tempest.dat")
+    result_file = filename.replace("bmag_all.dat", "tempest_result_inputs.npz")
+    if True: #not os.path.exists(tempest_file) or not os.path.exists(result_file):
         print(f"Tempest file does not exist. Creating one at {tempest_file}")
         write_interpolated_file(filename, tempest_file)
         main(tempest_file)
         reinterpolate_velocity(tempest_file, filename)
     else:
         print(f"Tempest file exists at {tempest_file}")
-    plot_tempest(tempest_file)
+    # plot_tempest(tempest_file)
     # plot_from_existing_file(filename)
 
 if __name__ == '__main__':

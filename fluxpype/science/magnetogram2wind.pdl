@@ -328,28 +328,39 @@ system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
 #######################################################################################################
 ## Begin solar wind computation  ######################################################################
 #######################################################################################################
+
 our ( $out_b, $out_fr, $out_wind, $out_b_all );
-
-
 our $this_world_orig;
 # our $this_world_relaxed;
 my $selected_file_path;
 my $original_file_path;
-($this_world_relaxed, $this_world_orig, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
-our $use_world = 0;
-my $plot_stiff = 0;
-if ($plot_stiff){
-  print "Using Stiff World:\n";
-  $use_world = $this_world_orig;
-} else {
-  print "Using Relaxed World:\n";
-  $use_world = $this_world_relaxed;
+if (1){
+
+
+
+  ($this_world_relaxed, $this_world_orig, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
+
+  our $use_world = 0;
+  my $plot_stiff = 0;
+  if ($plot_stiff){
+    print "Using Stiff World:\n";
+    $use_world = $this_world_orig;
+  } else {
+    print "Using Relaxed World:\n";
+    $use_world = $this_world_relaxed;
+  }
+    print $use_world;
+
+    $recompute = 1;
+
+  ( $out_b, $out_fr, $out_wind, $out_b_all ) =
+    get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
+
+
 }
-  print $use_world;
 
- ( $out_b, $out_fr, $out_wind, $out_b_all ) =
-  get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
+
 
 #######################################################################################################
 ## Plot the Solar wind Solutions  #####################################################################
@@ -391,7 +402,7 @@ sub run_all_plots {
         "python3 " . catfile($plot_dir, "plot_bmag.py") .           " --file $out_b" . $common_opts,
 
         # Multi-plot of all magnetic fields from the batch
-        # "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
+        "python3 " . catfile($plot_dir, "multiplot_bmag_all.py") .  " --file $out_b_all" . $common_opts,
 
         # # Plot magnetic fields in the fluxon world
         # "python3 " . catfile($plot_dir, "plot_bmag_all.py") .       " --file $out_b_all" . $common_opts,
@@ -400,19 +411,19 @@ sub run_all_plots {
         # "python3 " . catfile($plot_dir, "plot_bmag_fill.py") .      " --file $out_b_all" . $common_opts,
 
         # Plot FR
-        "python3 " . catfile($plot_dir, "plot_fr.py") .               " --file $out_fr" . $common_opts,
+        # "python3 " . catfile($plot_dir, "plot_fr.py") .               " --file $out_fr" . $common_opts,
 
-        # Detailed wind map plot
-        "python3 " . catfile($plot_dir, "plot_wind_map_detailed.py") . " --file $out_wind" . $common_opts,
+        # # Detailed wind map plot
+        # "python3 " . catfile($plot_dir, "plot_wind_map_detailed.py") . " --file $out_wind" . $common_opts,
 
-        # Wind map square (with additional wind method option)
-        "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
+        # # Wind map square (with additional wind method option)
+        # "python3 " . catfile($plot_dir, "plot_wind_map_square.py") . " --file $out_wind" . $common_opts . " --wind_method $flow_method",
 
-        # Wind map square (with additional wind method option)
-        "python3 " . catfile($plot_dir, "plot_wind_map_latitude_cycle.py") . " --file $out_wind --resave_from_dat" . $common_opts,
+        # # Wind map square (with additional wind method option)
+        # "python3 " . catfile($plot_dir, "plot_wind_map_latitude_cycle.py") . " --file $out_wind --resave_from_dat" . $common_opts,
 
         # Plot wind solutions (using a different file structure for input data)
-        # "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
+        "python3 " . catfile($plot_dir, "plot_wind_solutions.py") . " $datdir/batches/$batch_name/data/cr$CR/wind",
 
         # "python3 " . catfile($sci_dir, "open_world_python.py") . " $datdir/batches/$batch_name/data/cr$CR/world"
     );

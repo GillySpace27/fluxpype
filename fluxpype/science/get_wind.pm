@@ -259,6 +259,7 @@ sub get_wind {
     }
     else {
         print $skipstring;
+        return $out_b, $out_fr, $out_wind, $out_b_all;
     }
 
     print "\t\t\t```````````````````````````````\n\n\n\n";

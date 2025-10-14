@@ -211,7 +211,7 @@ sub map_fluxon_flow_parallel_master {
 
     print "INFO: $num_open_fluxons open fluxons / $num_total_fluxons total\n";
     print "     -> $num_active_fluxons footpoints total.\n\n";
-    print "     Beginning Calculation...\n\n";
+    print "     Beginning Calculation of $flow_method wind...\n\n";
 
     # If requested, run a precomputation step
     if ($flow_method eq "tempest") {
@@ -225,6 +225,7 @@ sub map_fluxon_flow_parallel_master {
     }
     elsif ($flow_method eq "wsa") {
         # run the python file footpoint_distances.py
+        print("Building footpoint_distances...");
         system("python3 fluxpype/science/footpoint_distances_2.py --cr $CR") == 0
             or die "footpoint_distances_2.py returned error $?";
 
@@ -315,10 +316,10 @@ sub map_fluxon_flow_parallel_master {
             elsif ($flow_method eq 'schonfeld') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_schonflow($fluxon);
             }
-            elsif ($flow_method eq 'psw') {
-                # Presumably gen_fluxon_pswflow exists
-                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
-            }
+            # elsif ($flow_method eq 'psw') {
+            #     # Presumably gen_fluxon_pswflow exists
+            #     ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
+            # }
             elsif ($flow_method eq 'tempest') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
                     = gen_fluxon_tempestflow($fluxon, $fluxon_id, $output_file_name);

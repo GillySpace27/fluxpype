@@ -40,7 +40,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-from science.pfss_funcs import pixel_to_latlon
+from fluxpype.science.pfss_funcs import pixel_to_latlon
 from fluxpype.pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
                             shorten_path, get_ax)
 
@@ -68,13 +68,11 @@ def magnet_plot(
     if True:
         print("\t\t(py) Determining Footpoint Distances")
 
-
-
     if configs is not None:
         datdir = datdir or configs.get("data_dir", None)
         _batch = _batch or configs.get("batch_name", None)
         get_cr = get_cr or configs.get("cr", None)
-        nwant = nwant   or configs.get("nwant", None)
+        nwant = nwant   or int(configs.get("fluxon_count", None)[0])
         reduce_amt = reduce_amt or configs.get("mag_reduce", None)
         if configs.get('adapt', False):
             inst = "adapt"
@@ -85,13 +83,11 @@ def magnet_plot(
         print("No configs given!")
         raise ValueError
 
-
     # Define the directory paths for the files
     floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
     top_dir   = f"{datdir}/batches/{_batch}/imgs/footpoints/"
     if not path.exists(top_dir):
         os.makedirs(top_dir)
-
 
     # Define the file names with their complete paths
     open_file   = open_f     or   f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
@@ -107,7 +103,6 @@ def magnet_plot(
     magnet, header = load_fits_magnetogram(batch=_batch, ret_all=True, configs=configs, fname=fname)
     f_lat, f_lon, f_sgn, _fnum = pixel_to_latlon(magnet, header, fluxon_location)
 
-
     if do_print_top:
         print(f"\t\tOpening {shorten_path(open_file)}...")
     oflnum, oflx, olat, olon, orad = np.loadtxt(open_file, unpack=True)
@@ -116,12 +111,11 @@ def magnet_plot(
         print(f"\t\tOpening {shorten_path(closed_file)}...\n")
     cflnum, cflx, clat, clon, crad = np.loadtxt(closed_file, unpack=True)
 
-
     ## Keep only the values where the radius is 1.0
     rtol = 0.001
     get_r = 1.0
 
-    #Open fields
+    # Open fields
     oflnum_low = oflnum[np.isclose(orad, get_r, rtol)]
     oflx_low =     oflx[np.isclose(orad, get_r, rtol)]
     olat_low =     olat[np.isclose(orad, get_r, rtol)]
@@ -150,7 +144,6 @@ def magnet_plot(
     fluxon_map_histput_path_top = path.join(top_dir, pic_name)
     fluxon_csv_histput_path_top = path.join(floc_path, "distances.csv")
 
-
     # Check if the plot already exists
     do_plot = False
     pic_paths = [fluxon_map_histput_path, fluxon_map_histput_path_top]
@@ -171,7 +164,6 @@ def magnet_plot(
         #         extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=5, alpha=0.8)
         ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
                 extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=-5, alpha=1)
-
 
         # # Plot all the fluxons
         # Filter positive and negative cases for closed fluxons
@@ -204,11 +196,8 @@ def magnet_plot(
         if plot_open:
             ax0.scatter(f_lon_positive_open, f_lat_positive_open, s=5**2, c='red', alpha=1.0, label='Positive (Open)', edgecolors='k')
             ax0.scatter(f_lon_negative_open, f_lat_negative_open, s=5**2, c='blue', alpha=1.0, label='Negative (Open)', edgecolors='k')
-
-        # plt.show()
-
-
-
+        # print("A")
+        # plt.show(block=True)
 
         # Convert to radians
         ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
@@ -232,6 +221,9 @@ def magnet_plot(
         img_width, img_height = magnet.T.shape
 
         # Plotting the histogram
+        print("B")
+        # plt.show(block=True)
+
         fig, ax = plt.subplots()
         figbox.append(fig)
 
@@ -253,8 +245,6 @@ def magnet_plot(
 
         # Scatter plot on non-zero bins
         ax.scatter(open_points_lons, open_points_lats, c='red', s=50, alpha=0.6)
-
-
 
         from scipy.spatial import cKDTree
         # # Normalize and scale points to image dimensions
@@ -293,7 +283,8 @@ def magnet_plot(
         vmin = 0
         vmax = distance_array_degrees.max()
 
-
+        print("C")
+        # plt.show(block=True)
 
         # import numpy as np
         # import matplotlib.pyplot as plt
@@ -310,7 +301,7 @@ def magnet_plot(
         # fig, ax0 = plt.subplots()
         im = new_ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
                         alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        plt.colorbar(im, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im.figure.colorbar(im, ax=new_ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
         plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
 
         # Create the interpolator function
@@ -329,27 +320,23 @@ def magnet_plot(
         new_ax.scatter(th_olow, ph_olow, c=distances_points, s=100, cmap='viridis',
                     alpha=1, edgecolors='k', zorder=100000, vmin=vmin, vmax=vmax)
 
-
-        CS = new_ax.contour(longitude, latitude, img_distances, levels=[10], cmap='plasma')  # Adjust levels for more/fewer lines
-
-        # Prepare a new figure
-        # fig, ax = plt.subplots()
-
-        # Loop over contour levels and paths
-        # Extract contour paths
+        # Draw a contour and collect its vertex paths robustly using `allsegs`
+        CS = new_ax.contour(longitude, latitude, img_distances, levels=[10])
+        # Extract contour segments for every level (here only one level is used)
         contour_paths = []
-        for collection in CS.collections:
-            for pth in collection.get_paths():
-                contour_paths.append(pth.vertices)
+        for lvl in CS.allsegs:
+            for seg in lvl:
+                contour_paths.append(np.asarray(seg))
 
+        print("D")
+        # plt.show(block=True)
+        # Prepare a new figure/axes for the contour-derived distance map
         fig, ax = plt.subplots()
         figbox.append(fig)
 
         for pth in contour_paths:
             ax.plot(pth[:, 0], pth[:, 1], 'r.', lw=0)  # Plotting contour lines in red
-        # plt.show()
-
-
+        plt.show(block=True)
 
         points = np.array([pth[:, 0], pth[:, 1]]).T #These are in radians and sin(radians)
 
@@ -382,11 +369,8 @@ def magnet_plot(
 
         im = ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
                         alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        plt.colorbar(im, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im.figure.colorbar(im, ax=ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
         plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
-
-
-
 
         # Create the interpolator function
         dist_interp_2 = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
@@ -428,13 +412,11 @@ def magnet_plot(
         print("\t\t    Success!")
         print("\t\t\t```````````````````````````````\n\n")
 
-    # plt.show()
+    plt.show(block=True)
+    import pdb; pdb.set_trace()
     for fig in figbox:
         plt.close(fig)
     return _n_open, _n_closed, _n_flux, _fnum, _n_outliers
-
-
-
 
 
 ########################################################################

@@ -294,7 +294,8 @@ def parse_list_or_range(value):
 
 def parse_list(value):
     """Parse a string into a list."""
-    return value.strip("[]").split(",") if value else []
+    the_list = value.strip("[]").split(",") if value else []
+    return [x.strip(" ").casefold() for x in the_list]
 
 
 def convert_value(value):

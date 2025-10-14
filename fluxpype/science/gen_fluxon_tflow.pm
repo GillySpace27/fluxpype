@@ -118,8 +118,8 @@ sub gen_fluxon_tflow {
     my $velocity_increment = 20;
 
     # Define an initial lower bound with a breeze solution
-    my $lower_velocity_bound = 50;
-    my $upper_velocity_bound = 800;
+    my $lower_velocity_bound = 20;
+    my $upper_velocity_bound = 200;
 
     (our $r_vr_scaled, my $r_fr_scaled, my $b_theta, my $b_phi) = gen_fluxon_flow($fluxon, {'v0'=>$lower_velocity_bound, 'cs'=>$sound_speed});
 
