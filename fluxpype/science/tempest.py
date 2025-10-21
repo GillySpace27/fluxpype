@@ -99,7 +99,7 @@ def main(file=None):
         Tj[0, :] = T[j, :].copy()
         dTdrj[0, :] = dTdr[j, :].copy()
         uinj[0, :] = uin[j, :].copy()
-        while ((changemodels[j] > 0.005) and (it < 300)) or (it < 10):
+        while ((changemodels[j] > 0.005) and (it < 100)) or (it < 10):
             try:
                 uj, zCj = prospero(rm, 1, nsteps, Bj, dBdrj, Tj, dTdrj, zTR[j], uinj)
                 # allchange for model j based on a single model run
@@ -113,7 +113,7 @@ def main(file=None):
             it += 1
         uout[j, :] = uinj[0, :].copy()
         if changemodels[j] > 0.005:
-            uout[j, :] *= np.NAN
+            uout[j, :] *= 0
             print("Model did not converge!!")
             fail += 1
         print(j, ", # iterations:", it, ", conv:", changemodels[j])
@@ -1020,7 +1020,7 @@ def plot_tempest(file, ax=None):
     # ax.plot(zx-1, u_miranda.T, 'g')
     # ax.plot(zx-1, u_miranda[0].T, 'g', label='$u_{sw}~$Miranda')
     ax.plot(zx, u_prospero.T, "m:")
-    ax.plot(zx, np.ones_like(u_prospero[0].T), "m:", label="$u_{sw}~$Prospero")
+    ax.plot(zx, np.NAN * np.ones_like(u_prospero[0].T), "m:", label="$u_{sw}~$Prospero")
     # ax.plot(zx, rho.T*_floor(10, EPS) ** 5, label='rho x $10^5$')
     # print(zTR)
     Rsun = 6.955e10
@@ -1165,8 +1165,8 @@ def reinterpolate_velocity(tempest_file, original_data_file):
             )
             reinterpolated_velocity = interpolator(original_radius)
 
-            if np.any(reinterpolated_velocity <= 0) or np.any(reinterpolated_velocity > 2500):
-                # reinterpolated_velocity = np.ones_like(reinterpolated_velocity)*np.NAN
+            if np.any(reinterpolated_velocity <= 10**-2) or np.any(reinterpolated_velocity > 2500):
+                reinterpolated_velocity = np.ones_like(reinterpolated_velocity)*np.NAN
                 print(f"Invalid values for velocity detected and excluded on {fnum = }")
                 continue
 
@@ -1296,7 +1296,7 @@ def run_tempest():
     # print(filename)
     tempest_file = filename.replace("bmag_all.dat", "tempest.dat")
     result_file = filename.replace("bmag_all.dat", "tempest_result_inputs.npz")
-    if True:  # not os.path.exists(tempest_file) or not os.path.exists(result_file):
+    if True: #not os.path.exists(tempest_file) or not os.path.exists(result_file):
         print(f"Tempest file does not exist. Creating one at {tempest_file}")
         write_interpolated_file(filename, tempest_file)
         main(tempest_file)
