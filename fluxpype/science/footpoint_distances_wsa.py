@@ -35,19 +35,34 @@ Dependencies:
 import os
 import os.path as path
 import argparse
+
 # import matplotlib as mpl; mpl.use("qt5agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from scipy.ndimage import binary_dilation, binary_erosion, binary_opening, binary_closing, binary_fill_holes, generate_binary_structure, gaussian_filter, label
+from scipy.ndimage import (
+    binary_dilation,
+    binary_erosion,
+    binary_opening,
+    binary_closing,
+    binary_fill_holes,
+    generate_binary_structure,
+    gaussian_filter,
+    label,
+)
 
 # --- Morphology defaults (conservative) ---
-_MORPH_DILATE_ITERS = 1      # light expansion to make boundaries more space-filling
-_MORPH_ERODE_ITERS  = 0      # no erosion by default
-_MORPH_CLOSE_ITERS  = 1      # close small gaps
-_MORPH_OPEN_ITERS   = 0      # do not open by default
-_MORPH_MIN_SIZE     = 32     # remove tiny speckles
-_MORPH_SMOOTH_SIGMA = 0.6    # light Gaussian smoothing before thresholding
+_MORPH_DILATE_ITERS = 8  # light expansion to make boundaries more space-filling
+_MORPH_ERODE_ITERS = 6  # no erosion by default
+_MORPH_CLOSE_ITERS = 0  # close small gaps
+_MORPH_OPEN_ITERS = 0  # do not open by default
+_MORPH_MIN_SIZE = 16  # remove tiny speckles
+_MORPH_SMOOTH_SIGMA = 0.4  # light Gaussian smoothing before thresholding
+
+# --- Morphology debug ---
+_MORPH_DEBUG = True  # set True to save a panel of intermediate stages
+_MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
+
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
     """
@@ -93,10 +108,11 @@ def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
 
     return B
 
+
 # --- Helper: single-pixel outline from thick boundary mask ---
 def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
     """
-    Build a continuous, one‑pixel outline around the region indicated by a boundary mask.
+    Build a continuous, one-pixel outline around the region indicated by a boundary mask.
     Steps:
       1) Expand + close using 8-neighborhood to connect diagonals.
       2) Fill interior holes to get a solid region.
@@ -111,7 +127,7 @@ def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
     # 1) Connect diagonals and small gaps more aggressively than _morph_spacefill
     R = B.copy()
     R = binary_dilation(R, st8)  # one light dilation
-    R = binary_closing(R, st8)   # close tiny gaps
+    R = binary_closing(R, st8)  # close tiny gaps
 
     # 2) Fill interior to avoid "red foam"
     R = binary_fill_holes(R)
@@ -125,10 +141,11 @@ def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
             keep[0] = False
             R = keep[lbl]
 
-    # 4) 1‑pixel perimeter via morphological gradient (region minus eroded region)
+    # 4) 1-pixel perimeter via morphological gradient (region minus eroded region)
     er = binary_erosion(R, st8)
     outline = R & ~er
     return outline
+
 
 # --- Helper: reconstruct filled region from boundary mask for single-line contouring ---
 def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
@@ -161,16 +178,141 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
     return R
 
 
+# --- Helper: Save 8-panel figure of intermediate morphology steps ---
+def _debug_morph_steps(
+    boundary_mask_raw: np.ndarray, lon_1d: np.ndarray, lat_1d: np.ndarray, savepath: str | None = None
+) -> None:
+    """
+    Save an 8-panel figure showing the morphological stages:
+    raw, smoothed, closed, dilated, eroded, cleaned, region(raw), region(morphed)
+    """
+    B0 = boundary_mask_raw.astype(bool)
+
+    # 1) smoothed
+    if _MORPH_SMOOTH_SIGMA and _MORPH_SMOOTH_SIGMA > 0:
+        sm = gaussian_filter(B0.astype(float), sigma=_MORPH_SMOOTH_SIGMA)
+        B1 = sm >= 0.5
+    else:
+        B1 = B0.copy()
+
+    # 4-neighborhood for the “spacefill” sequence (conservative, preserves shapes)
+    st4 = generate_binary_structure(2, 1)
+
+    # 2) closed
+    B2 = B1.copy()
+    for _ in range(int(_MORPH_CLOSE_ITERS)):
+        B2 = binary_closing(B2, st4)
+
+    # 3) dilated
+    B3 = B2.copy()
+    for _ in range(int(_MORPH_DILATE_ITERS)):
+        B3 = binary_dilation(B3, st4)
+
+    # 4) eroded
+    B4 = B3.copy()
+    for _ in range(int(_MORPH_ERODE_ITERS)):
+        B4 = binary_erosion(B4, st4)
+
+    # 5) cleaned (remove tiny components)
+    B5 = B4.copy()
+    if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
+        lbl, n = label(B5)
+        if n > 0:
+            counts = np.bincount(lbl.ravel())
+            keep = counts >= _MORPH_MIN_SIZE
+            keep[0] = False
+            B5 = keep[lbl]
+
+    # Regions for single-line closed contours
+    region_raw = _region_from_boundary(B0)
+    region_morph = _region_from_boundary(B5)
+
+    # Assemble figure
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
+    panels = [
+        ("Raw", B0),
+        (f"Smoothed σ={_MORPH_SMOOTH_SIGMA}", B1),
+        (f"Closed ×{_MORPH_CLOSE_ITERS}", B2),
+        (f"Dilated ×{_MORPH_DILATE_ITERS}", B3),
+        (f"Eroded ×{_MORPH_ERODE_ITERS}", B4),
+        (f"Cleaned ≥{_MORPH_MIN_SIZE}", B5),
+        ("Region (raw)", region_raw),
+        ("Region (morphed)", region_morph),
+    ]
+    extent = (lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1]))
+    for ax, (title, M) in zip(axes.ravel(), panels):
+        im = ax.imshow(M.astype(int), origin="lower", interpolation="nearest", extent=extent, aspect="auto")
+        ax.set_title(title)
+        ax.set_xlabel("lon (rad)")
+        ax.set_ylabel("sin(lat)")
+
+    if savepath and _MORPH_DEBUG_SAVE:
+        plt.savefig(savepath, dpi=200)
+    plt.close(fig)
+
+
+def _gc_distance_map_to_boundary(lon_1d: np.ndarray, lat_1d: np.ndarray, boundary_mask: np.ndarray) -> np.ndarray:
+    """
+    Return a (n_lat, n_lon) array of great-circle distances [deg] from each pixel
+    (lon_1d, lat_1d grid) to the nearest TRUE pixel in `boundary_mask`.
+
+    Notes
+    -----
+    * `boundary_mask` must be shape (n_lat, n_lon) and mark boundary pixels (True).
+    * Distances are computed on the unit sphere using a KDTree in 3D:
+        angle = 2 * arcsin( ||x - x_bnd|| / 2 ), in degrees.
+    """
+    lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (n_lat, n_lon)
+
+    b_lon = lon_grid[boundary_mask]
+    b_lat = lat_grid[boundary_mask]
+
+    if b_lon.size == 0:
+        return np.full((lat_1d.size, lon_1d.size), np.nan, dtype=float)
+
+    def _sph2cart(lon, lat):
+        cl = np.cos(lat)
+        return np.column_stack((cl * np.cos(lon), cl * np.sin(lon), np.sin(lat)))
+
+    from scipy.spatial import cKDTree
+
+    b_xyz = _sph2cart(b_lon, b_lat)
+    tree = cKDTree(b_xyz)
+
+    all_xyz = _sph2cart(lon_grid.ravel(), lat_grid.ravel())
+    d_chord, _ = tree.query(all_xyz, k=1, workers=-1)
+
+    angles_deg = 2.0 * np.arcsin(np.clip(d_chord * 0.5, 0.0, 1.0)) * (180.0 / np.pi)
+    return angles_deg.reshape(lat_1d.size, lon_1d.size)
+
+
 from fluxpype.science.pfss_funcs import pixel_to_latlon
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
-                            shorten_path, get_ax)
+from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path, get_ax
+
 
 def magnet_plot(
-        get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=None, force=False, reduce_amt=0,
-        nact=0, nwant=None, do_print_top=True, ax=None, verb=True, ext="png",
-        plot_all=True, plot_open=True, do_print=False, vmin=-500, vmax=500, configs=None, legend=False):
-
-    """ This function has been re-imagined into a
+    get_cr=None,
+    datdir=None,
+    _batch=None,
+    open_f=None,
+    closed_f=None,
+    force=False,
+    reduce_amt=0,
+    nact=0,
+    nwant=None,
+    do_print_top=True,
+    ax=None,
+    verb=True,
+    ext="png",
+    plot_all=True,
+    plot_open=True,
+    do_print=False,
+    vmin=-500,
+    vmax=500,
+    configs=None,
+    legend=False,
+):
+    """This function has been re-imagined into a
 
     Parameters
     ----------
@@ -193,9 +335,9 @@ def magnet_plot(
         datdir = datdir or configs.get("data_dir", None)
         _batch = _batch or configs.get("batch_name", None)
         get_cr = get_cr or configs.get("cr", None)
-        nwant = nwant   or int(configs.get("fluxon_count", None)[0])
+        nwant = nwant or int(configs.get("fluxon_count", None)[0])
         reduce_amt = reduce_amt or configs.get("mag_reduce", None)
-        if configs.get('adapt', False):
+        if configs.get("adapt", False):
             inst = "adapt"
             reduce_amt = "f" + str(configs.get("adapt_select"))
         else:
@@ -206,15 +348,15 @@ def magnet_plot(
 
     # Define the directory paths for the files
     floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-    top_dir   = f"{datdir}/batches/{_batch}/imgs/footpoints/"
+    top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
     if not path.exists(top_dir):
         os.makedirs(top_dir)
 
     # Define the file names with their complete paths
-    open_file   = open_f     or   f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
-    closed_file = closed_f   or   f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    open_file = open_f or f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    closed_file = closed_f or f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
     magnet_file = f"{datdir}/magnetograms/CR{get_cr}_r{reduce_amt}_{inst}.fits"
-    all_file    = closed_file.replace("closed_", "")
+    all_file = closed_file.replace("closed_", "")
     fname = magnet_file
 
     # Load the data
@@ -239,15 +381,15 @@ def magnet_plot(
 
     # Open fields
     oflnum_low = oflnum[np.isclose(orad, get_r, rtol)]
-    oflx_low =     oflx[np.isclose(orad, get_r, rtol)]
-    olat_low =     olat[np.isclose(orad, get_r, rtol)]
-    olon_low =     olon[np.isclose(orad, get_r, rtol)]
+    oflx_low = oflx[np.isclose(orad, get_r, rtol)]
+    olat_low = olat[np.isclose(orad, get_r, rtol)]
+    olon_low = olon[np.isclose(orad, get_r, rtol)]
 
     # Closed fields
     cflnum_low = cflnum[np.isclose(crad, get_r, rtol)]
-    cflx_low =     cflx[np.isclose(crad, get_r, rtol)]
-    clat_low =     clat[np.isclose(crad, get_r, rtol)]
-    clon_low =     clon[np.isclose(crad, get_r, rtol)]
+    cflx_low = cflx[np.isclose(crad, get_r, rtol)]
+    clat_low = clat[np.isclose(crad, get_r, rtol)]
+    clon_low = clon[np.isclose(crad, get_r, rtol)]
 
     # Convert to radians
     ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
@@ -257,12 +399,12 @@ def magnet_plot(
     _n_open = int(np.max(oflnum_low))
     _n_closed = int(np.max(cflnum_low))
     _n_flux = _n_open + _n_closed
-    _n_outliers = np.abs(_fnum-_n_flux)
+    _n_outliers = np.abs(_fnum - _n_flux)
     print(f"\t\t\tOpen: {_n_open}, Closed: {_n_closed}, Total: {_n_flux}, outliers: {_n_outliers}")
 
     # Define the file name for the plot
-    pic_name = f'distance_cr{get_cr}_f{nwant}_ou{_n_open}_footpoints.{ext}'
-    fluxon_map_histput_path =   path.join(floc_path, pic_name)
+    pic_name = f"distance_cr{get_cr}_f{nwant}_ou{_n_open}_footpoints.{ext}"
+    fluxon_map_histput_path = path.join(floc_path, pic_name)
     fluxon_map_histput_path_top = path.join(top_dir, pic_name)
     fluxon_csv_histput_path_top = path.join(floc_path, "distances.csv")
 
@@ -275,7 +417,7 @@ def magnet_plot(
             do_plot = True
             break
 
-    force=True
+    force = True
 
     if do_print:
         print("\tPlotting...", end="")
@@ -284,8 +426,18 @@ def magnet_plot(
 
         # ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
         #         extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=5, alpha=0.8)
-        ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-                extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=-5, alpha=1)
+        ax0.imshow(
+            magnet,
+            cmap="gray",
+            interpolation=None,
+            origin="lower",
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+            zorder=-5,
+            alpha=1,
+        )
 
         # # Plot all the fluxons
         # Filter positive and negative cases for closed fluxons
@@ -300,10 +452,10 @@ def magnet_plot(
 
         if plot_all:
             # Plot positive cases with labels
-            ax0.scatter(f_lon_positive_closed, f_lat_positive_closed, s=6**2, c='orange', alpha=0.8, label='Positive')
+            ax0.scatter(f_lon_positive_closed, f_lat_positive_closed, s=6**2, c="orange", alpha=0.8, label="Positive")
 
             # Plot negative cases with labels
-            ax0.scatter(f_lon_negative_closed, f_lat_negative_closed, s=6**2, c='teal', alpha=0.8, label='Negative')
+            ax0.scatter(f_lon_negative_closed, f_lat_negative_closed, s=6**2, c="teal", alpha=0.8, label="Negative")
 
         # Filter positive and negative cases for open fluxons
         positive_indices_open = [i for i, s in enumerate(oflx_low) if s > 0]
@@ -316,8 +468,24 @@ def magnet_plot(
         f_lat_negative_open = [ph_olow[i] for i in negative_indices_open]
 
         if plot_open:
-            ax0.scatter(f_lon_positive_open, f_lat_positive_open, s=5**2, c='red', alpha=1.0, label='Positive (Open)', edgecolors='k')
-            ax0.scatter(f_lon_negative_open, f_lat_negative_open, s=5**2, c='blue', alpha=1.0, label='Negative (Open)', edgecolors='k')
+            ax0.scatter(
+                f_lon_positive_open,
+                f_lat_positive_open,
+                s=5**2,
+                c="red",
+                alpha=1.0,
+                label="Positive (Open)",
+                edgecolors="k",
+            )
+            ax0.scatter(
+                f_lon_negative_open,
+                f_lat_negative_open,
+                s=5**2,
+                c="blue",
+                alpha=1.0,
+                label="Negative (Open)",
+                edgecolors="k",
+            )
         # print("A")
         # plt.show(block=True)
 
@@ -338,10 +506,10 @@ def magnet_plot(
 
         if True:
             # # Provided points (longitude, latitude)
-            points = np.array([th_olow, ph_olow]).T #These are in radians and sin(radians)
+            points = np.array([th_olow, ph_olow]).T  # These are in radians and sin(radians)
             kind = "open"
         else:
-            points = np.array([th_clow, ph_clow]).T #These are in radians and sin(radians)
+            points = np.array([th_clow, ph_clow]).T  # These are in radians and sin(radians)
             kind = "closed"
 
         # # Image dimensions
@@ -356,24 +524,31 @@ def magnet_plot(
 
         hist, xedges, yedges = np.histogram2d(th_olow, ph_olow, bins=(36, 18))
         hist = hist.T  # Transpose for correct orientation
-        ax.imshow(hist, cmap='viridis', origin='lower', interpolation='none',
-                extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]], aspect=2)
+        ax.imshow(
+            hist,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+            aspect=2,
+        )
 
         # Original scatter plot
-        ax.scatter(th_olow, ph_olow, c='orange', s=50)
+        ax.scatter(th_olow, ph_olow, c="orange", s=50)
 
         # Find non-zero bins in the histogram
         open_points_inds = np.where(hist > 0)
 
         # Calculate the midpoints of bins for correct plotting
         # Note: Convert bin indices to the midpoint values in the original data space
-        open_points_lons = xedges[open_points_inds[1]] + np.mean(np.diff(xedges))/2
-        open_points_lats = yedges[open_points_inds[0]] + np.mean(np.diff(yedges))/2
+        open_points_lons = xedges[open_points_inds[1]] + np.mean(np.diff(xedges)) / 2
+        open_points_lats = yedges[open_points_inds[0]] + np.mean(np.diff(yedges)) / 2
 
         # Scatter plot on non-zero bins
-        ax.scatter(open_points_lons, open_points_lats, c='red', s=50, alpha=0.6)
+        ax.scatter(open_points_lons, open_points_lats, c="red", s=50, alpha=0.6)
 
         from scipy.spatial import cKDTree
+
         # # Normalize and scale points to image dimensions
         # Longitude: 0 to 2pi maps to 0 to img_width
         # Latitude: -1 to 1 maps to 0 to img_height
@@ -425,15 +600,24 @@ def magnet_plot(
 
         # Create a meshgrid for longitude and latitude
         latitude = np.linspace(-1, 1, img_height)  # Corresponds to -90 to 90 degrees if scaled properly
-        longitude = np.linspace(0, 2*np.pi, img_width)  # 0 to 360 degrees
+        longitude = np.linspace(0, 2 * np.pi, img_width)  # 0 to 360 degrees
         longitude_grid, latitude_grid = np.meshgrid(longitude, latitude)
 
         # Initialize the plot
         # fig, ax0 = plt.subplots()
-        im = new_ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
-                        alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        im.figure.colorbar(im, ax=new_ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
-        plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im = new_ax.imshow(
+            distance_array_degrees,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            alpha=1,
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        im.figure.colorbar(im, ax=new_ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
+        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
 
         # Create the interpolator function
         dist_interp = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
@@ -448,8 +632,18 @@ def magnet_plot(
         #             cmap='viridis', alpha=1, edgecolors='none', zorder=10, vmin=vmin, vmax=vmax)
 
         distances_points = dist_interp.ev(ph_olow.ravel(), th_olow.ravel())
-        new_ax.scatter(th_olow, ph_olow, c=distances_points, s=100, cmap='viridis',
-                    alpha=1, edgecolors='k', zorder=100000, vmin=vmin, vmax=vmax)
+        new_ax.scatter(
+            th_olow,
+            ph_olow,
+            c=distances_points,
+            s=100,
+            cmap="viridis",
+            alpha=1,
+            edgecolors="k",
+            zorder=100000,
+            vmin=vmin,
+            vmax=vmax,
+        )
 
         # Draw a contour and collect its vertex paths robustly using `allsegs`
         CS = new_ax.contour(longitude, latitude, img_distances, levels=[10])
@@ -466,10 +660,10 @@ def magnet_plot(
         figbox.append(fig)
 
         for pth in contour_paths:
-            ax.plot(pth[:, 0], pth[:, 1], 'r.', lw=0)  # Plotting contour lines in red
+            ax.plot(pth[:, 0], pth[:, 1], "r.", lw=0)  # Plotting contour lines in red
         # plt.show(block=True)
 
-        points = np.array([pth[:, 0], pth[:, 1]]).T #These are in radians and sin(radians)
+        points = np.array([pth[:, 0], pth[:, 1]]).T  # These are in radians and sin(radians)
 
         # # Normalize and scale points to image dimensions
         # Longitude: 0 to 2pi maps to 0 to img_width
@@ -498,35 +692,54 @@ def magnet_plot(
         # # Reshape and display
         distance_array_degrees = distances_in_degrees.reshape((img_height, img_width))
 
-        im = ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
-                        alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        im.figure.colorbar(im, ax=ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
-        plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im = ax.imshow(
+            distance_array_degrees,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            alpha=1,
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        im.figure.colorbar(im, ax=ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
+        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
 
         # Create the interpolator function
         dist_interp_2 = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
         distances_points = dist_interp_2.ev(ph_olow.ravel(), th_olow.ravel())
-        ax.scatter(th_olow, ph_olow, c=distances_points, s=100, cmap='viridis',
-                    alpha=1, edgecolors='k', zorder=100000, vmin=vmin, vmax=vmax)
+        ax.scatter(
+            th_olow,
+            ph_olow,
+            c=distances_points,
+            s=100,
+            cmap="viridis",
+            alpha=1,
+            edgecolors="k",
+            zorder=100000,
+            vmin=vmin,
+            vmax=vmax,
+        )
 
         # plt.show()
         np.savetxt(fluxon_csv_histput_path_top, distance_array_degrees, delimiter=", ")
 
-        do_legend=False
+        do_legend = False
 
         if do_legend:
             ax0.legend(fontsize="small", loc="upper left", framealpha=0.75)
 
         if ax is None:
-            shp = magnet.shape #pixels
-            plt.axis('off')
-            sz0=6 #inches
-            ratio = shp[1]/shp[0]
-            sz1=sz0*ratio #inches
-            DPI = shp[1] / sz1 #pixels/inch
+            shp = magnet.shape  # pixels
+            plt.axis("off")
+            sz0 = 6  # inches
+            ratio = shp[1] / shp[0]
+            sz1 = sz0 * ratio  # inches
+            DPI = shp[1] / sz1  # pixels/inch
             fig.set_size_inches((sz1, sz0))
             plt.tight_layhist()
-            plt.savefig(fluxon_map_histput_path_top, bbox_inches='tight', dpi=4*DPI)
+            plt.savefig(fluxon_map_histput_path_top, bbox_inches="tight", dpi=4 * DPI)
             # plt.show()
             plt.close(fig)
 
@@ -546,7 +759,7 @@ def magnet_plot(
 
         # Define the directory paths for the files
         floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-        top_dir   = f"{datdir}/batches/{_batch}/imgs/footpoints/"
+        top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
 
         # with tqdm(total=len(crs)) as pbar:
         for i, cr in enumerate(crs):
@@ -563,100 +776,64 @@ def magnet_plot(
                     lat_1d
                 except NameError:
                     # When loading from disk, fetch lon/lat saved earlier
-                    if 'data' in locals():
+                    if "data" in locals():
                         lon_1d = data["lon"]
                         lat_1d = data["lat"]
                     else:
                         raise
 
                 # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
-                # lon varies along axis=1 (size 2*nsteps), lat along axis=0 (size nsteps)
-                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # shapes (nsteps, 2*nsteps)
+                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (nsteps, 2*nsteps)
 
                 # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
-                # Define boundary as ZERO cells that have at least one non-zero 4-neighbor.
                 P = pols
-                # Pad with edge values to keep shapes consistent during neighbor checks
-                P_pad = np.pad(P, ((1, 1), (1, 1)), mode='edge')
+                P_pad = np.pad(P, ((1, 1), (1, 1)), mode="edge")
 
-                is_zero = (P == 0)
-                nb_up    = is_zero & (P_pad[:-2, 1:-1] != 0)
-                nb_down  = is_zero & (P_pad[ 2:, 1:-1] != 0)
-                nb_left  = is_zero & (P_pad[1:-1, :-2] != 0)
-                nb_right = is_zero & (P_pad[1:-1,  2:] != 0)
+                is_zero = P == 0
+                nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
+                nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
+                nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
+                nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
                 boundary_mask = nb_up | nb_down | nb_left | nb_right
-                # Morphologically expand/clean boundary to be more space-filling (conservative defaults)
+                boundary_mask_raw = boundary_mask.copy()
                 boundary_mask = _morph_spacefill(boundary_mask)
+                region_mask_raw = _region_from_boundary(boundary_mask_raw)
+                region_mask_morph = _region_from_boundary(boundary_mask)
 
-                # Distances are defined only for ZERO-valued pixels
-                zero_mask = is_zero
+                # Build a clean 1-pixel perimeter for distance queries
+                outline_mask = _singleline_outline(region_mask_morph)
 
-                # Coordinates (lon, lat) of boundary pixel centers (radians)
-                b_lon = lon_grid[boundary_mask]
-                b_lat = lat_grid[boundary_mask]
+                if _MORPH_DEBUG:
+                    dbg_path = top_dir + "morph_debug.png"
+                    _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
 
-                # If there are no boundary pixels (pathological), fill with NaN and continue
-                ch_distance_deg = np.full(P.shape, np.nan, dtype=float)
-                if b_lon.size == 0 or np.count_nonzero(zero_mask) == 0:
-                    # Save and continue with NaNs
-                    pass
-                else:
-                    # Build 3D unit vectors for spherical KDTree: x=cos(lat)cos(lon), y=cos(lat)sin(lon), z=sin(lat)
-                    def sph2cart(lon, lat):
-                        cl = np.cos(lat)
-                        return np.column_stack((cl * np.cos(lon), cl * np.sin(lon), np.sin(lat)))
+                # Distance from every pixel to the nearest boundary pixel (deg)
+                # This replaces the two-pass approach and works uniformly inside and outside.
+                ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
 
-                    # Boundary set in 3D
-                    from scipy.spatial import cKDTree
-                    b_xyz = sph2cart(b_lon, b_lat)
-                    tree = cKDTree(b_xyz)
-
-                    # Query all zero pixels in one shot
-                    z_lon = lon_grid[zero_mask]
-                    z_lat = lat_grid[zero_mask]
-                    z_xyz = sph2cart(z_lon, z_lat)
-
-                    # Euclidean chord distance in 3D; convert to great‑circle angle
-                    d_chord, _ = tree.query(z_xyz, k=1, workers=-1)
-                    # angle = 2 * arcsin(d/2); return in degrees
-                    angles = 2.0 * np.arcsin(np.clip(d_chord * 0.5, 0.0, 1.0)) * (180.0 / np.pi)
-
-                # Populate map only at zero locations; others remain NaN
-                ch_distance_deg[zero_mask] = angles
-                # --- Second pass: fill internal (non-zero) pixels with distance to nearest ZERO cell ---
-                nonzero_mask = (P != 0)
-                if np.any(nonzero_mask) and np.any(zero_mask):
-                    # KDTree built over ALL zero cells (original open/closed boundary side)
-                    z2_lon = lon_grid[zero_mask]
-                    z2_lat = lat_grid[zero_mask]
-                    z2_xyz = sph2cart(z2_lon, z2_lat)
-                    tree_zero = cKDTree(z2_xyz)
-
-                    n_lon = lon_grid[nonzero_mask]
-                    n_lat = lat_grid[nonzero_mask]
-                    n_xyz = sph2cart(n_lon, n_lat)
-
-                    d_chord_nz, _ = tree_zero.query(n_xyz, k=1, workers=-1)
-                    angles_nz = 2.0 * np.arcsin(np.clip(d_chord_nz * 0.5, 0.0, 1.0)) * (180.0 / np.pi)
-                    ch_distance_deg[nonzero_mask] = angles_nz
-                # --- end second pass ---
+                # Simple diagnostics: report interior vs exterior distance percentiles
+                try:
+                    interior = region_mask_morph  # filled CH regions (zeros)
+                    exterior = ~region_mask_morph
+                    intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
+                    extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
+                    print(f"[diag] interior deg p5/50/95: {intr_pct}")
+                    print(f"[diag] exterior deg p5/50/95: {extr_pct}")
+                except Exception as _e:
+                    print(f"[diag] percentile check skipped: {_e}")
 
                 # Persist results alongside lon/lat for later reuse/interpolation
                 ch_out_npz = floc_path + f"pfss_distances.npz"
-                np.savez_compressed(ch_out_npz,
-                                    ch_distance_deg=ch_distance_deg,
-                                    lon=lon_1d, lat=lat_1d,
-                                    pols=P.astype(np.int8))
-                # Also provide a CSV in the same shape for quick inspection
+                np.savez_compressed(
+                    ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+                )
                 ch_out_csv = floc_path + f"pfss_distances.csv"
                 np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
 
-                # Build an interpolator consistent with prior figure usage
                 from scipy import interpolate as _interp
-                # Note: RectBivariateSpline expects increasing coordinates (lat first, then lon)
+
                 ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
-                # Optional quicklook plot (comment out to disable)
                 if True:
                     fig_ch, ax_ch = plt.subplots()
                     im = ax_ch.imshow(
@@ -667,18 +844,34 @@ def magnet_plot(
                         extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
                         aspect="auto",
                     )
-                    im.figure.colorbar(im, ax=ax_ch, label='Distance to CH Boundary (deg)')
-                    ax_ch.set_title('Distance to Nearest Coronal-Hole Boundary')
-                    # Overplot the open/closed boundary in red (sin-lat on Y) using filled region for single-line contour
-                    region_mask = _region_from_boundary(boundary_mask)
-                    ax_ch.contour(
+                    # sanity contours to check symmetry of distances inside vs outside
+                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
+                    ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                    cs_raw = ax_ch.contour(
                         lon_1d,
                         np.sin(lat_1d),
-                        region_mask.astype(int),
+                        region_mask_raw.astype(int),
                         levels=[0.5],
-                        colors='red',
+                        colors="white",
+                        linewidths=1.2,
+                        linestyles="dashed",
+                    )
+                    cs_morph = ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        region_mask_morph.astype(int),
+                        levels=[0.5],
+                        colors="red",
                         linewidths=1.5,
                     )
+                    from matplotlib.lines import Line2D
+
+                    handles = [
+                        Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
+                        Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
+                    ]
+                    ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
                     plt.tight_layout()
                     plt.savefig(top_dir + "distances.png")
                     plt.show(block=True)
@@ -709,107 +902,65 @@ def magnet_plot(
                 np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
 
                 print(output_file)
-                # === Coronal-hole boundary distance map (degrees) for pols == 0 ===
-                # Ensure longitude/latitude vectors are present whether we loaded or computed
+                # === Coronal-hole boundary distance map (degrees)
                 try:
                     lon_1d
                     lat_1d
                 except NameError:
-                    # When loading from disk, fetch lon/lat saved earlier
-                    if 'data' in locals():
+                    if "data" in locals():
                         lon_1d = data["lon"]
                         lat_1d = data["lat"]
                     else:
                         raise
 
-                # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
-                # lon varies along axis=1 (size 2*nsteps), lat along axis=0 (size nsteps)
-                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # shapes (nsteps, 2*nsteps)
+                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
 
-                # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
-                # Define boundary as ZERO cells that have at least one non-zero 4-neighbor.
                 P = pols
-                # Pad with edge values to keep shapes consistent during neighbor checks
-                P_pad = np.pad(P, ((1, 1), (1, 1)), mode='edge')
-
-                is_zero = (P == 0)
-                nb_up    = is_zero & (P_pad[:-2, 1:-1] != 0)
-                nb_down  = is_zero & (P_pad[ 2:, 1:-1] != 0)
-                nb_left  = is_zero & (P_pad[1:-1, :-2] != 0)
-                nb_right = is_zero & (P_pad[1:-1,  2:] != 0)
+                P_pad = np.pad(P, ((1, 1)), mode="edge") if P.ndim == 2 else np.pad(P, ((1, 1), (1, 1)), mode="edge")
+                is_zero = P == 0
+                nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
+                nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
+                nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
+                nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
                 boundary_mask = nb_up | nb_down | nb_left | nb_right
-                # Morphologically expand/clean boundary to be more space-filling (conservative defaults)
+                boundary_mask_raw = boundary_mask.copy()
                 boundary_mask = _morph_spacefill(boundary_mask)
+                region_mask_raw = _region_from_boundary(boundary_mask_raw)
+                region_mask_morph = _region_from_boundary(boundary_mask)
 
-                # Distances are defined only for ZERO-valued pixels
-                zero_mask = is_zero
+                # Build a clean 1-pixel perimeter for distance queries
+                outline_mask = _singleline_outline(region_mask_morph)
 
-                # Coordinates (lon, lat) of boundary pixel centers (radians)
-                b_lon = lon_grid[boundary_mask]
-                b_lat = lat_grid[boundary_mask]
+                if _MORPH_DEBUG:
+                    dbg_path = top_dir + "morph_debug.png"
+                    _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
 
-                # If there are no boundary pixels (pathological), fill with NaN and continue
-                ch_distance_deg = np.full(P.shape, np.nan, dtype=float)
-                if b_lon.size == 0 or np.count_nonzero(zero_mask) == 0:
-                    # Save and continue with NaNs
-                    pass
-                else:
-                    # Build 3D unit vectors for spherical KDTree: x=cos(lat)cos(lon), y=cos(lat)sin(lon), z=sin(lat)
-                    def sph2cart(lon, lat):
-                        cl = np.cos(lat)
-                        return np.column_stack((cl * np.cos(lon), cl * np.sin(lon), np.sin(lat)))
+                # Distance from every pixel to the nearest boundary pixel (deg)
+                # This replaces the two-pass approach and works uniformly inside and outside.
+                ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
 
-                    # Boundary set in 3D
-                    from scipy.spatial import cKDTree
-                    b_xyz = sph2cart(b_lon, b_lat)
-                    tree = cKDTree(b_xyz)
+                # Simple diagnostics: report interior vs exterior distance percentiles
+                try:
+                    interior = region_mask_morph  # filled CH regions (zeros)
+                    exterior = ~region_mask_morph
+                    intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
+                    extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
+                    print(f"[diag] interior deg p5/50/95: {intr_pct}")
+                    print(f"[diag] exterior deg p5/50/95: {extr_pct}")
+                except Exception as _e:
+                    print(f"[diag] percentile check skipped: {_e}")
 
-                    # Query all zero pixels in one shot
-                    z_lon = lon_grid[zero_mask]
-                    z_lat = lat_grid[zero_mask]
-                    z_xyz = sph2cart(z_lon, z_lat)
-
-                    # Euclidean chord distance in 3D; convert to great‑circle angle
-                    d_chord, _ = tree.query(z_xyz, k=1, workers=-1)
-                    # angle = 2 * arcsin(d/2); return in degrees
-                    angles = 2.0 * np.arcsin(np.clip(d_chord * 0.5, 0.0, 1.0)) * (180.0 / np.pi)
-
-                # Populate map only at zero locations; others remain NaN
-                ch_distance_deg[zero_mask] = angles
-                # --- Second pass: fill internal (non-zero) pixels with distance to nearest ZERO cell ---
-                nonzero_mask = (P != 0)
-                if np.any(nonzero_mask) and np.any(zero_mask):
-                    # KDTree built over ALL zero cells (original open/closed boundary side)
-                    z2_lon = lon_grid[zero_mask]
-                    z2_lat = lat_grid[zero_mask]
-                    z2_xyz = sph2cart(z2_lon, z2_lat)
-                    tree_zero = cKDTree(z2_xyz)
-
-                    n_lon = lon_grid[nonzero_mask]
-                    n_lat = lat_grid[nonzero_mask]
-                    n_xyz = sph2cart(n_lon, n_lat)
-
-                    d_chord_nz, _ = tree_zero.query(n_xyz, k=1, workers=-1)
-                    angles_nz = 2.0 * np.arcsin(np.clip(d_chord_nz * 0.5, 0.0, 1.0)) * (180.0 / np.pi)
-                    ch_distance_deg[nonzero_mask] = angles_nz
-                # --- end second pass ---
-
-                # Persist results alongside lon/lat for later reuse/interpolation
                 ch_out_npz = floc_path + f"pfss_ch_distance_cr{cr}.npz"
-                np.savez_compressed(ch_out_npz,
-                                    ch_distance_deg=ch_distance_deg,
-                                    lon=lon_1d, lat=lat_1d,
-                                    pols=P.astype(np.int8))
-                # Also provide a CSV in the same shape for quick inspection
+                np.savez_compressed(
+                    ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+                )
                 ch_out_csv = floc_path + f"pfss_ch_distance_cr{cr}.csv"
                 np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
 
-                # Build an interpolator consistent with prior figure usage
                 from scipy import interpolate as _interp
-                # Note: RectBivariateSpline expects increasing coordinates (lat first, then lon)
+
                 ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
-                # Optional quicklook plot (comment out to disable)
                 if True:
                     fig_ch, ax_ch = plt.subplots()
                     im = ax_ch.imshow(
@@ -820,18 +971,34 @@ def magnet_plot(
                         extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
                         aspect="auto",
                     )
-                    im.figure.colorbar(im, ax=ax_ch, label='Distance to CH Boundary (deg)')
-                    ax_ch.set_title('Distance to Nearest Coronal-Hole Boundary')
-                    # Overplot the open/closed boundary in red (sin-lat on Y) using filled region for single-line contour
-                    region_mask = _region_from_boundary(boundary_mask)
-                    ax_ch.contour(
+                    # sanity contours to check symmetry of distances inside vs outside
+                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
+                    ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                    cs_raw = ax_ch.contour(
                         lon_1d,
                         np.sin(lat_1d),
-                        region_mask.astype(int),
+                        region_mask_raw.astype(int),
                         levels=[0.5],
-                        colors='red',
+                        colors="white",
+                        linewidths=1.2,
+                        linestyles="dashed",
+                    )
+                    cs_morph = ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        region_mask_morph.astype(int),
+                        levels=[0.5],
+                        colors="red",
                         linewidths=1.5,
                     )
+                    from matplotlib.lines import Line2D
+
+                    handles = [
+                        Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
+                        Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
+                    ]
+                    ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
                     plt.savefig(top_dir + "distances.png")
                     plt.show(block=True)
                 # === end boundary distance map ===
@@ -842,8 +1009,10 @@ def magnet_plot(
             print(f"\t\t{shorten_path(fluxon_map_histput_path)}")
             print(f"\t\t{shorten_path(fluxon_map_histput_path_top)}")
     if do_print:
-        print(f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
-                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}")
+        print(
+            f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
+                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}"
+        )
 
     if do_print_top:
         print("\t\t    Success!")
@@ -861,14 +1030,13 @@ def magnet_plot(
 
 if __name__ == "__main__":
     # Create the argument parser
-    parser = argparse.ArgumentParser(description=
-            'This script plots the expansion factor of the given radial_fr.dat')
-    parser.add_argument('--cr', type=int, default=2160, help='Carrington Rotation')
-    parser.add_argument('--file', type=str, default=None, help='Data File Name')
-    parser.add_argument('--nwant', type=int, default=None, help='Number of Fluxons')
-    parser.add_argument('--open', type=str, default=None)
-    parser.add_argument('--closed', type=str, default=None)
-    parser.add_argument('--adapt', type=str, default=None)
+    parser = argparse.ArgumentParser(description="This script plots the expansion factor of the given radial_fr.dat")
+    parser.add_argument("--cr", type=int, default=2160, help="Carrington Rotation")
+    parser.add_argument("--file", type=str, default=None, help="Data File Name")
+    parser.add_argument("--nwant", type=int, default=None, help="Number of Fluxons")
+    parser.add_argument("--open", type=str, default=None)
+    parser.add_argument("--closed", type=str, default=None)
+    parser.add_argument("--adapt", type=str, default=None)
 
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)
