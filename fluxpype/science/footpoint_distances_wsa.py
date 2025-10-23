@@ -324,10 +324,6 @@ def magnet_plot(
     -------
 
     """
-    figbox = []
-    fig, ax0 = get_ax(ax)
-    figbox.append(fig)
-
     if True:
         print("\t\t(py) Determining Footpoint Distances")
 
@@ -402,612 +398,265 @@ def magnet_plot(
     _n_outliers = np.abs(_fnum - _n_flux)
     print(f"\t\t\tOpen: {_n_open}, Closed: {_n_closed}, Total: {_n_flux}, outliers: {_n_outliers}")
 
-    # Define the file name for the plot
-    pic_name = f"distance_cr{get_cr}_f{nwant}_ou{_n_open}_footpoints.{ext}"
-    fluxon_map_histput_path = path.join(floc_path, pic_name)
-    fluxon_map_histput_path_top = path.join(top_dir, pic_name)
-    fluxon_csv_histput_path_top = path.join(floc_path, "distances.csv")
+    nsteps = 360
 
-    # Check if the plot already exists
-    do_plot = False
-    pic_paths = [fluxon_map_histput_path, fluxon_map_histput_path_top]
-    # pic_paths = [fluxon_map_histput_path_top]
-    for testpath in pic_paths:
-        if not path.exists(testpath):
-            do_plot = True
-            break
+    crs = [get_cr]
+    ofmap = np.zeros((nsteps, len(crs)))
+    efmap = np.zeros((nsteps, len(crs)))
 
-    force = True
+    from tqdm import tqdm
+    import sunpy
+    from astropy import units as u, constants as const
+    from astropy.coordinates import SkyCoord
+    from fluxpype.science.pfss_funcs import load_pfss
+    import pfsspy
+    from pfsspy import tracing
 
-    if do_print:
-        print("\tPlotting...", end="")
-    if do_plot or force or (ax is not None):
-        # Plot the magnetogram
+    # Define the directory paths for the files
+    floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
+    top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
 
-        # ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-        #         extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=5, alpha=0.8)
-        ax0.imshow(
-            magnet,
-            cmap="gray",
-            interpolation=None,
-            origin="lower",
-            extent=(0, 2 * np.pi, -1, 1),
-            aspect="auto",
-            vmin=vmin,
-            vmax=vmax,
-            zorder=-5,
-            alpha=1,
-        )
+    # with tqdm(total=len(crs)) as pbar:
+    for i, cr in enumerate(crs):
+        output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
 
-        # # Plot all the fluxons
-        # Filter positive and negative cases for closed fluxons
-        positive_indices_closed = [i for i, s in enumerate(cflx_low) if s > 0]
-        negative_indices_closed = [i for i, s in enumerate(cflx_low) if s < 0]
+        if os.path.exists(output_file):
+            data = np.load(output_file)
+            pols, expfs = data["ofmap"], data["efmap"]
+            print("LOADED POLS, EXPFS")
+            # === Coronal-hole boundary distance map (degrees) for pols == 0 ===
+            # Ensure longitude/latitude vectors are present whether we loaded or computed
+            try:
+                lon_1d
+                lat_1d
+            except NameError:
+                # When loading from disk, fetch lon/lat saved earlier
+                if "data" in locals():
+                    lon_1d = data["lon"]
+                    lat_1d = data["lat"]
+                else:
+                    raise
 
-        # Data for positive and negative cases
-        f_lon_positive_closed = [th_clow[i] for i in positive_indices_closed]
-        f_lat_positive_closed = [ph_clow[i] for i in positive_indices_closed]
-        f_lon_negative_closed = [th_clow[i] for i in negative_indices_closed]
-        f_lat_negative_closed = [ph_clow[i] for i in negative_indices_closed]
+            # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
+            lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (nsteps, 2*nsteps)
 
-        if plot_all:
-            # Plot positive cases with labels
-            ax0.scatter(f_lon_positive_closed, f_lat_positive_closed, s=6**2, c="orange", alpha=0.8, label="Positive")
+            # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
+            P = pols
+            P_pad = np.pad(P, ((1, 1), (1, 1)), mode="edge")
 
-            # Plot negative cases with labels
-            ax0.scatter(f_lon_negative_closed, f_lat_negative_closed, s=6**2, c="teal", alpha=0.8, label="Negative")
+            is_zero = P == 0
+            nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
+            nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
+            nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
+            nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
+            boundary_mask = nb_up | nb_down | nb_left | nb_right
+            boundary_mask_raw = boundary_mask.copy()
+            boundary_mask = _morph_spacefill(boundary_mask)
+            region_mask_raw = _region_from_boundary(boundary_mask_raw)
+            region_mask_morph = _region_from_boundary(boundary_mask)
 
-        # Filter positive and negative cases for open fluxons
-        positive_indices_open = [i for i, s in enumerate(oflx_low) if s > 0]
-        negative_indices_open = [i for i, s in enumerate(oflx_low) if s <= 0]
+            # Build a clean 1-pixel perimeter for distance queries
+            outline_mask = _singleline_outline(region_mask_morph)
 
-        # Data for positive and negative cases
-        f_lon_positive_open = [th_olow[i] for i in positive_indices_open]
-        f_lat_positive_open = [ph_olow[i] for i in positive_indices_open]
-        f_lon_negative_open = [th_olow[i] for i in negative_indices_open]
-        f_lat_negative_open = [ph_olow[i] for i in negative_indices_open]
+            if _MORPH_DEBUG:
+                dbg_path = top_dir + "morph_debug.png"
+                _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
 
-        if plot_open:
-            ax0.scatter(
-                f_lon_positive_open,
-                f_lat_positive_open,
-                s=5**2,
-                c="red",
-                alpha=1.0,
-                label="Positive (Open)",
-                edgecolors="k",
+            # Distance from every pixel to the nearest boundary pixel (deg)
+            # This replaces the two-pass approach and works uniformly inside and outside.
+            ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
+
+            # Simple diagnostics: report interior vs exterior distance percentiles
+            try:
+                interior = region_mask_morph  # filled CH regions (zeros)
+                exterior = ~region_mask_morph
+                intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
+                extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
+                print(f"[diag] interior deg p5/50/95: {intr_pct}")
+                print(f"[diag] exterior deg p5/50/95: {extr_pct}")
+            except Exception as _e:
+                print(f"[diag] percentile check skipped: {_e}")
+
+            # Persist results alongside lon/lat for later reuse/interpolation
+            ch_out_npz = floc_path + f"pfss_distances.npz"
+            np.savez_compressed(
+                ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
             )
-            ax0.scatter(
-                f_lon_negative_open,
-                f_lat_negative_open,
-                s=5**2,
-                c="blue",
-                alpha=1.0,
-                label="Negative (Open)",
-                edgecolors="k",
-            )
-        # print("A")
-        # plt.show(block=True)
+            ch_out_csv = floc_path + f"pfss_distances.csv"
+            np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
 
-        # Convert to radians
-        ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
-        ph_clow, th_clow = np.sin(np.deg2rad(clat_low)), np.deg2rad(clon_low)
+            from scipy import interpolate as _interp
 
-        plt.savefig(fluxon_map_histput_path, dpi=200)
-        print(fluxon_map_histput_path)
-        # plt.show(block=True)
+            ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
-        ########## FIGURE 2 ###########
-        # fig, new_ax = plt.subplots()
-        # figbox.append(fig)
+            if True:
+                fig_ch, ax_ch = plt.subplots()
+                im = ax_ch.imshow(
+                    ch_distance_deg,
+                    cmap="viridis",
+                    origin="lower",
+                    interpolation="none",
+                    extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
+                    aspect="auto",
+                )
+                # sanity contours to check symmetry of distances inside vs outside
+                ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
+                ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                cs_raw = ax_ch.contour(
+                    lon_1d,
+                    np.sin(lat_1d),
+                    region_mask_raw.astype(int),
+                    levels=[0.5],
+                    colors="white",
+                    linewidths=1.2,
+                    linestyles="dashed",
+                )
+                cs_morph = ax_ch.contour(
+                    lon_1d,
+                    np.sin(lat_1d),
+                    region_mask_morph.astype(int),
+                    levels=[0.5],
+                    colors="red",
+                    linewidths=1.5,
+                )
+                from matplotlib.lines import Line2D
 
-        # plt.scatter(th_olow, ph_olow, c='r', s=5, label='Open')
-        # plt.scatter(th_clow, ph_clow, c='b', s=5, label='Closed')
-
-        if True:
-            # # Provided points (longitude, latitude)
-            points = np.array([th_olow, ph_olow]).T  # These are in radians and sin(radians)
-            kind = "open"
+                handles = [
+                    Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
+                    Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
+                ]
+                ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
+                plt.tight_layout()
+                plt.savefig(top_dir + "distances.png")
+                plt.show()
+            # === end boundary distance map ===
         else:
-            points = np.array([th_clow, ph_clow]).T  # These are in radians and sin(radians)
-            kind = "closed"
+            hmi_map = sunpy.map.Map(magnet_file)
+            hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
 
-        # # Image dimensions
-        img_width, img_height = magnet.T.shape
-        print(img_height, img_width)
-        # Plotting the histogram
-        print("B")
-        # plt.show(block=True)
+            nrho = 40
+            rss = 2.5
+            pfss_in = pfsspy.Input(hmi_map, nrho, rss)
+            pfss_out = pfsspy.pfss(pfss_in)
 
-        fig, ax = plt.subplots()
-        figbox.append(fig)
+            r = const.R_sun
+            lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2)
+            lat_1d = np.arcsin(np.linspace(-0.999, 0.999, nsteps))
+            lon, lat = np.meshgrid(lon_1d, lat_1d, indexing="ij")
+            lon, lat = lon * u.rad, lat * u.rad
+            seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
 
-        hist, xedges, yedges = np.histogram2d(th_olow, ph_olow, bins=(36, 18))
-        hist = hist.T  # Transpose for correct orientation
-        ax.imshow(
-            hist,
-            cmap="viridis",
-            origin="lower",
-            interpolation="none",
-            extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
-            aspect=2,
-        )
+            tracer = tracing.FortranTracer(max_steps=2000)
+            field_lines = tracer.trace(seeds, pfss_out)
 
-        # Original scatter plot
-        ax.scatter(th_olow, ph_olow, c="orange", s=50)
+            pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
+            expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
+            expfs[np.where(np.isnan(expfs))] = 0
 
-        # Find non-zero bins in the histogram
-        open_points_inds = np.where(hist > 0)
+            np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
 
-        # Calculate the midpoints of bins for correct plotting
-        # Note: Convert bin indices to the midpoint values in the original data space
-        open_points_lons = xedges[open_points_inds[1]] + np.mean(np.diff(xedges)) / 2
-        open_points_lats = yedges[open_points_inds[0]] + np.mean(np.diff(yedges)) / 2
+            print(output_file)
+            # === Coronal-hole boundary distance map (degrees)
+            try:
+                lon_1d
+                lat_1d
+            except NameError:
+                if "data" in locals():
+                    lon_1d = data["lon"]
+                    lat_1d = data["lat"]
+                else:
+                    raise
 
-        # Scatter plot on non-zero bins
-        ax.scatter(open_points_lons, open_points_lats, c="red", s=50, alpha=0.6)
+            lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
 
-        from scipy.spatial import cKDTree
+            P = pols
+            P_pad = np.pad(P, ((1, 1)), mode="edge") if P.ndim == 2 else np.pad(P, ((1, 1), (1, 1)), mode="edge")
+            is_zero = P == 0
+            nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
+            nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
+            nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
+            nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
+            boundary_mask = nb_up | nb_down | nb_left | nb_right
+            boundary_mask_raw = boundary_mask.copy()
+            boundary_mask = _morph_spacefill(boundary_mask)
+            region_mask_raw = _region_from_boundary(boundary_mask_raw)
+            region_mask_morph = _region_from_boundary(boundary_mask)
 
-        # # Normalize and scale points to image dimensions
-        # Longitude: 0 to 2pi maps to 0 to img_width
-        # Latitude: -1 to 1 maps to 0 to img_height
-        scaled_points = np.empty_like(points)
-        scaled_points[:, 0] = (points[:, 0] / (2 * np.pi)) * img_width
-        scaled_points[:, 1] = ((points[:, 1] + 1) / 2) * img_height
+            # Build a clean 1-pixel perimeter for distance queries
+            outline_mask = _singleline_outline(region_mask_morph)
 
-        # Generate grid points based on the image shape
-        y_indices, x_indices = np.indices((img_height, img_width))
-        grid_points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
+            if _MORPH_DEBUG:
+                dbg_path = top_dir + "morph_debug.png"
+                _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
 
-        # # Build a KDTree for efficient nearest-neighbor query
-        tree = cKDTree(scaled_points)
+            # Distance from every pixel to the nearest boundary pixel (deg)
+            # This replaces the two-pass approach and works uniformly inside and outside.
+            ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
 
-        # # Calculate degrees per pixel
-        deg_per_pixel_x = 360 / img_width  # For longitude
-        deg_per_pixel_y = 180 / img_height  # For latitude
+            # Simple diagnostics: report interior vs exterior distance percentiles
+            try:
+                interior = region_mask_morph  # filled CH regions (zeros)
+                exterior = ~region_mask_morph
+                intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
+                extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
+                print(f"[diag] interior deg p5/50/95: {intr_pct}")
+                print(f"[diag] exterior deg p5/50/95: {extr_pct}")
+            except Exception as _e:
+                print(f"[diag] percentile check skipped: {_e}")
 
-        # # Query the nearest distance for each grid point, requesting separate x and y components
-        distances, _ = tree.query(grid_points, k=1, p=2, workers=-1, eps=0)
+            ch_out_npz = floc_path + f"pfss_ch_distance_cr{cr}.npz"
+            np.savez_compressed(
+                ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+            )
+            ch_out_csv = floc_path + f"pfss_ch_distance_cr{cr}.csv"
+            np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
 
-        # # Convert pixel distances to degrees
-        distances_x = (distances // img_width) * deg_per_pixel_x
-        distances_y = (distances % img_width) * deg_per_pixel_y
-        distances_in_degrees = np.sqrt(distances_x**2 + distances_y**2)
+            from scipy import interpolate as _interp
 
-        # Calculate the distance in degrees directly from pixel distances
-        distances_in_degrees = distances * np.sqrt(deg_per_pixel_x**2 + deg_per_pixel_y**2)
+            ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
-        # # Reshape and display
-        distance_array_degrees = distances_in_degrees.reshape((img_height, img_width))
-
-        # # Determine the range for consistent color scaling
-        vmin = 0
-        vmax = distance_array_degrees.max()
-
-        print("C")
-        # plt.show(block=True)
-
-        ######## FIGURE 3 #########
-        fig, new_ax = plt.subplots()
-        figbox.append(fig)
-
-        # import numpy as np
-        # import matplotlib.pyplot as plt
-        from scipy import interpolate
-
-        # Assuming distance_array_degrees, img_height, img_width, vmin, vmax are defined elsewhere
-
-        # Create a meshgrid for longitude and latitude
-        latitude = np.linspace(-1, 1, img_height)  # Corresponds to -90 to 90 degrees if scaled properly
-        longitude = np.linspace(0, 2 * np.pi, img_width)  # 0 to 360 degrees
-        longitude_grid, latitude_grid = np.meshgrid(longitude, latitude)
-
-        # Initialize the plot
-        # fig, ax0 = plt.subplots()
-        im = new_ax.imshow(
-            distance_array_degrees,
-            cmap="viridis",
-            origin="lower",
-            interpolation="none",
-            alpha=1,
-            extent=(0, 2 * np.pi, -1, 1),
-            aspect="auto",
-            vmin=vmin,
-            vmax=vmax,
-        )
-        im.figure.colorbar(im, ax=new_ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
-        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
-
-        # Create the interpolator function
-        dist_interp = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
-
-        # points = np.array([th_olow, ph_olow]).T #These are in radians and sin(radians)
-        # Use the interpolator to get distances for the grid points
-        distances = dist_interp.ev(latitude_grid.ravel(), longitude_grid.ravel())
-        img_distances = distances.reshape(img_height, img_width)
-        # Scatter plot on the grid points
-        # Note: Adjust the sizes (s=), alpha, and edgecolors as needed
-        # new_ax.scatter(longitude_grid.ravel(), latitude_grid.ravel(), c=distances, s=20,
-        #             cmap='viridis', alpha=1, edgecolors='none', zorder=10, vmin=vmin, vmax=vmax)
-
-        distances_points = dist_interp.ev(ph_olow.ravel(), th_olow.ravel())
-        new_ax.scatter(
-            th_olow,
-            ph_olow,
-            c=distances_points,
-            s=100,
-            cmap="viridis",
-            alpha=1,
-            edgecolors="k",
-            zorder=100000,
-            vmin=vmin,
-            vmax=vmax,
-        )
-
-        # Draw a contour and collect its vertex paths robustly using `allsegs`
-        CS = new_ax.contour(longitude, latitude, img_distances, levels=[10])
-        # Extract contour segments for every level (here only one level is used)
-        contour_paths = []
-        for lvl in CS.allsegs:
-            for seg in lvl:
-                contour_paths.append(np.asarray(seg))
-
-        # plt.show(block=True)
-        print("D")
-        # Prepare a new figure/axes for the contour-derived distance map
-        fig, ax = plt.subplots()
-        figbox.append(fig)
-
-        for pth in contour_paths:
-            ax.plot(pth[:, 0], pth[:, 1], "r.", lw=0)  # Plotting contour lines in red
-        # plt.show(block=True)
-
-        points = np.array([pth[:, 0], pth[:, 1]]).T  # These are in radians and sin(radians)
-
-        # # Normalize and scale points to image dimensions
-        # Longitude: 0 to 2pi maps to 0 to img_width
-        # Latitude: -1 to 1 maps to 0 to img_height
-        scaled_points = np.empty_like(points)
-        scaled_points[:, 0] = (points[:, 0] / (2 * np.pi)) * img_width
-        scaled_points[:, 1] = ((points[:, 1] + 1) / 2) * img_height
-
-        # Generate grid points based on the image shape
-        y_indices, x_indices = np.indices((img_height, img_width))
-        grid_points = np.column_stack((x_indices.ravel(), y_indices.ravel()))
-
-        # # Build a KDTree for efficient nearest-neighbor query
-        tree = cKDTree(scaled_points)
-
-        # # Calculate degrees per pixel
-        deg_per_pixel_x = 360 / img_width  # For longitude
-        deg_per_pixel_y = 180 / img_height  # For latitude
-
-        # # Query the nearest distance for each grid point, requesting separate x and y components
-        distances, _ = tree.query(grid_points, k=1, p=2, workers=-1, eps=0)
-
-        # Calculate the distance in degrees directly from pixel distances
-        distances_in_degrees = distances * np.sqrt(deg_per_pixel_x**2 + deg_per_pixel_y**2)
-
-        # # Reshape and display
-        distance_array_degrees = distances_in_degrees.reshape((img_height, img_width))
-
-        im = ax.imshow(
-            distance_array_degrees,
-            cmap="viridis",
-            origin="lower",
-            interpolation="none",
-            alpha=1,
-            extent=(0, 2 * np.pi, -1, 1),
-            aspect="auto",
-            vmin=vmin,
-            vmax=vmax,
-        )
-        im.figure.colorbar(im, ax=ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
-        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
-
-        # Create the interpolator function
-        dist_interp_2 = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
-        distances_points = dist_interp_2.ev(ph_olow.ravel(), th_olow.ravel())
-        ax.scatter(
-            th_olow,
-            ph_olow,
-            c=distances_points,
-            s=100,
-            cmap="viridis",
-            alpha=1,
-            edgecolors="k",
-            zorder=100000,
-            vmin=vmin,
-            vmax=vmax,
-        )
-
-        # plt.show()
-        np.savetxt(fluxon_csv_histput_path_top, distance_array_degrees, delimiter=", ")
-
-        do_legend = False
-
-        if do_legend:
-            ax0.legend(fontsize="small", loc="upper left", framealpha=0.75)
-
-        if ax is None:
-            shp = magnet.shape  # pixels
-            plt.axis("off")
-            sz0 = 6  # inches
-            ratio = shp[1] / shp[0]
-            sz1 = sz0 * ratio  # inches
-            DPI = shp[1] / sz1  # pixels/inch
-            fig.set_size_inches((sz1, sz0))
-            plt.tight_layhist()
-            plt.savefig(fluxon_map_histput_path_top, bbox_inches="tight", dpi=4 * DPI)
-            # plt.show()
-            plt.close(fig)
-
-        nsteps = 360
-
-        crs = [get_cr]
-        ofmap = np.zeros((nsteps, len(crs)))
-        efmap = np.zeros((nsteps, len(crs)))
-
-        from tqdm import tqdm
-        import sunpy
-        from astropy import units as u, constants as const
-        from astropy.coordinates import SkyCoord
-        from fluxpype.science.pfss_funcs import load_pfss
-        import pfsspy
-        from pfsspy import tracing
-
-        # Define the directory paths for the files
-        floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-        top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
-
-        # with tqdm(total=len(crs)) as pbar:
-        for i, cr in enumerate(crs):
-            output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
-
-            if os.path.exists(output_file):
-                data = np.load(output_file)
-                pols, expfs = data["ofmap"], data["efmap"]
-                print("LOADED POLS, EXPFS")
-                # === Coronal-hole boundary distance map (degrees) for pols == 0 ===
-                # Ensure longitude/latitude vectors are present whether we loaded or computed
-                try:
-                    lon_1d
-                    lat_1d
-                except NameError:
-                    # When loading from disk, fetch lon/lat saved earlier
-                    if "data" in locals():
-                        lon_1d = data["lon"]
-                        lat_1d = data["lat"]
-                    else:
-                        raise
-
-                # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
-                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (nsteps, 2*nsteps)
-
-                # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
-                P = pols
-                P_pad = np.pad(P, ((1, 1), (1, 1)), mode="edge")
-
-                is_zero = P == 0
-                nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
-                nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
-                nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
-                nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
-                boundary_mask = nb_up | nb_down | nb_left | nb_right
-                boundary_mask_raw = boundary_mask.copy()
-                boundary_mask = _morph_spacefill(boundary_mask)
-                region_mask_raw = _region_from_boundary(boundary_mask_raw)
-                region_mask_morph = _region_from_boundary(boundary_mask)
-
-                # Build a clean 1-pixel perimeter for distance queries
-                outline_mask = _singleline_outline(region_mask_morph)
-
-                if _MORPH_DEBUG:
-                    dbg_path = top_dir + "morph_debug.png"
-                    _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
-
-                # Distance from every pixel to the nearest boundary pixel (deg)
-                # This replaces the two-pass approach and works uniformly inside and outside.
-                ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
-
-                # Simple diagnostics: report interior vs exterior distance percentiles
-                try:
-                    interior = region_mask_morph  # filled CH regions (zeros)
-                    exterior = ~region_mask_morph
-                    intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
-                    extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
-                    print(f"[diag] interior deg p5/50/95: {intr_pct}")
-                    print(f"[diag] exterior deg p5/50/95: {extr_pct}")
-                except Exception as _e:
-                    print(f"[diag] percentile check skipped: {_e}")
-
-                # Persist results alongside lon/lat for later reuse/interpolation
-                ch_out_npz = floc_path + f"pfss_distances.npz"
-                np.savez_compressed(
-                    ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+            if True:
+                fig_ch, ax_ch = plt.subplots()
+                im = ax_ch.imshow(
+                    ch_distance_deg,
+                    cmap="viridis",
+                    origin="lower",
+                    interpolation="none",
+                    extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
+                    aspect="auto",
                 )
-                ch_out_csv = floc_path + f"pfss_distances.csv"
-                np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
-
-                from scipy import interpolate as _interp
-
-                ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
-
-                if True:
-                    fig_ch, ax_ch = plt.subplots()
-                    im = ax_ch.imshow(
-                        ch_distance_deg,
-                        cmap="viridis",
-                        origin="lower",
-                        interpolation="none",
-                        extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
-                        aspect="auto",
-                    )
-                    # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
-                    im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                    ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
-                    cs_raw = ax_ch.contour(
-                        lon_1d,
-                        np.sin(lat_1d),
-                        region_mask_raw.astype(int),
-                        levels=[0.5],
-                        colors="white",
-                        linewidths=1.2,
-                        linestyles="dashed",
-                    )
-                    cs_morph = ax_ch.contour(
-                        lon_1d,
-                        np.sin(lat_1d),
-                        region_mask_morph.astype(int),
-                        levels=[0.5],
-                        colors="red",
-                        linewidths=1.5,
-                    )
-                    from matplotlib.lines import Line2D
-
-                    handles = [
-                        Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
-                        Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
-                    ]
-                    ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
-                    plt.tight_layout()
-                    plt.savefig(top_dir + "distances.png")
-                    plt.show(block=True)
-                # === end boundary distance map ===
-            else:
-                hmi_map = sunpy.map.Map(magnet_file)
-                hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
-
-                nrho = 40
-                rss = 2.5
-                pfss_in = pfsspy.Input(hmi_map, nrho, rss)
-                pfss_out = pfsspy.pfss(pfss_in)
-
-                r = const.R_sun
-                lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2)
-                lat_1d = np.arcsin(np.linspace(-0.999, 0.999, nsteps))
-                lon, lat = np.meshgrid(lon_1d, lat_1d, indexing="ij")
-                lon, lat = lon * u.rad, lat * u.rad
-                seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
-
-                tracer = tracing.FortranTracer(max_steps=2000)
-                field_lines = tracer.trace(seeds, pfss_out)
-
-                pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
-                expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
-                expfs[np.where(np.isnan(expfs))] = 0
-
-                np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
-
-                print(output_file)
-                # === Coronal-hole boundary distance map (degrees)
-                try:
-                    lon_1d
-                    lat_1d
-                except NameError:
-                    if "data" in locals():
-                        lon_1d = data["lon"]
-                        lat_1d = data["lat"]
-                    else:
-                        raise
-
-                lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
-
-                P = pols
-                P_pad = np.pad(P, ((1, 1)), mode="edge") if P.ndim == 2 else np.pad(P, ((1, 1), (1, 1)), mode="edge")
-                is_zero = P == 0
-                nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
-                nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
-                nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
-                nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
-                boundary_mask = nb_up | nb_down | nb_left | nb_right
-                boundary_mask_raw = boundary_mask.copy()
-                boundary_mask = _morph_spacefill(boundary_mask)
-                region_mask_raw = _region_from_boundary(boundary_mask_raw)
-                region_mask_morph = _region_from_boundary(boundary_mask)
-
-                # Build a clean 1-pixel perimeter for distance queries
-                outline_mask = _singleline_outline(region_mask_morph)
-
-                if _MORPH_DEBUG:
-                    dbg_path = top_dir + "morph_debug.png"
-                    _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
-
-                # Distance from every pixel to the nearest boundary pixel (deg)
-                # This replaces the two-pass approach and works uniformly inside and outside.
-                ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
-
-                # Simple diagnostics: report interior vs exterior distance percentiles
-                try:
-                    interior = region_mask_morph  # filled CH regions (zeros)
-                    exterior = ~region_mask_morph
-                    intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
-                    extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
-                    print(f"[diag] interior deg p5/50/95: {intr_pct}")
-                    print(f"[diag] exterior deg p5/50/95: {extr_pct}")
-                except Exception as _e:
-                    print(f"[diag] percentile check skipped: {_e}")
-
-                ch_out_npz = floc_path + f"pfss_ch_distance_cr{cr}.npz"
-                np.savez_compressed(
-                    ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+                # sanity contours to check symmetry of distances inside vs outside
+                ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
+                ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                cs_raw = ax_ch.contour(
+                    lon_1d,
+                    np.sin(lat_1d),
+                    region_mask_raw.astype(int),
+                    levels=[0.5],
+                    colors="white",
+                    linewidths=1.2,
+                    linestyles="dashed",
                 )
-                ch_out_csv = floc_path + f"pfss_ch_distance_cr{cr}.csv"
-                np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
+                cs_morph = ax_ch.contour(
+                    lon_1d,
+                    np.sin(lat_1d),
+                    region_mask_morph.astype(int),
+                    levels=[0.5],
+                    colors="red",
+                    linewidths=1.5,
+                )
+                from matplotlib.lines import Line2D
 
-                from scipy import interpolate as _interp
+                handles = [
+                    Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
+                    Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
+                ]
+                ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
+                plt.savefig(top_dir + "distances.png")
+            # === end boundary distance map ===
 
-                ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
-
-                if True:
-                    fig_ch, ax_ch = plt.subplots()
-                    im = ax_ch.imshow(
-                        ch_distance_deg,
-                        cmap="viridis",
-                        origin="lower",
-                        interpolation="none",
-                        extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
-                        aspect="auto",
-                    )
-                    # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
-                    im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                    ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
-                    cs_raw = ax_ch.contour(
-                        lon_1d,
-                        np.sin(lat_1d),
-                        region_mask_raw.astype(int),
-                        levels=[0.5],
-                        colors="white",
-                        linewidths=1.2,
-                        linestyles="dashed",
-                    )
-                    cs_morph = ax_ch.contour(
-                        lon_1d,
-                        np.sin(lat_1d),
-                        region_mask_morph.astype(int),
-                        levels=[0.5],
-                        colors="red",
-                        linewidths=1.5,
-                    )
-                    from matplotlib.lines import Line2D
-
-                    handles = [
-                        Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
-                        Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
-                    ]
-                    ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
-                    plt.savefig(top_dir + "distances.png")
-                    plt.show(block=True)
-                # === end boundary distance map ===
-
-    else:
-        if do_print:
-            print("\tSkipped! Files already exist:")
-            print(f"\t\t{shorten_path(fluxon_map_histput_path)}")
-            print(f"\t\t{shorten_path(fluxon_map_histput_path_top)}")
     if do_print:
         print(
             f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
@@ -1018,8 +667,7 @@ def magnet_plot(
         print("\t\t    Success!")
         print("\t\t\t```````````````````````````````\n\n")
 
-    for fig in figbox:
-        plt.close(fig)
+    # Removed figure closing loop, as no figures are kept open from earlier code.
     return _n_open, _n_closed, _n_flux, _fnum, _n_outliers
 
 
