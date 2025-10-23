@@ -51,13 +51,17 @@ from scipy.ndimage import (
     label,
 )
 
-# --- Morphology defaults (conservative) ---
+ # --- Morphology defaults (conservative) ---
 _MORPH_DILATE_ITERS = 8  # light expansion to make boundaries more space-filling
 _MORPH_ERODE_ITERS = 6  # no erosion by default
 _MORPH_CLOSE_ITERS = 0  # close small gaps
 _MORPH_OPEN_ITERS = 0  # do not open by default
 _MORPH_MIN_SIZE = 16  # remove tiny speckles
 _MORPH_SMOOTH_SIGMA = 0.4  # light Gaussian smoothing before thresholding
+
+# --- Polar cleanup (remove small purple islands near the poles) ---
+_MORPH_POLAR_PURPLE_MIN_SIZE = 5000  # pixels; set 0 to disable
+_MORPH_POLAR_ABS_LAT_DEG = 65.0      # operate where |lat| > this
 
 # --- Morphology debug ---
 _MORPH_DEBUG = True  # set True to save a panel of intermediate stages
@@ -178,9 +182,67 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
     return R
 
 
+# --- Helper: remove small purple islands (False) at high latitudes only ---
+def _clean_polar_purple_islands(
+    region_mask: np.ndarray,
+    lat_1d: np.ndarray,
+    min_size: int = _MORPH_POLAR_PURPLE_MIN_SIZE,
+    lat_cut_deg: float = _MORPH_POLAR_ABS_LAT_DEG,
+) -> np.ndarray:
+    """
+    Flip small purple (False) components to yellow (True) **only** in polar caps
+    where |lat| > lat_cut_deg. Uses 8-connectivity. No-op if min_size <= 0.
+
+    Parameters
+    ----------
+    region_mask : bool array (n_lat, n_lon)
+        True = yellow region, False = purple.
+    lat_1d : 1D array of latitudes in radians (size n_lat)
+    min_size : int
+        Minimum size in pixels for purple components to keep. Smaller ones are filled.
+    lat_cut_deg : float
+        Operate only on rows with |lat| > lat_cut_deg.
+    """
+    if min_size is None or min_size <= 0:
+        return region_mask
+
+    R = region_mask.copy()
+    # Identify polar rows
+    lat_cut = np.deg2rad(lat_cut_deg)
+    polar_rows = np.abs(lat_1d) > lat_cut
+    if not np.any(polar_rows):
+        return R
+
+    # Work on a local copy where non-polar rows are set to True so components
+    # do not leak across the cap boundary.
+    local = R.copy()
+    local[~polar_rows, :] = True
+
+    # Label purple (False) components with 8-connectivity
+    st8 = generate_binary_structure(2, 2)
+    lbl, n = label(~local, structure=st8)
+    if n == 0:
+        return R
+
+    counts = np.bincount(lbl.ravel())
+    kill = counts < int(min_size)
+    kill[0] = False  # background
+    small_false = kill[lbl]
+
+    # Apply only within polar rows
+    to_flip = small_false & polar_rows[:, None]
+    R[to_flip] = True
+    return R
+
+
 # --- Helper: Save 8-panel figure of intermediate morphology steps ---
 def _debug_morph_steps(
-    boundary_mask_raw: np.ndarray, lon_1d: np.ndarray, lat_1d: np.ndarray, savepath: str | None = None
+    boundary_mask_raw: np.ndarray,
+    lon_1d: np.ndarray,
+    lat_1d: np.ndarray,
+    savepath: str | None = None,
+    region_mask_morph: np.ndarray | None = None,
+    region_mask_morph_pre_polar: np.ndarray | None = None,
 ) -> None:
     """
     Save an 8-panel figure showing the morphological stages:
@@ -226,6 +288,9 @@ def _debug_morph_steps(
     # Regions for single-line closed contours
     region_raw = _region_from_boundary(B0)
     region_morph = _region_from_boundary(B5)
+    # If the caller provides the actual post-cleanup mask, prefer it for display
+    if region_mask_morph is not None:
+        region_morph = region_mask_morph.astype(bool)
 
     # Assemble figure
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
@@ -245,6 +310,28 @@ def _debug_morph_steps(
         ax.set_title(title)
         ax.set_xlabel("lon (rad)")
         ax.set_ylabel("sin(lat)")
+
+    # Overlay: highlight pixels flipped by polar cleanup in polar caps on the morphed panel
+    if region_mask_morph is not None and region_mask_morph_pre_polar is not None:
+        try:
+            flipped = region_mask_morph.astype(bool) & (~region_mask_morph_pre_polar.astype(bool))
+            lat_cut = np.deg2rad(_MORPH_POLAR_ABS_LAT_DEG)
+            polar_rows = np.abs(lat_1d) > lat_cut
+            flipped &= polar_rows[:, None]
+            if np.any(flipped):
+                ax_morph = axes.ravel()[-1]  # 'Region (morphed)' panel
+                ax_morph.imshow(
+                    flipped,
+                    aspect="auto",
+                    origin="lower",
+                    interpolation="nearest",
+                    extent=extent,
+                    alpha=0.45,
+                    cmap="Reds",
+                )
+                ax_morph.set_title("Region (morphed) + polar cleanup Δ")
+        except Exception:
+            pass
 
     if savepath and _MORPH_DEBUG_SAVE:
         plt.savefig(savepath, dpi=200)
@@ -286,8 +373,7 @@ def _gc_distance_map_to_boundary(lon_1d: np.ndarray, lat_1d: np.ndarray, boundar
     return angles_deg.reshape(lat_1d.size, lon_1d.size)
 
 
-from fluxpype.science.pfss_funcs import pixel_to_latlon
-from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path, get_ax
+from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path
 
 
 def magnet_plot(
@@ -348,56 +434,10 @@ def magnet_plot(
     if not path.exists(top_dir):
         os.makedirs(top_dir)
 
-    # Define the file names with their complete paths
-    open_file = open_f or f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
-    closed_file = closed_f or f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
     magnet_file = f"{datdir}/magnetograms/CR{get_cr}_r{reduce_amt}_{inst}.fits"
-    all_file = closed_file.replace("closed_", "")
     fname = magnet_file
-
-    # Load the data
-    if do_print_top:
-        print(f"\t\tOpening {shorten_path(all_file)}...")
-    fluxon_location = np.genfromtxt(all_file)
-    # import pdb; pdb.set_trace()
+    # Load the magnetogram (always available for PFSS path)
     magnet, header = load_fits_magnetogram(batch=_batch, ret_all=True, configs=configs, fname=fname)
-    f_lat, f_lon, f_sgn, _fnum = pixel_to_latlon(magnet, header, fluxon_location)
-
-    if do_print_top:
-        print(f"\t\tOpening {shorten_path(open_file)}...")
-    oflnum, oflx, olat, olon, orad = np.loadtxt(open_file, unpack=True)
-
-    if do_print_top:
-        print(f"\t\tOpening {shorten_path(closed_file)}...\n")
-    cflnum, cflx, clat, clon, crad = np.loadtxt(closed_file, unpack=True)
-
-    ## Keep only the values where the radius is 1.0
-    rtol = 0.001
-    get_r = 1.0
-
-    # Open fields
-    oflnum_low = oflnum[np.isclose(orad, get_r, rtol)]
-    oflx_low = oflx[np.isclose(orad, get_r, rtol)]
-    olat_low = olat[np.isclose(orad, get_r, rtol)]
-    olon_low = olon[np.isclose(orad, get_r, rtol)]
-
-    # Closed fields
-    cflnum_low = cflnum[np.isclose(crad, get_r, rtol)]
-    cflx_low = cflx[np.isclose(crad, get_r, rtol)]
-    clat_low = clat[np.isclose(crad, get_r, rtol)]
-    clon_low = clon[np.isclose(crad, get_r, rtol)]
-
-    # Convert to radians
-    ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
-    ph_clow, th_clow = np.sin(np.deg2rad(clat_low)), np.deg2rad(clon_low)
-
-    # Report the number of open and closed fluxons
-    _n_open = int(np.max(oflnum_low))
-    _n_closed = int(np.max(cflnum_low))
-    _n_flux = _n_open + _n_closed
-    _n_outliers = np.abs(_fnum - _n_flux)
-    print(f"\t\t\tOpen: {_n_open}, Closed: {_n_closed}, Total: {_n_flux}, outliers: {_n_outliers}")
-
     nsteps = 360
 
     crs = [get_cr]
@@ -454,13 +494,23 @@ def magnet_plot(
             boundary_mask = _morph_spacefill(boundary_mask)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
             region_mask_morph = _region_from_boundary(boundary_mask)
+            region_mask_morph_pre_polar = region_mask_morph.copy()
+            # Polar cleanup: remove small purple islands at |lat| > threshold
+            region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
 
             # Build a clean 1-pixel perimeter for distance queries
             outline_mask = _singleline_outline(region_mask_morph)
 
             if _MORPH_DEBUG:
                 dbg_path = top_dir + "morph_debug.png"
-                _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
+                _debug_morph_steps(
+                    boundary_mask_raw,
+                    lon_1d,
+                    lat_1d,
+                    dbg_path,
+                    region_mask_morph=region_mask_morph,
+                    region_mask_morph_pre_polar=region_mask_morph_pre_polar,
+                )
 
             # Distance from every pixel to the nearest boundary pixel (deg)
             # This replaces the two-pass approach and works uniformly inside and outside.
@@ -484,6 +534,11 @@ def magnet_plot(
             )
             ch_out_csv = floc_path + f"pfss_distances.csv"
             np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
+            # Back-compat: preserve old downstream expectation of floc/distances.csv
+            compat_csv = path.join(floc_path, "distances.csv")
+            np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
+            if do_print_top:
+                print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
 
             from scipy import interpolate as _interp
 
@@ -532,31 +587,44 @@ def magnet_plot(
                 plt.show()
             # === end boundary distance map ===
         else:
+            if do_print_top:
+                print("\t[pfss] Preparing HMI map and resampling...", flush=True)
             hmi_map = sunpy.map.Map(magnet_file)
+            if do_print_top:
+                print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
             hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
-
+            if do_print_top:
+                print("\t[pfss] Building PFSS input and running potential-field solver (pfsspy.pfss)... this can take a bit.", flush=True)
             nrho = 40
             rss = 2.5
             pfss_in = pfsspy.Input(hmi_map, nrho, rss)
+            if do_print_top:
+                print(f"\t[pfss] Input ready (nrho={nrho}, rss={rss}); launching solver...", flush=True)
             pfss_out = pfsspy.pfss(pfss_in)
-
+            if do_print_top:
+                print("\t[pfss] PFSS solution computed. Building seed grid and tracing field lines...", flush=True)
             r = const.R_sun
             lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2)
             lat_1d = np.arcsin(np.linspace(-0.999, 0.999, nsteps))
             lon, lat = np.meshgrid(lon_1d, lat_1d, indexing="ij")
             lon, lat = lon * u.rad, lat * u.rad
+            if do_print_top:
+                print("\t[pfss] Seed grid defined on lon/lat; constructing SkyCoord seeds...", flush=True)
             seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
-
-            tracer = tracing.FortranTracer(max_steps=2000)
+            if do_print_top:
+                seed_n = (2 * nsteps) * nsteps
+                print(f"\t[pfss] Using FortranTracer; tracing a {2*nsteps}x{nsteps} seed grid ({seed_n} field lines)... this can be slow.", flush=True)
+            tracer = tracing.FortranTracer(max_steps=2500)
             field_lines = tracer.trace(seeds, pfss_out)
-
+            if do_print_top:
+                print("\t[pfss] Tracing complete. Reshaping polarities and expansion factors...", flush=True)
             pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
             expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
             expfs[np.where(np.isnan(expfs))] = 0
-
             np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
-
-            print(output_file)
+            if do_print_top:
+                print(f"\t[pfss] Saved PFSS maps to {shorten_path(output_file)}", flush=True)
+            # print(output_file)
             # === Coronal-hole boundary distance map (degrees)
             try:
                 lon_1d
@@ -582,13 +650,23 @@ def magnet_plot(
             boundary_mask = _morph_spacefill(boundary_mask)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
             region_mask_morph = _region_from_boundary(boundary_mask)
+            region_mask_morph_pre_polar = region_mask_morph.copy()
+            # Polar cleanup: remove small purple islands at |lat| > threshold
+            region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
 
             # Build a clean 1-pixel perimeter for distance queries
             outline_mask = _singleline_outline(region_mask_morph)
 
             if _MORPH_DEBUG:
                 dbg_path = top_dir + "morph_debug.png"
-                _debug_morph_steps(boundary_mask_raw, lon_1d, lat_1d, dbg_path)
+                _debug_morph_steps(
+                    boundary_mask_raw,
+                    lon_1d,
+                    lat_1d,
+                    dbg_path,
+                    region_mask_morph=region_mask_morph,
+                    region_mask_morph_pre_polar=region_mask_morph_pre_polar,
+                )
 
             # Distance from every pixel to the nearest boundary pixel (deg)
             # This replaces the two-pass approach and works uniformly inside and outside.
@@ -611,6 +689,11 @@ def magnet_plot(
             )
             ch_out_csv = floc_path + f"pfss_ch_distance_cr{cr}.csv"
             np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
+            # Back-compat: preserve old downstream expectation of floc/distances.csv
+            compat_csv = path.join(floc_path, "distances.csv")
+            np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
+            if do_print_top:
+                print(f"\t\tWrote back-compat CSV: {shorten_path(compat_csv)}")
 
             from scipy import interpolate as _interp
 
@@ -655,20 +738,12 @@ def magnet_plot(
                 ]
                 ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
                 plt.savefig(top_dir + "distances.png")
+                plt.show()
             # === end boundary distance map ===
 
-    if do_print:
-        print(
-            f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
-                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}"
-        )
-
     if do_print_top:
-        print("\t\t    Success!")
-        print("\t\t\t```````````````````````````````\n\n")
-
-    # Removed figure closing loop, as no figures are kept open from earlier code.
-    return _n_open, _n_closed, _n_flux, _fnum, _n_outliers
+        print("\t\t    Success!\n\t\t\t```````````````````````````````\n")
+    return 0, 0, 0, 0, 0
 
 
 ########################################################################
