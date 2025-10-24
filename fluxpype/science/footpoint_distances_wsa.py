@@ -1,3 +1,9 @@
+from matplotlib.colors import LinearSegmentedColormap
+
+# Custom colormap: transparent to red
+red_transparent_cmap = LinearSegmentedColormap.from_list(
+    "red_transparent", [(0, (1, 0, 0, 0)), (1, (1, 0, 0, 0.25))], N=256
+)
 """
 Changed
 ==========================================================
@@ -41,6 +47,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
+from scipy import ndimage
 from scipy.ndimage import (
     binary_dilation,
     binary_erosion,
@@ -49,7 +56,6 @@ from scipy.ndimage import (
     binary_fill_holes,
     generate_binary_structure,
     gaussian_filter,
-    label,
 )
 
 # --- Morphology defaults (conservative) ---
@@ -63,7 +69,7 @@ _MORPH_SMOOTH_SIGMA = 0.5  # light Gaussian smoothing before thresholding
 # --- Polar cleanup (remove small purple islands near the poles) ---
 _MORPH_POLAR_PURPLE_MIN_SIZE = 5000  # pixels; set 0 to disable
 _MORPH_POLAR_ABS_LAT_DEG = 65.0      # operate where |lat| > this
-_BOUND_POLAR_ABS_LAT_DEG =80.0      # operate where |lat| > this
+_BOUND_POLAR_ABS_LAT_DEG =75.0      # operate where |lat| > this
 
 # --- Morphology debug ---
 _MORPH_DEBUG = True  # set True to save a panel of intermediate stages
@@ -71,7 +77,7 @@ _MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
 
 # --- Distance map exclusion constants ---
 _POLAR_CAP_EXCLUDE_ROWS = None  # rows excluded at poles in distance map
-_PERIODIC_EXCLUDE_COLS = 2    # columns excluded at periodic edges
+_PERIODIC_EXCLUDE_COLS = 4    # columns excluded at periodic edges
 
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
@@ -108,7 +114,7 @@ def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
 
     # 5) Remove small speckles to keep contours clean
     if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
-        lbl, n = label(B)
+        lbl, n = ndimage.label(B)
         if n > 0:
             # keep only components with size >= MIN_SIZE
             counts = np.bincount(lbl.ravel())
@@ -123,11 +129,13 @@ def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
 def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
     """
     Build a continuous, one-pixel outline around the region indicated by a boundary mask.
+    Modified so that the outline corresponds exactly to the geometry used for the distance map
+    (post-morphology, pre–hole-fill), matching what the KDTree "sees".
     Steps:
       1) Expand + close using 8-neighborhood to connect diagonals.
-      2) Fill interior holes to get a solid region.
+      2) (Skip fill_holes, to avoid interior edges not present in the KDTree mask.)
       3) Remove tiny islands.
-      4) Outline = region XOR erode(region)  -> ~1px perimeter.
+      4) Outline = boundary_mask & ~binary_erosion(boundary_mask, st8)
     """
     B = boundary_mask.astype(bool)
 
@@ -140,20 +148,20 @@ def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
     R = binary_closing(R, st8)  # close tiny gaps
 
     # 2) Fill interior to avoid "red foam"
-    R = binary_fill_holes(R)
+    # R = binary_fill_holes(R)  # <-- REMOVE this step for consistency with KDTree mask
 
     # 3) Remove tiny islands for cleanliness
     if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
-        lbl, n = label(R)
+        lbl, n = ndimage.label(R)
         if n > 0:
             counts = np.bincount(lbl.ravel())
             keep = counts >= _MORPH_MIN_SIZE
             keep[0] = False
             R = keep[lbl]
 
-    # 4) 1-pixel perimeter via morphological gradient (region minus eroded region)
-    er = binary_erosion(R, st8)
-    outline = R & ~er
+    # 4) Ensure outline matches exactly the KDTree boundary mask:
+    #    remove interior edges created by fill_holes, use boundary_mask itself.
+    outline = boundary_mask.astype(bool) & ~binary_erosion(boundary_mask.astype(bool), st8)
     return outline
 
 
@@ -178,7 +186,7 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
     # Fill interiors and clean up
     R = binary_fill_holes(R)
     if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
-        lbl, n = label(R)
+        lbl, n = ndimage.label(R)
         if n > 0:
             counts = np.bincount(lbl.ravel())
             keep = counts >= _MORPH_MIN_SIZE
@@ -196,7 +204,7 @@ def _mask_polar_band_interior(boundary_mask: np.ndarray, lat_1d: np.ndarray,
     lat_cut = np.deg2rad(lat_cut_deg)
     polar_rows = np.abs(lat_1d) > lat_cut
     st8 = generate_binary_structure(2, 2)
-    lbl, n = label(B, structure=st8)
+    lbl, n = ndimage.label(B, structure=st8)
     for i in range(1, n + 1):
         coords = np.argwhere(lbl == i)
         lat_inds = coords[:, 0]
@@ -218,8 +226,9 @@ def _treat_poles_as_open_field(region_mask: np.ndarray, lat_1d: np.ndarray,
     return R
 
 
+
 # --- Helper: remove small purple islands (False) at high latitudes only ---
-def _clean_polar_purple_islands(
+def _clean_polar_islands(
     region_mask: np.ndarray,
     lat_1d: np.ndarray,
     min_size: int = _MORPH_POLAR_PURPLE_MIN_SIZE,
@@ -256,7 +265,7 @@ def _clean_polar_purple_islands(
 
     # Label purple (False) components with 8-connectivity
     st8 = generate_binary_structure(2, 2)
-    lbl, n = label(~local, structure=st8)
+    lbl, n = ndimage.label(~local, structure=st8)
     if n == 0:
         return R
 
@@ -271,6 +280,18 @@ def _clean_polar_purple_islands(
     return R
 
 
+# --- Helper: fill periodic longitude edge columns as open field (True) ---
+def _apply_periodic_edge_fill(region_mask_morph: np.ndarray) -> np.ndarray:
+    """
+    Fill the periodic longitude edge columns as open field (True), if exclusion is enabled.
+    """
+    r2 = int(_PERIODIC_EXCLUDE_COLS) if _PERIODIC_EXCLUDE_COLS is not None else 0
+    if r2 > 0:
+        region_mask_morph[:, :r2] = True
+        region_mask_morph[:, -r2:] = True
+    return region_mask_morph
+
+
 def _debug_morph_steps(
     boundary_mask_raw: np.ndarray,
     lon_1d: np.ndarray,
@@ -279,7 +300,7 @@ def _debug_morph_steps(
     region_mask_morph: np.ndarray | None = None,
     region_mask_morph_pre_polar: np.ndarray | None = None,
     polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
-    periodic_exclude_rows: int = _PERIODIC_EXCLUDE_COLS,
+    periodic_exclude_cols: int = _PERIODIC_EXCLUDE_COLS,
 ) -> None:
     """
     Save an 8-panel figure showing the morphological stages:
@@ -315,7 +336,7 @@ def _debug_morph_steps(
     # 5) cleaned
     B5 = B4.copy()
     if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
-        lbl, n = label(B5)
+        lbl, n = ndimage.label(B5)
         if n > 0:
             counts = np.bincount(lbl.ravel())
             keep = counts >= _MORPH_MIN_SIZE
@@ -366,12 +387,12 @@ def _debug_morph_steps(
     excl_mask = np.zeros((n_lat, n_lon), dtype=bool)
     # excl_mask[:polar_cap_exclude_rows, :] = True
     # excl_mask[-polar_cap_exclude_rows:, :] = True
-    excl_mask[:, :periodic_exclude_rows] = True
-    excl_mask[:, -periodic_exclude_rows:] = True
+    # excl_mask[:, :periodic_exclude_cols] = True
+    # excl_mask[:, -periodic_exclude_cols:] = True
     if np.any(excl_mask):
         ax_ex.imshow(excl_mask, aspect="auto", origin="lower", interpolation="nearest",
                      extent=extent, alpha=0.25, cmap="gray")
-        # txt = f"Excluded rows: ±{polar_cap_exclude_rows}, cols: ±{periodic_exclude_rows}"
+        # txt = f"Excluded rows: ±{polar_cap_exclude_rows}, cols: ±{periodic_exclude_cols}"
         # ax_ex.text(0.02, 0.05, txt, color="white", fontsize=8, transform=ax_ex.transAxes,
                 #    bbox=dict(facecolor="black", alpha=0.3, pad=2))
 
@@ -401,14 +422,31 @@ def _boundary_mask_from_pols(P: np.ndarray) -> np.ndarray:
     nb_down  = is_zero & (P_pad[ 2:, :] != 0)
 
     boundary_mask = nb_up | nb_down | nb_left | nb_right
+
     return boundary_mask
+
+
+def _smooth_regions(B,erode=2, dialate=2):
+    # Use 8-neighborhood to preserve structure
+    st = generate_binary_structure(2, 2)
+
+    for _ in range(int(erode)):
+        B = binary_erosion(B, st)
+        # print("Eroding...")
+
+    for _ in range(int(dialate)):
+        B = binary_dilation(B, st)
+        # print("Dialating...")
+
+    return B
+
 
 def _gc_distance_map_to_boundary(
     lon_1d: np.ndarray,
     lat_1d: np.ndarray,
     boundary_mask: np.ndarray,
     # polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
-    periodic_exclude_rows: int = _PERIODIC_EXCLUDE_COLS,
+    periodic_exclude_cols: int = _PERIODIC_EXCLUDE_COLS,
 ) -> np.ndarray:
     """
     Return a (n_lat, n_lon) array of great-circle distances [deg] from each pixel
@@ -424,7 +462,7 @@ def _gc_distance_map_to_boundary(
     #     Number of *rows at each pole* (top and bottom) to blank out in `boundary_mask`
     #     before building the KDTree. This treats the north/south poles as poles (not edges)
     #     by preventing spurious boundary pixels at the map edges. Default is 4.
-    periodic_exclude_rows: int, optional
+    periodic_exclude_cols: int, optional
         Number of rows at each edge to blank out in `boundary_mask`.
 
     Notes
@@ -435,7 +473,7 @@ def _gc_distance_map_to_boundary(
     # Treat the north/south poles as poles (not edges) by removing boundary pixels
     # from high-latitude rows (|lat| > threshold) before distance queries.
     BM = boundary_mask.astype(bool).copy()
-    r2 = int(periodic_exclude_rows) if periodic_exclude_rows is not None else 0
+    r2 = int(periodic_exclude_cols) if periodic_exclude_cols is not None else 0
     if r2 > 0:
         BM[:, :r2] = False
         BM[:, -r2:] = False
@@ -558,294 +596,198 @@ def magnet_plot(
     for i, cr in enumerate(crs):
         output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
         if os.path.exists(output_file) and not force_pfss:
-            data = np.load(output_file)
-            pols, expfs = data["ofmap"], data["efmap"]
-            print("LOADED POLS, EXPFS")
-            # === Coronal-hole boundary distance map (degrees) for pols == 0 ===
-            # Ensure longitude/latitude vectors are present whether we loaded or computed
-            try:
-                lon_1d
-                lat_1d
-            except NameError:
-                # When loading from disk, fetch lon/lat saved earlier
-                if "data" in locals():
-                    lon_1d = data["lon"]
-                    lat_1d = data["lat"]
-                else:
-                    raise
-
-            # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
-            lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (nsteps, 2*nsteps)
-
-            # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
-            P = pols
-            boundary_mask = _boundary_mask_from_pols(P)
-            boundary_mask_raw = boundary_mask.copy()
-            boundary_mask = _morph_spacefill(boundary_mask)
-            boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
-            region_mask_raw = _region_from_boundary(boundary_mask_raw)
-            region_mask_morph = _region_from_boundary(boundary_mask)
-            region_mask_morph_pre_polar = region_mask_morph.copy()
-            # Treat all pixels above |lat| > lat_cut_deg as open field (True)
-            region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
-            # Polar cleanup: remove small purple islands at |lat| > threshold
-            region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
-
-            # Build a clean 1-pixel perimeter for distance queries
-            outline_mask = _singleline_outline(region_mask_morph)
-
-            if _MORPH_DEBUG:
-                dbg_path = top_dir + "morph_debug.png"
-                _debug_morph_steps(
-                    boundary_mask_raw,
-                    lon_1d,
-                    lat_1d,
-                    dbg_path,
-                    region_mask_morph=region_mask_morph,
-                    region_mask_morph_pre_polar=region_mask_morph_pre_polar,
-                    polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
-                    periodic_exclude_rows=_PERIODIC_EXCLUDE_COLS,
-                )
-
-            # Distance from every pixel to the nearest boundary pixel (deg)
-            # This replaces the two-pass approach and works uniformly inside and outside.
-            ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
-
-            # Simple diagnostics: report interior vs exterior distance percentiles
-            try:
-                interior = region_mask_morph  # filled CH regions (zeros)
-                exterior = ~region_mask_morph
-                intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
-                extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
-                print(f"[diag] interior deg p5/50/95: {intr_pct}")
-                print(f"[diag] exterior deg p5/50/95: {extr_pct}")
-            except Exception as _e:
-                print(f"[diag] percentile check skipped: {_e}")
-
-            # Persist results alongside lon/lat for later reuse/interpolation
-            ch_out_npz = floc_path + f"pfss_distances.npz"
-            np.savez_compressed(
-                ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
-            )
-            ch_out_csv = floc_path + f"pfss_distances.csv"
-            np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
-            # Back-compat: preserve old downstream expectation of floc/distances.csv
-            compat_csv = path.join(floc_path, "distances.csv")
-            np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
-            if do_print_top:
-                print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
-
-            from scipy import interpolate as _interp
-
-            ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
-
-            if True:
-                fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
-                im = ax_ch.imshow(
-                    ch_distance_deg,
-                    cmap="viridis",
-                    origin="lower",
-                    interpolation="none",
-                    extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
-                    aspect="auto",
-                )
-                # sanity contours to check symmetry of distances inside vs outside
-                ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
-                im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
-                cs_raw = ax_ch.contour(
-                    lon_1d,
-                    np.sin(lat_1d),
-                    region_mask_raw.astype(int),
-                    levels=[0.5],
-                    colors="white",
-                    linewidths=0.5,
-                    linestyles="dashed",
-                )
-                cs_morph = ax_ch.contour(
-                    lon_1d,
-                    np.sin(lat_1d),
-                    region_mask_morph.astype(int),
-                    levels=[0.5],
-                    colors="red",
-                    linewidths=1.5,
-                )
-                from matplotlib.lines import Line2D
-
-                handles = [
-                    Line2D([0], [0], color="white", lw=0.5, ls="--", label="raw"),
-                    Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
-                ]
-                ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
-                plt.tight_layout()
-                plt.savefig(top_dir + "distances.png")
-                plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
-                plt.show()
-            # === end boundary distance map ===
+            pols, expfs, lon_1d, lat_1d = _load_pfss_results(output_file)
         else:
-            if do_print_top:
-                print("\t[pfss] Preparing HMI map and resampling...", flush=True)
-            hmi_map = sunpy.map.Map(magnet_file)
-            # --- Apply the same diagnostic roll to the SunPy map data ---
-            roll_cols = int(hmi_map.data.shape[1] * (9 / 3) / (2 * np.pi))
-            hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
-            print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
-            if do_print_top:
-                print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
-            hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
-            if do_print_top:
-                print("\t[pfss] Building PFSS input and running potential-field solver (pfsspy.pfss)... this can take a bit.", flush=True)
-            nrho = 40
-            rss = 2.5
-            pfss_in = pfsspy.Input(hmi_map, nrho, rss)
-            if do_print_top:
-                print(f"\t[pfss] Input ready (nrho={nrho}, rss={rss}); launching solver...", flush=True)
-            pfss_out = pfsspy.pfss(pfss_in)
-            if do_print_top:
-                print("\t[pfss] PFSS solution computed. Building seed grid and tracing field lines...", flush=True)
-            r = const.R_sun
-            lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2)
-            lat_1d = np.arcsin(np.linspace(-0.999, 0.999, nsteps))
-            lon, lat = np.meshgrid(lon_1d, lat_1d, indexing="ij")
-            lon, lat = lon * u.rad, lat * u.rad
-            if do_print_top:
-                print("\t[pfss] Seed grid defined on lon/lat; constructing SkyCoord seeds...", flush=True)
-            seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
-            if do_print_top:
-                seed_n = (2 * nsteps) * nsteps
-                print(f"\t[pfss] Using FortranTracer; tracing a {2*nsteps}x{nsteps} seed grid ({seed_n} field lines)... this can be slow.", flush=True)
-            tracer = tracing.FortranTracer(max_steps=2500)
-            field_lines = tracer.trace(seeds, pfss_out)
-            if do_print_top:
-                print("\t[pfss] Tracing complete. Reshaping polarities and expansion factors...", flush=True)
-            pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
-            expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
-
-            expfs[np.where(np.isnan(expfs))] = 0
-            np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
-            if do_print_top:
-                print(f"\t[pfss] Saved PFSS maps to {shorten_path(output_file)}", flush=True)
-            # print(output_file)
-            # === Coronal-hole boundary distance map (degrees)
-            try:
-                lon_1d
-                lat_1d
-            except NameError:
-                if "data" in locals():
-                    lon_1d = data["lon"]
-                    lat_1d = data["lat"]
-                else:
-                    raise
-
-            lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
-
-            P = pols
-            boundary_mask = _boundary_mask_from_pols(P)
-            boundary_mask_raw = boundary_mask.copy()
-            boundary_mask = _morph_spacefill(boundary_mask)
-            boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
-            region_mask_raw = _region_from_boundary(boundary_mask_raw)
-            region_mask_morph = _region_from_boundary(boundary_mask)
-            region_mask_morph_pre_polar = region_mask_morph.copy()
-            # Treat all pixels above |lat| > lat_cut_deg as open field (True)
-            region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
-            # Polar cleanup: remove small purple islands at |lat| > threshold
-            region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
-
-            # Build a clean 1-pixel perimeter for distance queries
-            outline_mask = _singleline_outline(region_mask_morph)
-
-            if _MORPH_DEBUG:
-                dbg_path = top_dir + "morph_debug.png"
-                _debug_morph_steps(
-                    boundary_mask_raw,
-                    lon_1d,
-                    lat_1d,
-                    dbg_path,
-                    region_mask_morph=region_mask_morph,
-                    region_mask_morph_pre_polar=region_mask_morph_pre_polar,
-                    polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
-                    periodic_exclude_rows=_PERIODIC_EXCLUDE_COLS,
-                )
-
-            # Distance from every pixel to the nearest boundary pixel (deg)
-            # This replaces the two-pass approach and works uniformly inside and outside.
-            ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
-
-            # Simple diagnostics: report interior vs exterior distance percentiles
-            try:
-                interior = region_mask_morph  # filled CH regions (zeros)
-                exterior = ~region_mask_morph
-                intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
-                extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
-                print(f"[diag] interior deg p5/50/95: {intr_pct}")
-                print(f"[diag] exterior deg p5/50/95: {extr_pct}")
-            except Exception as _e:
-                print(f"[diag] percentile check skipped: {_e}")
-
-            ch_out_npz = floc_path + f"pfss_ch_distance_cr{cr}.npz"
-            np.savez_compressed(
-                ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
-            )
-            ch_out_csv = floc_path + f"pfss_ch_distance_cr{cr}.csv"
-            np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
-            # Back-compat: preserve old downstream expectation of floc/distances.csv
-            compat_csv = path.join(floc_path, "distances.csv")
-            np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
-            if do_print_top:
-                print(f"\t\tWrote back-compat CSV: {shorten_path(compat_csv)}")
-
-            from scipy import interpolate as _interp
-
-            ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
-
-            if True:
-                fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
-                im = ax_ch.imshow(
-                    ch_distance_deg,
-                    cmap="viridis",
-                    origin="lower",
-                    interpolation="none",
-                    extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
-                    aspect="auto",
-                )
-                # sanity contours to check symmetry of distances inside vs outside
-                ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
-                im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
-                cs_raw = ax_ch.contour(
-                    lon_1d,
-                    np.sin(lat_1d),
-                    region_mask_raw.astype(int),
-                    levels=[0.5],
-                    colors="white",
-                    linewidths=1.2,
-                    linestyles="dashed",
-                )
-                cs_morph = ax_ch.contour(
-                    lon_1d,
-                    np.sin(lat_1d),
-                    region_mask_morph.astype(int),
-                    levels=[0.5],
-                    colors="red",
-                    linewidths=1.5,
-                )
-                from matplotlib.lines import Line2D
-
-                handles = [
-                    Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
-                    Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
-                ]
-                ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
-                plt.tight_layout()
-                plt.savefig(top_dir + "distances.png", dpi=300 )
-                plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
-                plt.show()
-            # === end boundary distance map ===
+            pols, expfs, lon_1d, lat_1d = _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top)
+        _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top)
 
     if do_print_top:
         print("\t\t    Success!\n\t\t\t```````````````````````````````\n")
     return 0, 0, 0, 0, 0
+
+
+# --- Helper: load PFSS results from .npz file ---
+def _load_pfss_results(output_file):
+    data = np.load(output_file)
+    pols = data["ofmap"]
+    expfs = data["efmap"]
+    lon_1d = data["lon"]
+    lat_1d = data["lat"]
+    print("LOADED POLS, EXPFS")
+    return pols, expfs, lon_1d, lat_1d
+
+
+# --- Helper: compute PFSS results and return pols, expfs, lon_1d, lat_1d ---
+def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
+    import sunpy
+    from astropy import units as u, constants as const
+    from astropy.coordinates import SkyCoord
+    import pfsspy
+    from pfsspy import tracing
+    from fluxpype.pipe_helper import shorten_path
+    cr = get_cr
+    output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
+    if do_print_top:
+        print("\t[pfss] Preparing HMI map and resampling...", flush=True)
+    hmi_map = sunpy.map.Map(magnet_file)
+    roll_cols = int(hmi_map.data.shape[1] * (9 / 3) / (2 * np.pi))
+    hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
+    print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
+    if do_print_top:
+        print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
+    hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
+    if do_print_top:
+        print("\t[pfss] Building PFSS input and running potential-field solver (pfsspy.pfss)... this can take a bit.", flush=True)
+    nrho = 40
+    rss = 2.5
+    pfss_in = pfsspy.Input(hmi_map, nrho, rss)
+    if do_print_top:
+        print(f"\t[pfss] Input ready (nrho={nrho}, rss={rss}); launching solver...", flush=True)
+    pfss_out = pfsspy.pfss(pfss_in)
+    if do_print_top:
+        print("\t[pfss] PFSS solution computed. Building seed grid and tracing field lines...", flush=True)
+    r = const.R_sun
+    lon_1d = np.linspace(0, 2 * np.pi, nsteps * 2)
+    lat_1d = np.arcsin(np.linspace(-0.999, 0.999, nsteps))
+    lon, lat = np.meshgrid(lon_1d, lat_1d, indexing="ij")
+    lon, lat = lon * u.rad, lat * u.rad
+    if do_print_top:
+        print("\t[pfss] Seed grid defined on lon/lat; constructing SkyCoord seeds...", flush=True)
+    seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
+    if do_print_top:
+        seed_n = (2 * nsteps) * nsteps
+        print(f"\t[pfss] Using FortranTracer; tracing a {2*nsteps}x{nsteps} seed grid ({seed_n} field lines)... this can be slow.", flush=True)
+    tracer = tracing.FortranTracer(max_steps=2500)
+    field_lines = tracer.trace(seeds, pfss_out)
+    if do_print_top:
+        print("\t[pfss] Tracing complete. Reshaping polarities and expansion factors...", flush=True)
+    pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
+    expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
+    expfs[np.where(np.isnan(expfs))] = 0
+    if not os.path.exists(os.path.dirname(output_file)):
+        os.makedirs(os.path.dirname(output_file))
+    np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
+    if do_print_top:
+        print(f"\t[pfss] Saved PFSS maps to {shorten_path(output_file)}", flush=True)
+    return pols, expfs, lon_1d, lat_1d
+
+
+# --- Helper: process PFSS results and perform morphology, distance, and plotting ---
+def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top):
+    from fluxpype.pipe_helper import shorten_path
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import time
+    # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
+    lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
+    # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
+    P = pols
+    boundary_mask = _boundary_mask_from_pols(P)
+    boundary_mask_raw = boundary_mask.copy()
+    boundary_mask = _morph_spacefill(boundary_mask)
+    boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
+    region_mask_raw = _region_from_boundary(boundary_mask_raw)
+    region_mask_morph = _region_from_boundary(boundary_mask)
+    region_mask_morph_pre_polar = region_mask_morph.copy()
+    # Treat all pixels above |lat| > lat_cut_deg as open field (True)
+    region_mask_morph = _smooth_regions(region_mask_morph, erode=8, dialate=6)
+    region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
+    # Polar cleanup: remove small purple islands at |lat| > threshold
+    region_mask_morph = _clean_polar_islands(region_mask_morph, lat_1d)
+    region_mask_morph = _smooth_regions(region_mask_morph, erode=4, dialate=3)
+    region_mask_morph = _apply_periodic_edge_fill(region_mask_morph)
+    # Build a clean 1-pixel perimeter for distance queries
+    outline_mask = _singleline_outline(region_mask_morph)
+    if _MORPH_DEBUG:
+        dbg_path = top_dir + "morph_debug.png"
+        _debug_morph_steps(
+            boundary_mask_raw,
+            lon_1d,
+            lat_1d,
+            dbg_path,
+            region_mask_morph=region_mask_morph,
+            region_mask_morph_pre_polar=region_mask_morph_pre_polar,
+            polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
+            periodic_exclude_cols=_PERIODIC_EXCLUDE_COLS,
+        )
+    # Distance from every pixel to the nearest boundary pixel (deg)
+    ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
+    # Simple diagnostics: report interior vs exterior distance percentiles
+    try:
+        interior = region_mask_morph  # filled CH regions (zeros)
+        exterior = ~region_mask_morph
+        intr_pct = np.nanpercentile(ch_distance_deg[interior], [5, 50, 95])
+        extr_pct = np.nanpercentile(ch_distance_deg[exterior], [5, 50, 95])
+        print(f"[diag] interior deg p5/50/95: {intr_pct}")
+        print(f"[diag] exterior deg p5/50/95: {extr_pct}")
+    except Exception as _e:
+        print(f"[diag] percentile check skipped: {_e}")
+    # Persist results alongside lon/lat for later reuse/interpolation
+    ch_out_npz = floc_path + f"pfss_distances.npz"
+    np.savez_compressed(
+        ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
+    )
+    ch_out_csv = floc_path + f"pfss_distances.csv"
+    np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
+    # Back-compat: preserve old downstream expectation of floc/distances.csv
+    compat_csv = os.path.join(floc_path, "distances.csv")
+    np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
+    if do_print_top:
+        print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
+    from scipy import interpolate as _interp
+    ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
+    # Plotting
+    fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
+    im = ax_ch.imshow(
+        ch_distance_deg,
+        cmap="viridis",
+        origin="lower",
+        interpolation="none",
+        extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
+        aspect="auto",
+    )
+    # sanity contours to check symmetry of distances inside vs outside
+    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+    im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
+    ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary")
+    cs_raw = ax_ch.contour(
+        lon_1d,
+        np.sin(lat_1d),
+        region_mask_raw.astype(int),
+        levels=[0.5],
+        colors="white",
+        linewidths=0.5,
+        linestyles="dashed",
+    )
+    cs_morph = ax_ch.contour(
+        lon_1d,
+        np.sin(lat_1d),
+        region_mask_morph.astype(int),
+        levels=[0.5],
+        colors="red",
+        linewidths=1.5,
+    )
+    # Overlay closed-field mask after red contour, before legend
+    closed_field_mask = ~region_mask_morph
+    ax_ch.imshow(
+        closed_field_mask,
+        extent=(lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1])),
+        origin="lower",
+        cmap=red_transparent_cmap,
+        alpha=1.0,
+        interpolation="none",
+        aspect="auto",
+    )
+    from matplotlib.lines import Line2D
+    handles = [
+        Line2D([0], [0], color="white", lw=0.5, ls="--", label="raw"),
+        Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
+    ]
+    ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
+    plt.tight_layout()
+    plt.savefig(top_dir + "distances.png")
+    plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
+    plt.show()
 
 
 ########################################################################
