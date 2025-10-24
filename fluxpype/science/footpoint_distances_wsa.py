@@ -462,10 +462,7 @@ def magnet_plot(
     fname = magnet_file
     # Load the magnetogram (always available for PFSS path)
     magnet, header = load_fits_magnetogram(batch=_batch, ret_all=True, configs=configs, fname=fname)
-    # --- Diagnostic roll: shift magnetogram right by 2/3π (~120°) in longitude ---
-    roll_cols = int(magnet.shape[1] * (2 / 3) / (2 * np.pi))
-    magnet = np.roll(magnet, shift=roll_cols, axis=1)
-    print(f"[diag] Rolled magnetogram right by {roll_cols} columns (~2/3π radians).")
+    roll_cols = 0  # default; only set nonzero when rolling SunPy map for PFSS compute path
     nsteps = 360
 
     crs = [get_cr]
@@ -487,9 +484,6 @@ def magnet_plot(
     # with tqdm(total=len(crs)) as pbar:
     for i, cr in enumerate(crs):
         output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
-
-        # Temporary override to force PFSS recomputation
-        force_pfss = True
         if os.path.exists(output_file) and not force_pfss:
             data = np.load(output_file)
             pols, expfs = data["ofmap"], data["efmap"]
@@ -580,7 +574,7 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {_roll_cols_applied}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
@@ -615,7 +609,7 @@ def magnet_plot(
                 print("\t[pfss] Preparing HMI map and resampling...", flush=True)
             hmi_map = sunpy.map.Map(magnet_file)
             # --- Apply the same diagnostic roll to the SunPy map data ---
-            roll_cols = int(hmi_map.data.shape[1] * (4 / 3) / (2 * np.pi))
+            roll_cols = int(hmi_map.data.shape[1] * (9 / 3) / (2 * np.pi))
             hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
             print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
             if do_print_top:
@@ -735,7 +729,7 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {_roll_cols_applied}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
@@ -760,6 +754,7 @@ def magnet_plot(
                     Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
                 ]
                 ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
+                plt.tight_layout()
                 plt.savefig(top_dir + "distances.png", dpi=300 )
                 plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
                 plt.show()
