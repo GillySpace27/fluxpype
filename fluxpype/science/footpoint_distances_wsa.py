@@ -58,15 +58,20 @@ _MORPH_ERODE_ITERS = 6  # no erosion by default
 _MORPH_CLOSE_ITERS = 0  # close small gaps
 _MORPH_OPEN_ITERS = 0  # do not open by default
 _MORPH_MIN_SIZE = 16  # remove tiny speckles
-_MORPH_SMOOTH_SIGMA = 0.4  # light Gaussian smoothing before thresholding
+_MORPH_SMOOTH_SIGMA = 0.5  # light Gaussian smoothing before thresholding
 
 # --- Polar cleanup (remove small purple islands near the poles) ---
 _MORPH_POLAR_PURPLE_MIN_SIZE = 5000  # pixels; set 0 to disable
 _MORPH_POLAR_ABS_LAT_DEG = 65.0      # operate where |lat| > this
+_BOUND_POLAR_ABS_LAT_DEG =80.0      # operate where |lat| > this
 
 # --- Morphology debug ---
 _MORPH_DEBUG = True  # set True to save a panel of intermediate stages
 _MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
+
+# --- Distance map exclusion constants ---
+_POLAR_CAP_EXCLUDE_ROWS = None  # rows excluded at poles in distance map
+_PERIODIC_EXCLUDE_COLS = 2    # columns excluded at periodic edges
 
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
@@ -183,6 +188,36 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
     return R
 
 
+# --- Helper: mask horizontal boundary lines confined to polar caps, preserving vertical peninsulas ---
+def _mask_polar_band_interior(boundary_mask: np.ndarray, lat_1d: np.ndarray,
+                              lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG) -> np.ndarray:
+    """Remove horizontal boundary lines confined to polar caps, preserving vertical peninsulas."""
+    B = boundary_mask.copy()
+    lat_cut = np.deg2rad(lat_cut_deg)
+    polar_rows = np.abs(lat_1d) > lat_cut
+    st8 = generate_binary_structure(2, 2)
+    lbl, n = label(B, structure=st8)
+    for i in range(1, n + 1):
+        coords = np.argwhere(lbl == i)
+        lat_inds = coords[:, 0]
+        # remove only components entirely within polar band
+        if np.all(polar_rows[lat_inds]):
+            B[lat_inds, coords[:, 1]] = False
+            print("\n---------Removing Band!--------\n")
+    return B
+
+# --- Helper: treat all pixels above |lat| > lat_cut_deg as open field (True) ---
+def _treat_poles_as_open_field(region_mask: np.ndarray, lat_1d: np.ndarray,
+                               lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG) -> np.ndarray:
+    """Force all pixels above |lat| > lat_cut_deg to open field (True)."""
+    R = region_mask.copy()
+    lat_cut = np.deg2rad(lat_cut_deg)
+    polar_rows = np.abs(lat_1d) > lat_cut
+    if np.any(polar_rows):
+        R[polar_rows, :] = True
+    return R
+
+
 # --- Helper: remove small purple islands (False) at high latitudes only ---
 def _clean_polar_purple_islands(
     region_mask: np.ndarray,
@@ -236,7 +271,6 @@ def _clean_polar_purple_islands(
     return R
 
 
-# --- Helper: Save 8-panel figure of intermediate morphology steps ---
 def _debug_morph_steps(
     boundary_mask_raw: np.ndarray,
     lon_1d: np.ndarray,
@@ -244,10 +278,13 @@ def _debug_morph_steps(
     savepath: str | None = None,
     region_mask_morph: np.ndarray | None = None,
     region_mask_morph_pre_polar: np.ndarray | None = None,
+    polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
+    periodic_exclude_rows: int = _PERIODIC_EXCLUDE_COLS,
 ) -> None:
     """
     Save an 8-panel figure showing the morphological stages:
     raw, smoothed, closed, dilated, eroded, cleaned, region(raw), region(morphed)
+    Now also overlays excluded polar rows and periodic longitude columns.
     """
     B0 = boundary_mask_raw.astype(bool)
 
@@ -258,7 +295,6 @@ def _debug_morph_steps(
     else:
         B1 = B0.copy()
 
-    # 4-neighborhood for the “spacefill” sequence (conservative, preserves shapes)
     st4 = generate_binary_structure(2, 1)
 
     # 2) closed
@@ -276,7 +312,7 @@ def _debug_morph_steps(
     for _ in range(int(_MORPH_ERODE_ITERS)):
         B4 = binary_erosion(B4, st4)
 
-    # 5) cleaned (remove tiny components)
+    # 5) cleaned
     B5 = B4.copy()
     if _MORPH_MIN_SIZE and _MORPH_MIN_SIZE > 0:
         lbl, n = label(B5)
@@ -286,14 +322,11 @@ def _debug_morph_steps(
             keep[0] = False
             B5 = keep[lbl]
 
-    # Regions for single-line closed contours
     region_raw = _region_from_boundary(B0)
     region_morph = _region_from_boundary(B5)
-    # If the caller provides the actual post-cleanup mask, prefer it for display
     if region_mask_morph is not None:
         region_morph = region_mask_morph.astype(bool)
 
-    # Assemble figure
     fig, axes = plt.subplots(2, 4, figsize=(16, 8), constrained_layout=True)
     panels = [
         ("Raw", B0),
@@ -312,7 +345,7 @@ def _debug_morph_steps(
         ax.set_xlabel("lon (rad)")
         ax.set_ylabel("sin(lat)")
 
-    # Overlay: highlight pixels flipped by polar cleanup in polar caps on the morphed panel
+    # Overlay polar cleanup changes if provided
     if region_mask_morph is not None and region_mask_morph_pre_polar is not None:
         try:
             flipped = region_mask_morph.astype(bool) & (~region_mask_morph_pre_polar.astype(bool))
@@ -320,19 +353,27 @@ def _debug_morph_steps(
             polar_rows = np.abs(lat_1d) > lat_cut
             flipped &= polar_rows[:, None]
             if np.any(flipped):
-                ax_morph = axes.ravel()[-1]  # 'Region (morphed)' panel
-                ax_morph.imshow(
-                    flipped,
-                    aspect="auto",
-                    origin="lower",
-                    interpolation="nearest",
-                    extent=extent,
-                    alpha=0.45,
-                    cmap="Reds",
-                )
+                ax_morph = axes.ravel()[-1]
+                ax_morph.imshow(flipped, aspect="auto", origin="lower", interpolation="nearest",
+                                extent=extent, alpha=0.45, cmap="Reds")
                 ax_morph.set_title("Region (morphed) + polar cleanup Δ")
         except Exception:
             pass
+
+    # Overlay excluded rows/columns on Region (morphed)
+    ax_ex = axes.ravel()[-1]
+    n_lat, n_lon = len(lat_1d), len(lon_1d)
+    excl_mask = np.zeros((n_lat, n_lon), dtype=bool)
+    # excl_mask[:polar_cap_exclude_rows, :] = True
+    # excl_mask[-polar_cap_exclude_rows:, :] = True
+    excl_mask[:, :periodic_exclude_rows] = True
+    excl_mask[:, -periodic_exclude_rows:] = True
+    if np.any(excl_mask):
+        ax_ex.imshow(excl_mask, aspect="auto", origin="lower", interpolation="nearest",
+                     extent=extent, alpha=0.25, cmap="gray")
+        # txt = f"Excluded rows: ±{polar_cap_exclude_rows}, cols: ±{periodic_exclude_rows}"
+        # ax_ex.text(0.02, 0.05, txt, color="white", fontsize=8, transform=ax_ex.transAxes,
+                #    bbox=dict(facecolor="black", alpha=0.3, pad=2))
 
     if savepath and _MORPH_DEBUG_SAVE:
         plt.savefig(savepath, dpi=200)
@@ -362,21 +403,53 @@ def _boundary_mask_from_pols(P: np.ndarray) -> np.ndarray:
     boundary_mask = nb_up | nb_down | nb_left | nb_right
     return boundary_mask
 
-def _gc_distance_map_to_boundary(lon_1d: np.ndarray, lat_1d: np.ndarray, boundary_mask: np.ndarray) -> np.ndarray:
+def _gc_distance_map_to_boundary(
+    lon_1d: np.ndarray,
+    lat_1d: np.ndarray,
+    boundary_mask: np.ndarray,
+    # polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
+    periodic_exclude_rows: int = _PERIODIC_EXCLUDE_COLS,
+) -> np.ndarray:
     """
     Return a (n_lat, n_lon) array of great-circle distances [deg] from each pixel
     (lon_1d, lat_1d grid) to the nearest TRUE pixel in `boundary_mask`.
 
+    Parameters
+    ----------
+    lon_1d : 1D array (radians)
+    lat_1d : 1D array (radians)
+    boundary_mask : 2D bool array
+        Mask of boundary pixels, shape (n_lat, n_lon). True indicates a boundary pixel.
+    # polar_cap_exclude_rows : int, optional
+    #     Number of *rows at each pole* (top and bottom) to blank out in `boundary_mask`
+    #     before building the KDTree. This treats the north/south poles as poles (not edges)
+    #     by preventing spurious boundary pixels at the map edges. Default is 4.
+    periodic_exclude_rows: int, optional
+        Number of rows at each edge to blank out in `boundary_mask`.
+
     Notes
     -----
-    * `boundary_mask` must be shape (n_lat, n_lon) and mark boundary pixels (True).
     * Distances are computed on the unit sphere using a KDTree in 3D:
         angle = 2 * arcsin( ||x - x_bnd|| / 2 ), in degrees.
     """
+    # Treat the north/south poles as poles (not edges) by removing boundary pixels
+    # from high-latitude rows (|lat| > threshold) before distance queries.
+    BM = boundary_mask.astype(bool).copy()
+    r2 = int(periodic_exclude_rows) if periodic_exclude_rows is not None else 0
+    if r2 > 0:
+        BM[:, :r2] = False
+        BM[:, -r2:] = False
+
+    # Treat poles as open field in distance calculation as well
+    if _BOUND_POLAR_ABS_LAT_DEG and _BOUND_POLAR_ABS_LAT_DEG > 0:
+        lat_cut = np.deg2rad(_BOUND_POLAR_ABS_LAT_DEG)
+        polar_rows = np.abs(lat_1d) > lat_cut
+        BM[polar_rows, :] = False
+
     lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")  # (n_lat, n_lon)
 
-    b_lon = lon_grid[boundary_mask]
-    b_lat = lat_grid[boundary_mask]
+    b_lon = lon_grid[BM]
+    b_lat = lat_grid[BM]
 
     if b_lon.size == 0:
         return np.full((lat_1d.size, lon_1d.size), np.nan, dtype=float)
@@ -406,7 +479,7 @@ def magnet_plot(
     _batch=None,
     open_f=None,
     closed_f=None,
-    force_pfss=True,
+    force_pfss=False,
     reduce_amt=0,
     nact=0,
     nwant=None,
@@ -509,9 +582,12 @@ def magnet_plot(
             boundary_mask = _boundary_mask_from_pols(P)
             boundary_mask_raw = boundary_mask.copy()
             boundary_mask = _morph_spacefill(boundary_mask)
+            boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
             region_mask_morph = _region_from_boundary(boundary_mask)
             region_mask_morph_pre_polar = region_mask_morph.copy()
+            # Treat all pixels above |lat| > lat_cut_deg as open field (True)
+            region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
             # Polar cleanup: remove small purple islands at |lat| > threshold
             region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
 
@@ -527,6 +603,8 @@ def magnet_plot(
                     dbg_path,
                     region_mask_morph=region_mask_morph,
                     region_mask_morph_pre_polar=region_mask_morph_pre_polar,
+                    polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
+                    periodic_exclude_rows=_PERIODIC_EXCLUDE_COLS,
                 )
 
             # Distance from every pixel to the nearest boundary pixel (deg)
@@ -574,14 +652,14 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {_roll_cols_applied}")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
                     region_mask_raw.astype(int),
                     levels=[0.5],
                     colors="white",
-                    linewidths=1.2,
+                    linewidths=0.5,
                     linestyles="dashed",
                 )
                 cs_morph = ax_ch.contour(
@@ -665,9 +743,12 @@ def magnet_plot(
             boundary_mask = _boundary_mask_from_pols(P)
             boundary_mask_raw = boundary_mask.copy()
             boundary_mask = _morph_spacefill(boundary_mask)
+            boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
             region_mask_morph = _region_from_boundary(boundary_mask)
             region_mask_morph_pre_polar = region_mask_morph.copy()
+            # Treat all pixels above |lat| > lat_cut_deg as open field (True)
+            region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
             # Polar cleanup: remove small purple islands at |lat| > threshold
             region_mask_morph = _clean_polar_purple_islands(region_mask_morph, lat_1d)
 
@@ -683,6 +764,8 @@ def magnet_plot(
                     dbg_path,
                     region_mask_morph=region_mask_morph,
                     region_mask_morph_pre_polar=region_mask_morph_pre_polar,
+                    polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
+                    periodic_exclude_rows=_PERIODIC_EXCLUDE_COLS,
                 )
 
             # Distance from every pixel to the nearest boundary pixel (deg)
@@ -729,7 +812,7 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {_roll_cols_applied}")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
