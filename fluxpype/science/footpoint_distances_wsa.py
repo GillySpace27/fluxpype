@@ -35,6 +35,7 @@ Dependencies:
 import os
 import os.path as path
 import argparse
+import time
 
 # import matplotlib as mpl; mpl.use("qt5agg")
 import matplotlib.pyplot as plt
@@ -51,7 +52,7 @@ from scipy.ndimage import (
     label,
 )
 
- # --- Morphology defaults (conservative) ---
+# --- Morphology defaults (conservative) ---
 _MORPH_DILATE_ITERS = 8  # light expansion to make boundaries more space-filling
 _MORPH_ERODE_ITERS = 6  # no erosion by default
 _MORPH_CLOSE_ITERS = 0  # close small gaps
@@ -338,6 +339,29 @@ def _debug_morph_steps(
     plt.close(fig)
 
 
+def _boundary_mask_from_pols(P: np.ndarray) -> np.ndarray:
+    """
+    Build a boundary mask for coronal-hole interfaces using periodic longitude.
+
+    We consider an interface wherever a zero-valued pixel has at least one non-zero
+    neighbor. Longitude (axis=1) is treated as periodic via np.roll; latitude (axis=0)
+    is *not* periodic and uses edge padding.
+    """
+    # Identify zero (CH) locations
+    is_zero = (P == 0)
+
+    # Longitude neighbors: periodic wrap
+    nb_left  = is_zero & (np.roll(P,  1, axis=1) != 0)
+    nb_right = is_zero & (np.roll(P, -1, axis=1) != 0)
+
+    # Latitude neighbors: non-periodic (use edge padding)
+    P_pad = np.pad(P, ((1, 1), (0, 0)), mode="edge")
+    nb_up    = is_zero & (P_pad[:-2, :] != 0)
+    nb_down  = is_zero & (P_pad[ 2:, :] != 0)
+
+    boundary_mask = nb_up | nb_down | nb_left | nb_right
+    return boundary_mask
+
 def _gc_distance_map_to_boundary(lon_1d: np.ndarray, lat_1d: np.ndarray, boundary_mask: np.ndarray) -> np.ndarray:
     """
     Return a (n_lat, n_lon) array of great-circle distances [deg] from each pixel
@@ -382,7 +406,7 @@ def magnet_plot(
     _batch=None,
     open_f=None,
     closed_f=None,
-    force=False,
+    force_pfss=True,
     reduce_amt=0,
     nact=0,
     nwant=None,
@@ -438,6 +462,10 @@ def magnet_plot(
     fname = magnet_file
     # Load the magnetogram (always available for PFSS path)
     magnet, header = load_fits_magnetogram(batch=_batch, ret_all=True, configs=configs, fname=fname)
+    # --- Diagnostic roll: shift magnetogram right by 2/3π (~120°) in longitude ---
+    roll_cols = int(magnet.shape[1] * (2 / 3) / (2 * np.pi))
+    magnet = np.roll(magnet, shift=roll_cols, axis=1)
+    print(f"[diag] Rolled magnetogram right by {roll_cols} columns (~2/3π radians).")
     nsteps = 360
 
     crs = [get_cr]
@@ -460,7 +488,9 @@ def magnet_plot(
     for i, cr in enumerate(crs):
         output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
 
-        if os.path.exists(output_file):
+        # Temporary override to force PFSS recomputation
+        force_pfss = True
+        if os.path.exists(output_file) and not force_pfss:
             data = np.load(output_file)
             pols, expfs = data["ofmap"], data["efmap"]
             print("LOADED POLS, EXPFS")
@@ -482,14 +512,7 @@ def magnet_plot(
 
             # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
             P = pols
-            P_pad = np.pad(P, ((1, 1), (1, 1)), mode="edge")
-
-            is_zero = P == 0
-            nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
-            nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
-            nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
-            nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
-            boundary_mask = nb_up | nb_down | nb_left | nb_right
+            boundary_mask = _boundary_mask_from_pols(P)
             boundary_mask_raw = boundary_mask.copy()
             boundary_mask = _morph_spacefill(boundary_mask)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
@@ -545,7 +568,7 @@ def magnet_plot(
             ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
             if True:
-                fig_ch, ax_ch = plt.subplots()
+                fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
                 im = ax_ch.imshow(
                     ch_distance_deg,
                     cmap="viridis",
@@ -557,7 +580,7 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
@@ -578,18 +601,23 @@ def magnet_plot(
                 from matplotlib.lines import Line2D
 
                 handles = [
-                    Line2D([0], [0], color="white", lw=1.2, ls="--", label="raw"),
+                    Line2D([0], [0], color="white", lw=0.5, ls="--", label="raw"),
                     Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
                 ]
                 ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
                 plt.tight_layout()
                 plt.savefig(top_dir + "distances.png")
+                plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
                 plt.show()
             # === end boundary distance map ===
         else:
             if do_print_top:
                 print("\t[pfss] Preparing HMI map and resampling...", flush=True)
             hmi_map = sunpy.map.Map(magnet_file)
+            # --- Apply the same diagnostic roll to the SunPy map data ---
+            roll_cols = int(hmi_map.data.shape[1] * (4 / 3) / (2 * np.pi))
+            hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
+            print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
             if do_print_top:
                 print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
             hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
@@ -620,6 +648,7 @@ def magnet_plot(
                 print("\t[pfss] Tracing complete. Reshaping polarities and expansion factors...", flush=True)
             pols = field_lines.polarities.reshape(2 * nsteps, nsteps).T
             expfs = field_lines.expansion_factors.reshape(2 * nsteps, nsteps).T
+
             expfs[np.where(np.isnan(expfs))] = 0
             np.savez_compressed(output_file, ofmap=pols, efmap=expfs, brmap=hmi_map.data, lon=lon_1d, lat=lat_1d)
             if do_print_top:
@@ -639,13 +668,7 @@ def magnet_plot(
             lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
 
             P = pols
-            P_pad = np.pad(P, ((1, 1)), mode="edge") if P.ndim == 2 else np.pad(P, ((1, 1), (1, 1)), mode="edge")
-            is_zero = P == 0
-            nb_up = is_zero & (P_pad[:-2, 1:-1] != 0)
-            nb_down = is_zero & (P_pad[2:, 1:-1] != 0)
-            nb_left = is_zero & (P_pad[1:-1, :-2] != 0)
-            nb_right = is_zero & (P_pad[1:-1, 2:] != 0)
-            boundary_mask = nb_up | nb_down | nb_left | nb_right
+            boundary_mask = _boundary_mask_from_pols(P)
             boundary_mask_raw = boundary_mask.copy()
             boundary_mask = _morph_spacefill(boundary_mask)
             region_mask_raw = _region_from_boundary(boundary_mask_raw)
@@ -700,7 +723,7 @@ def magnet_plot(
             ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
 
             if True:
-                fig_ch, ax_ch = plt.subplots()
+                fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
                 im = ax_ch.imshow(
                     ch_distance_deg,
                     cmap="viridis",
@@ -712,7 +735,7 @@ def magnet_plot(
                 # sanity contours to check symmetry of distances inside vs outside
                 ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
                 im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-                ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
+                ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary\nShifted by {roll_cols}")
                 cs_raw = ax_ch.contour(
                     lon_1d,
                     np.sin(lat_1d),
@@ -737,7 +760,8 @@ def magnet_plot(
                     Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
                 ]
                 ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
-                plt.savefig(top_dir + "distances.png")
+                plt.savefig(top_dir + "distances.png", dpi=300 )
+                plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
                 plt.show()
             # === end boundary distance map ===
 
