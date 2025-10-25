@@ -1,9 +1,3 @@
-from matplotlib.colors import LinearSegmentedColormap
-
-# Custom colormap: transparent to red
-red_transparent_cmap = LinearSegmentedColormap.from_list(
-    "red_transparent", [(0, (1, 0, 0, 0)), (1, (1, 0, 0, 0.25))], N=256
-)
 """
 Changed
 ==========================================================
@@ -66,10 +60,13 @@ _MORPH_OPEN_ITERS = 0  # do not open by default
 _MORPH_MIN_SIZE = 16  # remove tiny speckles
 _MORPH_SMOOTH_SIGMA = 0.5  # light Gaussian smoothing before thresholding
 
+_REGION_ERODE = 8
+_REGION_DIALATE = 6
+
 # --- Polar cleanup (remove small purple islands near the poles) ---
 _MORPH_POLAR_PURPLE_MIN_SIZE = 5000  # pixels; set 0 to disable
 _MORPH_POLAR_ABS_LAT_DEG = 65.0      # operate where |lat| > this
-_BOUND_POLAR_ABS_LAT_DEG =75.0      # operate where |lat| > this
+_BOUND_POLAR_ABS_LAT_DEG =80.0      # operate where |lat| > this
 
 # --- Morphology debug ---
 _MORPH_DEBUG = True  # set True to save a panel of intermediate stages
@@ -77,7 +74,7 @@ _MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
 
 # --- Distance map exclusion constants ---
 _POLAR_CAP_EXCLUDE_ROWS = None  # rows excluded at poles in distance map
-_PERIODIC_EXCLUDE_COLS = 4    # columns excluded at periodic edges
+_PERIODIC_PADD_COLS = 20    # columns padded at periodic edges
 
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
@@ -124,6 +121,28 @@ def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
 
     return B
 
+
+# --- Helper: periodic padding and cropping for longitude ---
+def _pad_periodic(arr: np.ndarray, pad_cols: int = _PERIODIC_PADD_COLS) -> np.ndarray:
+    """Pad the array periodically in longitude."""
+    if pad_cols and pad_cols > 0:
+        return np.pad(arr, ((0, 0), (pad_cols, pad_cols)), mode="wrap")
+    return arr
+
+
+def _crop_periodic(arr: np.ndarray, pad_cols: int = _PERIODIC_PADD_COLS) -> np.ndarray:
+    """Crop a previously periodic-padded array back to original shape."""
+    if pad_cols and pad_cols > 0:
+        return arr[:, pad_cols:-pad_cols]
+    return arr
+
+
+from matplotlib.colors import LinearSegmentedColormap
+
+# Custom colormap: transparent to red
+red_transparent_cmap = LinearSegmentedColormap.from_list(
+    "red_transparent", [(0, (1, 0, 0, 0)), (1, (1, 0, 0, 0.25))], N=256
+)
 
 # --- Helper: single-pixel outline from thick boundary mask ---
 def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
@@ -226,7 +245,6 @@ def _treat_poles_as_open_field(region_mask: np.ndarray, lat_1d: np.ndarray,
     return R
 
 
-
 # --- Helper: remove small purple islands (False) at high latitudes only ---
 def _clean_polar_islands(
     region_mask: np.ndarray,
@@ -280,18 +298,6 @@ def _clean_polar_islands(
     return R
 
 
-# --- Helper: fill periodic longitude edge columns as open field (True) ---
-def _apply_periodic_edge_fill(region_mask_morph: np.ndarray) -> np.ndarray:
-    """
-    Fill the periodic longitude edge columns as open field (True), if exclusion is enabled.
-    """
-    r2 = int(_PERIODIC_EXCLUDE_COLS) if _PERIODIC_EXCLUDE_COLS is not None else 0
-    if r2 > 0:
-        region_mask_morph[:, :r2] = True
-        region_mask_morph[:, -r2:] = True
-    return region_mask_morph
-
-
 def _debug_morph_steps(
     boundary_mask_raw: np.ndarray,
     lon_1d: np.ndarray,
@@ -300,7 +306,7 @@ def _debug_morph_steps(
     region_mask_morph: np.ndarray | None = None,
     region_mask_morph_pre_polar: np.ndarray | None = None,
     polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
-    periodic_exclude_cols: int = _PERIODIC_EXCLUDE_COLS,
+    periodic_exclude_cols: int = _PERIODIC_PADD_COLS,
 ) -> None:
     """
     Save an 8-panel figure showing the morphological stages:
@@ -446,7 +452,7 @@ def _gc_distance_map_to_boundary(
     lat_1d: np.ndarray,
     boundary_mask: np.ndarray,
     # polar_cap_exclude_rows: int = _POLAR_CAP_EXCLUDE_ROWS,
-    periodic_exclude_cols: int = _PERIODIC_EXCLUDE_COLS,
+    periodic_exclude_cols: int = _PERIODIC_PADD_COLS,
 ) -> np.ndarray:
     """
     Return a (n_lat, n_lon) array of great-circle distances [deg] from each pixel
@@ -573,12 +579,12 @@ def magnet_plot(
     fname = magnet_file
     # Load the magnetogram (always available for PFSS path)
     magnet, header = load_fits_magnetogram(batch=_batch, ret_all=True, configs=configs, fname=fname)
-    roll_cols = 0  # default; only set nonzero when rolling SunPy map for PFSS compute path
+    crs = [get_cr]
+    # roll_cols = 0  # default; only set nonzero when rolling SunPy map for PFSS compute path
     nsteps = 360
 
-    crs = [get_cr]
-    ofmap = np.zeros((nsteps, len(crs)))
-    efmap = np.zeros((nsteps, len(crs)))
+    # ofmap = np.zeros((nsteps, len(crs)))
+    # efmap = np.zeros((nsteps, len(crs)))
 
     from tqdm import tqdm
     import sunpy
@@ -684,19 +690,24 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     P = pols
     boundary_mask = _boundary_mask_from_pols(P)
     boundary_mask_raw = boundary_mask.copy()
+    # Pad periodically before morph
+    boundary_mask = _pad_periodic(boundary_mask)
     boundary_mask = _morph_spacefill(boundary_mask)
+    boundary_mask = _crop_periodic(boundary_mask)
     boundary_mask = _mask_polar_band_interior(boundary_mask, lat_1d)
     region_mask_raw = _region_from_boundary(boundary_mask_raw)
-    region_mask_morph = _region_from_boundary(boundary_mask)
+
+    # Apply periodic padding and cropping during region reconstruction for continuity in red contour
+    boundary_mask_padded = _pad_periodic(boundary_mask)
+    region_mask_morph = _region_from_boundary(boundary_mask_padded)
     region_mask_morph_pre_polar = region_mask_morph.copy()
     # Treat all pixels above |lat| > lat_cut_deg as open field (True)
-    region_mask_morph = _smooth_regions(region_mask_morph, erode=8, dialate=6)
+    region_mask_morph = _smooth_regions(region_mask_morph, erode=_REGION_ERODE, dialate=_REGION_DIALATE)
     region_mask_morph = _treat_poles_as_open_field(region_mask_morph, lat_1d)
     # Polar cleanup: remove small purple islands at |lat| > threshold
     region_mask_morph = _clean_polar_islands(region_mask_morph, lat_1d)
-    region_mask_morph = _smooth_regions(region_mask_morph, erode=4, dialate=3)
-    region_mask_morph = _apply_periodic_edge_fill(region_mask_morph)
     # Build a clean 1-pixel perimeter for distance queries
+    region_mask_morph = _crop_periodic(region_mask_morph)
     outline_mask = _singleline_outline(region_mask_morph)
     if _MORPH_DEBUG:
         dbg_path = top_dir + "morph_debug.png"
@@ -708,7 +719,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
             region_mask_morph=region_mask_morph,
             region_mask_morph_pre_polar=region_mask_morph_pre_polar,
             polar_cap_exclude_rows=_POLAR_CAP_EXCLUDE_ROWS,
-            periodic_exclude_cols=_PERIODIC_EXCLUDE_COLS,
+            periodic_exclude_cols=_PERIODIC_PADD_COLS,
         )
     # Distance from every pixel to the nearest boundary pixel (deg)
     ch_distance_deg = _gc_distance_map_to_boundary(lon_1d, lat_1d, outline_mask)
@@ -749,7 +760,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     # sanity contours to check symmetry of distances inside vs outside
     ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-    ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary")
+    ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary for CR {args.cr}")
     cs_raw = ax_ch.contour(
         lon_1d,
         np.sin(lat_1d),
@@ -785,8 +796,8 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     ]
     ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
     plt.tight_layout()
-    plt.savefig(top_dir + "distances.png")
-    plt.savefig(top_dir + f"distance_{time.time():0.0f}.png", dpi=300)
+    plt.savefig(top_dir + f"distances_{args.cr}.png", dpi=300)
+    plt.savefig(top_dir + f"distances_{args.cr}_{time.time():0.0f}.png", dpi=300)
     plt.show()
 
 
