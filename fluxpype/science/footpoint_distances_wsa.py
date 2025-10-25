@@ -1,35 +1,24 @@
 """
-Changed
-==========================================================
+Footpoint distances & coronal-hole boundary metrics
+====================================================
 
-This script is designed to plot the magnetogram along with footpoints. It provides
-options to specify the Carrington Rotation (CR), batch name, reduction factor, data directory,
-and other parameters.
+This script computes and visualizes coronal-hole (CH) boundary geometry from PFSS maps,
+treating longitude as periodic. It produces:
+  * a great‑circle distance map (deg) to the nearest CH boundary,
+  * red (morphed) vs white (raw) CH contours,
+  * CSV/NPZ outputs for downstream analysis.
 
 Usage:
-    python plot_fieldmap.py [--cr CARRINGTON_ROTATION] [--nwant NUMBER_WANTED]
-                             [--open OPEN_FLUXONS] [--closed CLOSED_FLUXONS]
-                             [--dat_dir DATA_DIRECTORY] [--batch BATCH_NAME]
+    python footpoint_distances_wsa.py --cr 2220 --batch my_batch
 
-Arguments:
-    --cr:           The Carrington Rotation for which the magnetogram is to be plotted. Default is None.
-    --nwant:        The number of fluxons wanted. Default is None.
-    --open:         The number of open fluxons. Default is None.
-    --closed:       The number of closed fluxons. Default is None.
-    --dat_dir:      The directory where the data will be stored. Default is defined in the config.ini file.
-    --batch:        The batch name for the operation. Default is 'default_batch'.
-
-Functions:
-    magnet_plot:    A primary function for plotting the magnetogram with footpoints.
-
-Example:
-    python plot_fieldmap.py --cr 2220 --nwant 100 --open 50 --closed 50 --dat_dir '/path/to/data' --batch 'my_batch'
+Key functions:
+    magnet_plot: orchestrates PFSS load/compute → morphology → distance → plots.
 
 Author:
-    Gilly <gilly@swri.org> (and others!)
+    Gilly <gilly@swri.org>
 
 Dependencies:
-    os, os.path, argparse, matplotlib.pyplot, numpy, pfss_funcs, pipe_helper
+    numpy, scipy.ndimage, matplotlib, sunpy, pfsspy, astropy, fluxpype.pipe_helper
 """
 
 import os
@@ -387,20 +376,6 @@ def _debug_morph_steps(
         except Exception:
             pass
 
-    # Overlay excluded rows/columns on Region (morphed)
-    ax_ex = axes.ravel()[-1]
-    n_lat, n_lon = len(lat_1d), len(lon_1d)
-    excl_mask = np.zeros((n_lat, n_lon), dtype=bool)
-    # excl_mask[:polar_cap_exclude_rows, :] = True
-    # excl_mask[-polar_cap_exclude_rows:, :] = True
-    # excl_mask[:, :periodic_exclude_cols] = True
-    # excl_mask[:, -periodic_exclude_cols:] = True
-    if np.any(excl_mask):
-        ax_ex.imshow(excl_mask, aspect="auto", origin="lower", interpolation="nearest",
-                     extent=extent, alpha=0.25, cmap="gray")
-        # txt = f"Excluded rows: ±{polar_cap_exclude_rows}, cols: ±{periodic_exclude_cols}"
-        # ax_ex.text(0.02, 0.05, txt, color="white", fontsize=8, transform=ax_ex.transAxes,
-                #    bbox=dict(facecolor="black", alpha=0.3, pad=2))
 
     if savepath and _MORPH_DEBUG_SAVE:
         plt.savefig(savepath, dpi=200)
@@ -469,7 +444,7 @@ def _gc_distance_map_to_boundary(
     #     before building the KDTree. This treats the north/south poles as poles (not edges)
     #     by preventing spurious boundary pixels at the map edges. Default is 4.
     periodic_exclude_cols: int, optional
-        Number of rows at each edge to blank out in `boundary_mask`.
+        Number of columns at each longitude edge to blank out in `boundary_mask`.
 
     Notes
     -----
@@ -586,18 +561,6 @@ def magnet_plot(
     # ofmap = np.zeros((nsteps, len(crs)))
     # efmap = np.zeros((nsteps, len(crs)))
 
-    from tqdm import tqdm
-    import sunpy
-    from astropy import units as u, constants as const
-    from astropy.coordinates import SkyCoord
-    from fluxpype.science.pfss_funcs import load_pfss
-    import pfsspy
-    from pfsspy import tracing
-
-    # Define the directory paths for the files
-    floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-    top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
-
     # with tqdm(total=len(crs)) as pbar:
     for i, cr in enumerate(crs):
         output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
@@ -605,7 +568,7 @@ def magnet_plot(
             pols, expfs, lon_1d, lat_1d = _load_pfss_results(output_file)
         else:
             pols, expfs, lon_1d, lat_1d = _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top)
-        _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top)
+        _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr=get_cr)
 
     if do_print_top:
         print("\t\t    Success!\n\t\t\t```````````````````````````````\n")
@@ -679,13 +642,12 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
 
 
 # --- Helper: process PFSS results and perform morphology, distance, and plotting ---
-def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top):
+def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr: int | None = None):
     from fluxpype.pipe_helper import shorten_path
     import numpy as np
     import matplotlib.pyplot as plt
     import time
     # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
-    lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d, indexing="xy")
     # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
     P = pols
     boundary_mask = _boundary_mask_from_pols(P)
@@ -760,7 +722,8 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     # sanity contours to check symmetry of distances inside vs outside
     ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-    ax_ch.set_title(f"Distance to Nearest Coronal-Hole Boundary for CR {args.cr}")
+    title = f"Distance to Nearest Coronal-Hole Boundary for CR {cr}" if cr is not None else "Distance to Nearest Coronal-Hole Boundary"
+    ax_ch.set_title(title)
     cs_raw = ax_ch.contour(
         lon_1d,
         np.sin(lat_1d),
@@ -795,9 +758,14 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
         Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
     ]
     ax_ch.legend(handles=handles, loc="upper right", fontsize="small", framealpha=0.6)
+    fname_base = f"distances_{cr}" if cr is not None else "distances"
+
+    plt.ylabel("Solar Latitude in sin(Radians)")
+    plt.xlabel("Solar Longitude in Radians")
+
     plt.tight_layout()
-    plt.savefig(top_dir + f"distances_{args.cr}.png", dpi=300)
-    plt.savefig(top_dir + f"distances_{args.cr}_{time.time():0.0f}.png", dpi=300)
+    plt.savefig(top_dir + f"{fname_base}.png", dpi=300)
+    plt.savefig(top_dir + f"t_{fname_base}_{time.time():0.0f}.png", dpi=300)
     plt.show()
 
 
@@ -808,14 +776,8 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
 
 if __name__ == "__main__":
     # Create the argument parser
-    parser = argparse.ArgumentParser(description="This script plots the expansion factor of the given radial_fr.dat")
-    parser.add_argument("--cr", type=int, default=2160, help="Carrington Rotation")
-    parser.add_argument("--file", type=str, default=None, help="Data File Name")
-    parser.add_argument("--nwant", type=int, default=None, help="Number of Fluxons")
-    parser.add_argument("--open", type=str, default=None)
-    parser.add_argument("--closed", type=str, default=None)
-    parser.add_argument("--adapt", type=str, default=None)
-
+    parser = argparse.ArgumentParser(description="This script determines coronal hole boundary distances from a magnetogram")
+    parser.add_argument("--cr", type=int, default=2230, help="Carrington Rotation")
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)
 
