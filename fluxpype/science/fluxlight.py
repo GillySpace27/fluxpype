@@ -15,8 +15,8 @@ from sunpy.map import Map
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Force_test/data/cr2268/world/cr2268_f500_hmi_relaxed_s4000.flux"
 # flux_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f20_hmi_relaxed_s2000.flux"
 # def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/Relaxation_Troubleshooting/data/cr2229/world/cr2229_f400_hmi.flux"
-def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpyp   e/data/batches/fluxlight/data/cr2150/world/cr2150_f1000_hmi_relaxed_s300.flux"
-method = "fluxel" # or "vertex"
+def_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2150/world/cr2150_f1000_hmi_relaxed_s300.flux"
+method = "fluxel" # "voronoi" or "fluxel" or "vertex"
 
 
 def do_fluxlight(flux_world_file, save=True):
@@ -29,14 +29,15 @@ def do_fluxlight(flux_world_file, save=True):
     if not os.path.exists(light_path):
         os.makedirs(light_path)
 
-    # print(flux_world)
+    print(world_path)
+    print(light_path)
     # flux_world.plot_fluxon_id()
-
+    nz = 400
     # Run the Thomson scattering simulation, informing the model with the flux world
-    print("Starting Fluxlight...")
+    print(f"Starting Fluxlight {method = }...")
     results = simulate_thomson_scattering(
-        npix=300,
-        nz=300,
+        npix=200,
+        nz=nz,
         fov=3.0,
         flux_world=flux_world,
         lower_bound=1.05,
@@ -131,7 +132,7 @@ def do_fluxlight(flux_world_file, save=True):
     plt.suptitle(f"Forward Modeling of FLUX World CR {flux_world.cr}")
     plt.tight_layout()
     if save:
-        lightpath = f"{light_path}/cr{flux_world.cr}_fluxlight_light_{method}.png"
+        lightpath = f"{light_path}/cr{flux_world.cr}_fluxlight_light_{method}_{nz}.png"
         print(lightpath)
         plt.savefig(lightpath)
         plt.close(fig)
@@ -140,7 +141,7 @@ def do_fluxlight(flux_world_file, save=True):
 
 
 if __name__ == "__main__":
-    print("\n\n\nLET THERE BE LIGHT\n\n")
+    print("\n\n\nLET THERE BE LIGHT\n\n", flush=True)
     import sys
 
     if len(sys.argv) > 1:

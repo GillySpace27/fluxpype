@@ -1,9 +1,14 @@
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import cKDTree
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import os
 import astropy.units as u
+
+# Module-level cache so worker processes can share precomputed fluxel geometry
+# (segments + KD-tree) per world file without rebuilding for every task.
+_GEOMETRY_CACHE = {}
 
 """
 This module processes FLUX world output data to create visualizations of flux concentrations and fluxons in 3D.
@@ -179,6 +184,9 @@ def read_flux_world(filename):
 
     print(f"Reading FLUX world file: {filename}")
     class FluxWorld:
+        # Class-level cache so multiple FluxWorld instances for the same file
+        # can share the precomputed geometry (segments + KD-tree) within a process.
+        _geometry_cache = {}
         def __init__(self, filename=None):
             self.concentrations = self.FluxConcentrations()
             # Use a dictionary to store individual Fluxon objects (keyed by fluxon id)
@@ -506,8 +514,89 @@ def read_flux_world(filename):
                 return self.compute_electron_density_vertex(coords=coords, **kwargs)
             elif method == "fluxel":
                 return self.compute_electron_density_fluxel(coords=coords, **kwargs)
+            elif method == "voronoi":
+                return self.compute_electron_density_voronoi(coords=coords, **kwargs)
             else:
                 raise ValueError(f"Unknown density method '{method}'")
+
+        def prepare_voronoi_geometry(self):
+            """
+            Precompute and cache fluxel segments and the vertex KD-tree / lookup
+            for Voronoi-based and fluxel-based electron density calculations.
+
+            This geometry depends only on the fluxon structure, not on the
+            sampling coordinates. We therefore:
+              * Build it at most once per worker process per input world file, and
+              * Reuse it across *all* FluxWorld instances in that process via a
+                module-level cache keyed by filename / out_dir.
+            """
+            global _GEOMETRY_CACHE
+
+            # Choose a cache key: prefer explicit filename, then out_dir, else a generic key.
+            key = getattr(self, "filename", None) or getattr(self, "out_dir", None) or "global"
+
+            # If geometry for this key is already cached at the module level, just attach it.
+            cache = _GEOMETRY_CACHE.get(key)
+            if cache is not None:
+                if self.segments is None:
+                    self.segments = cache["segments"]
+                # Attach KD-tree and related lookup tables if missing on this instance.
+                if not hasattr(self, "_vertex_tree") or self._vertex_tree is None:
+                    self._vertex_tree = cache["vertex_tree"]
+                    self._vertex_coords = cache["vertex_coords"]
+                    self._vertex_to_segments = cache["vertex_to_segments"]
+                return
+
+            # If this instance already has geometry computed (e.g., created in the
+            # main process and then passed to a worker), register it into the cache
+            # and reuse it for future instances in this worker.
+            if (
+                self.segments is not None
+                and hasattr(self, "_vertex_tree")
+                and self._vertex_tree is not None
+                and hasattr(self, "_vertex_coords")
+                and hasattr(self, "_vertex_to_segments")
+            ):
+                _GEOMETRY_CACHE[key] = {
+                    "segments": self.segments,
+                    "vertex_tree": self._vertex_tree,
+                    "vertex_coords": self._vertex_coords,
+                    "vertex_to_segments": self._vertex_to_segments,
+                }
+                return
+
+            # Otherwise, build geometry from scratch and cache it.
+            print("Building fluxel segments (one-time setup)...")
+            segs = []
+            for flux in self.fluxons.values():
+                verts = flux.get_vertices()
+                segs.extend((verts[i], verts[i + 1]) for i in range(len(verts) - 1))
+            self.segments = np.array(segs) * u.R_sun
+            print(f"Built {len(self.segments)} fluxel segments.")
+
+            print("Building vertex KD-tree and vertex-to-segment lookup (one-time setup)...")
+            all_vertices = []
+            vertex_to_segments = {}
+            for seg in self.segments.to_value(u.R_sun):
+                a = tuple(seg[0])
+                b = tuple(seg[1])
+                all_vertices.append(seg[0])
+                all_vertices.append(seg[1])
+                for v in (a, b):
+                    vertex_to_segments.setdefault(v, []).append((seg[0], seg[1]))
+            all_vertices = np.array(all_vertices)
+            self._vertex_tree = cKDTree(all_vertices)
+            self._vertex_coords = all_vertices
+            self._vertex_to_segments = vertex_to_segments
+
+            # Store in module-level cache so future FluxWorld instances for the
+            # same file/world in this worker can reuse this geometry without rebuilding.
+            _GEOMETRY_CACHE[key] = {
+                "segments": self.segments,
+                "vertex_tree": self._vertex_tree,
+                "vertex_coords": self._vertex_coords,
+                "vertex_to_segments": self._vertex_to_segments,
+            }
 
         @u.quantity_input(influence_length=u.R_sun)
         def compute_electron_density_vertex(self, coords=None, influence_length=1 * u.R_sun, scale=100):
@@ -546,45 +635,14 @@ def read_flux_world(filename):
                 return np.zeros(coords.shape[0]) * u.cm**-3
             self._currently_computing_density = True
             try:
-                # print(f"Computing electron density using fluxel method for {len(coords)} coordinates...")
-
-                # Build or use cached list of all fluxel segments (pairs of points)
-                if self.segments is None:
-                    print("Building fluxel segments for the first time...")
-                    self.segments = []
-                    for flux in self.fluxons.values():
-                        verts = flux.get_vertices()
-                        self.segments.extend([(verts[i], verts[i + 1]) for i in range(len(verts) - 1)])
-                    self.segments = np.array(self.segments) * u.R_sun
-                    print(f"Built {len(self.segments)} fluxel segments for distance computation.")
-                else:
-                    # print(f"Using cached {len(self.segments)} fluxel segments.")
-                    pass
-                segments = self.segments
+                # Ensure global geometry (segments + KD-tree) is prepared only once.
+                self.prepare_voronoi_geometry()
 
                 coords_val = coords.to_value(u.R_sun)
+                vertex_tree = self._vertex_tree
+                vertex_to_segments = self._vertex_to_segments
 
-                # --- Efficient local search for nearest segments using KD-tree of vertices ---
-                # Build or use cached vertex-to-segments dictionary and KD-tree
-                if not hasattr(self, '_vertex_tree') or self._vertex_tree is None:
-                    print("Building vertex KD-tree and vertex-to-segment lookup...")
-                    all_vertices = []
-                    vertex_to_segments = {}
-                    for seg in self.segments.to_value(u.R_sun):
-                        a = tuple(seg[0])
-                        b = tuple(seg[1])
-                        all_vertices.append(seg[0])
-                        all_vertices.append(seg[1])
-                        for v in (a, b):
-                            vertex_to_segments.setdefault(v, []).append((seg[0], seg[1]))
-                    all_vertices = np.array(all_vertices)
-                    self._vertex_tree = cKDTree(all_vertices)
-                    self._vertex_coords = all_vertices
-                    self._vertex_to_segments = vertex_to_segments
-                else:
-                    vertex_to_segments = self._vertex_to_segments
-
-                def point_to_segments_local(points, all_segments, vertex_tree, k=10):
+                def point_to_segments_local(points, vertex_tree, k=10):
                     # Query nearest vertices
                     distances, indices = vertex_tree.query(points, k=k)
                     if k == 1:
@@ -609,17 +667,125 @@ def read_flux_world(filename):
                         min_dists[i] = np.min(dists)
                     return min_dists
 
-                # print("Computing distances from each point to nearest local fluxel segment...")
-                distances = point_to_segments_local(coords_val, self.segments.to_value(u.R_sun), self._vertex_tree)
+                distances = point_to_segments_local(coords_val, vertex_tree)
                 distances = distances * u.R_sun
-                # print("Distance computation complete. Calculating density profile...")
 
                 r = np.linalg.norm(coords, axis=1)
                 n0 = 4.2e8 * u.cm**-3
                 base_density = n0 * 10 ** (4.32 * u.R_sun / r.to(u.R_sun))
                 factor = scale * np.exp(-distances / influence_length)
                 densities = base_density * (1 + factor)
-                # print("Density computation complete.")
+                return densities
+            finally:
+                self._currently_computing_density = False
+
+        @u.quantity_input(influence_length=u.R_sun)
+        def compute_electron_density_voronoi(self, coords=None, influence_length=1 * u.R_sun, scale=100):
+            """
+            Compute electron density assuming each point belongs to the Voronoi cell of the
+            nearest fluxel segment. The density is constant in the angular direction
+            (perpendicular to the fluxon) and varies only along the fluxon's radial-ish
+            direction (approximated here by the distance of the closest point on the
+            fluxon to the origin).
+
+            Parameters
+            ----------
+            coords : array-like or astropy.Quantity, optional
+                Sample coordinates at which to evaluate the density. If None, uses a
+                cached grid or generates one.
+            influence_length : ~astropy.units.Quantity, optional
+                Currently unused in the Voronoi method, kept for API compatibility.
+            scale : float, optional
+                Currently unused in the Voronoi method, kept for API compatibility.
+
+            Returns
+            -------
+            densities : ~astropy.units.Quantity
+                Electron density at each coordinate.
+            """
+            if coords is None and self.coords is not None:
+                coords = self.coords
+            elif coords is None:
+                coords = self.generate_coordinate_grid()
+            self.coords = coords
+
+            # Re-entry guard
+            if getattr(self, "_currently_computing_density", False):
+                print("Warning: compute_electron_density_voronoi is already running. Skipping re-entry.")
+                return np.zeros(coords.shape[0]) * u.cm**-3
+            self._currently_computing_density = True
+            try:
+                # Ensure global geometry (segments + KD-tree) is prepared only once.
+                self.prepare_voronoi_geometry()
+
+                coords_val = coords.to_value(u.R_sun)
+                vertex_tree = self._vertex_tree
+                vertex_to_segments = self._vertex_to_segments
+
+                def point_to_segments_local_with_r(points, vertex_tree, k=10):
+                    # Query nearest vertices using the precomputed KD-tree
+                    distances, indices = vertex_tree.query(points, k=k)
+                    if k == 1:
+                        indices = indices[:, None]
+
+                    min_dists = np.full(points.shape[0], np.inf)
+                    best_r = np.full(points.shape[0], np.nan)
+
+                    for i, idxs in enumerate(indices):
+                        segs = []
+                        for idx in np.unique(idxs):
+                            v = tuple(vertex_tree.data[idx])
+                            segs.extend(vertex_to_segments.get(v, []))
+                        if not segs:
+                            continue
+                        segs = np.array(segs)
+                        seg_a = segs[:, 0]
+                        seg_b = segs[:, 1]
+                        ab = seg_b - seg_a
+                        ab_dot = np.sum(ab**2, axis=1)
+
+                        # Avoid division by zero for degenerate segments
+                        valid = ab_dot > 0
+                        if not np.any(valid):
+                            continue
+                        ab = ab[valid]
+                        seg_a_valid = seg_a[valid]
+                        seg_b_valid = seg_b[valid]
+                        ab_dot_valid = ab_dot[valid]
+
+                        ap = points[i] - seg_a_valid
+                        t = np.clip(np.sum(ap * ab, axis=1) / ab_dot_valid, 0, 1)
+                        closest = seg_a_valid + t[:, None] * ab
+                        dists = np.linalg.norm(points[i] - closest, axis=1)
+
+                        j = np.argmin(dists)
+                        if dists[j] < min_dists[i]:
+                            min_dists[i] = dists[j]
+                            # "Radial-ish" coordinate along the fluxon, approximated
+                            # by radius at the closest point on the segment.
+                            ra = np.linalg.norm(seg_a_valid[j])
+                            rb = np.linalg.norm(seg_b_valid[j])
+                            best_r[i] = (1.0 - t[j]) * ra + t[j] * rb
+
+                    return min_dists, best_r
+
+                # Compute, for each point, the nearest segment distance and the corresponding
+                # "radial-ish" coordinate along the fluxon.
+                _, best_r = point_to_segments_local_with_r(coords_val, vertex_tree)
+
+                # Fall back to the point's own radius if we failed to find a nearby segment.
+                r_coords = np.linalg.norm(coords, axis=1).to(u.R_sun)
+                r_coords_val = r_coords.value
+                r_line_val = best_r  # already in units of R_sun
+                mask_bad = np.isnan(r_line_val) | (r_line_val <= 0)
+                r_use_val = np.where(mask_bad, r_coords_val, r_line_val)
+                r_use = r_use_val * u.R_sun
+
+                n0 = 4.2e8 * u.cm**-3
+                # Density varies only along the fluxon's radial-ish direction r_use.
+                base_density = n0 * 10 ** (4.32 * u.R_sun / r_use)
+
+                densities = base_density
                 return densities
             finally:
                 self._currently_computing_density = False
@@ -1357,6 +1523,9 @@ def read_flux_world(filename):
     # print("Fluxon bounding box (X):", flux_world.all_fx.min(), flux_world.all_fx.max())
     # print("Fluxon bounding box (Y):", flux_world.all_fy.min(), flux_world.all_fy.max())
     # print("Fluxon bounding box (Z):", flux_world.all_fz.min(), flux_world.all_fz.max())
+    # Precompute Voronoi geometry (segments + KD-tree) once in the main process so
+    # that worker processes can reuse it via pickling and the module-level cache.
+    flux_world.prepare_voronoi_geometry()
 
     return flux_world
 

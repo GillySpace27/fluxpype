@@ -52,7 +52,7 @@ def incident_solar_intensity(r):
 
 def simulate_thomson_scattering(
     npix=500, nz=500, fov=3.0, lower_bound=1.01, upper_bound=3.0, scale=100,
-    flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False, method="fluxel",
+    flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False, method="voronoi",
 ):
     """
     Simulate Thomson scattering brightness and polarization in the solar corona.
