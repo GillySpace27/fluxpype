@@ -52,9 +52,10 @@ def plot_bmag(configs):
     filename = configs.get('file', default_file)
 
     # Load the dat file
+    print(f"Loading {filename = }")
     arr = np.loadtxt(filename).T
     fid, phi0, theta0, phi1, theta1, br0, br1, ar0, ar1 = arr
-    nfluxon = arr.shape[1]
+    nfluxon = arr.shape[0]
 
     # Convert coords to correct coords
     ph0, th0 = get_fixed_coords(phi0, theta0)
