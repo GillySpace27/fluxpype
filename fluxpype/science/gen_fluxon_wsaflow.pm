@@ -309,6 +309,8 @@ sub gen_fluxon_wsaflow_phys {
 
     my $f_all= abs($A / $A_sun) * ($r_sun * $r_sun) /   ($rn * $rn);
 
+    # print $f_all . "\n";
+
     # FIND THE TOP OF THE DOMAIN
     my $last_ind = $ph->nelem - 1;
     my $phi1        = $ph->(($last_ind));
@@ -327,11 +329,17 @@ sub gen_fluxon_wsaflow_phys {
     # my $flow_field = wind_speed($An, $distance_degrees);
     # my $speed = interpolate_1d($rn, $flow_field, 5.0);
 
+
+
     my $speed = wind_speed($f_ss, $distance_degrees);
+    my $full_speed = wind_speed($f_all, $distance_degrees);
+
+
 
     # write the $fid, $fss, and $distance_degrees to a file
     # open my $fh, '>>', 'fluxon-data/seq_fss_theta_mcg2011.csv' or die "Cannot open data.csv: $!";
-    # print $fh "$fluxon_id, $f_ss, $distance_degrees, $speed\n";
+    # print "$f_ss, $distance_degrees, $speed\n";
+    # print "$full_speed\n\n";
     # close $fh;
 
     use strict;
@@ -375,6 +383,7 @@ sub gen_fluxon_wsaflow_phys {
 
     ## Calculate Return Values ##
     my $speed_tall = $ones * $speed;
+    # my $speed_tall = $full_speed;
     # my $speed_tall = $speed;
 
     # This array is (r, v) in units of (r_sun, km/s)

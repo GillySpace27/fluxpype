@@ -98,7 +98,7 @@ sub gen_fluxon_tempestflow {
 
     # Print the new filename for verification
     print "$file_path\n";
-
+    # 1/0;
     my $model_id = $fid;  # Change to desired model number
     my ($radii_ref, $velocities_ref) = get_tempest_velocity($file_path, $model_id);
 

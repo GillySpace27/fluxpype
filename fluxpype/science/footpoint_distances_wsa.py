@@ -25,6 +25,7 @@ import os
 import os.path as path
 import argparse
 import time
+import json
 
 # import matplotlib as mpl; mpl.use("qt5agg")
 import matplotlib.pyplot as plt
@@ -63,7 +64,7 @@ _MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
 
 # --- Distance map exclusion constants ---
 _POLAR_CAP_EXCLUDE_ROWS = None  # rows excluded at poles in distance map
-_PERIODIC_PADD_COLS = 20    # columns padded at periodic edges
+_PERIODIC_PADD_COLS = 10    # columns padded at periodic edges
 
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
@@ -492,6 +493,54 @@ def _gc_distance_map_to_boundary(
 from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path
 
 
+def precalc_wind_speed(fss, theta_b):
+
+    # Define constants (from McGregor 2011)
+    c1 = 2 / 9
+    c2 = 0.8
+    c3 = 3.8   # phi
+    c4 = 3.6   # beta
+    c5 = 3.0
+
+    v0 = 200   # km/s
+    vm = 750   # km/s
+
+    # Compute speed
+    # Inputs: fss, theta_b
+    speed = v0 + (vm / (1 + fss)**c1) * (1 - c2 * np.exp(- (theta_b / c3)**c4))**c5
+    speed[fss==0] = np.NAN
+    return speed
+
+def plot_all_results(distances, expfs, lon_1d, lat_1d, top_dir, cr):
+    fig, axes = plt.subplots(3, figsize=(8, 8))
+    extent = (lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1]))
+
+    speed = precalc_wind_speed(expfs, distances)
+
+
+    dist = distances.copy()
+    dist[expfs <= 0] = np.nan
+    im0 = axes[0].imshow(dist, extent=extent, origin="lower")
+    axes[0].set_title("Distances")
+    fig.colorbar(im0, ax=axes[0], label="Distance to CH Boundary (deg)")
+
+    im1 = axes[1].imshow(np.log10(expfs), extent=extent, cmap="plasma", origin="lower")
+    axes[1].set_title("Expansion Factors")
+    fig.colorbar(im1, ax=axes[1], label="Expansion Factor (log10)")
+
+    im2 = axes[2].imshow(speed, extent=extent, cmap="magma", origin="lower")
+    axes[2].set_title("WSA Wind Speed")
+    fig.colorbar(im2, ax=axes[2], label="SS Wind Speed")
+
+    plt.suptitle(f"WSA Predictors for CR {cr}")
+    plt.tight_layout()
+    loc = top_dir + f"expansion_{cr}.png"
+    plt.savefig(loc)
+    print(f"Figure saved to {loc}")
+    # plt.show(block=True)
+    plt.close(fig)
+
+
 def magnet_plot(
     get_cr=None,
     datdir=None,
@@ -568,7 +617,10 @@ def magnet_plot(
             pols, expfs, lon_1d, lat_1d = _load_pfss_results(output_file)
         else:
             pols, expfs, lon_1d, lat_1d = _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top)
-        _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr=get_cr)
+        distances = _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr=get_cr, expfs=expfs)
+
+        plot_all_results(distances, expfs, lon_1d, lat_1d, top_dir, cr)
+        #TODO add the actual wind speed here, save that to disk, and just load it in the plotting function.
 
     if do_print_top:
         print("\t\t    Success!\n\t\t\t```````````````````````````````\n")
@@ -599,9 +651,9 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
     if do_print_top:
         print("\t[pfss] Preparing HMI map and resampling...", flush=True)
     hmi_map = sunpy.map.Map(magnet_file)
-    roll_cols = int(hmi_map.data.shape[1] * (9 / 3) / (2 * np.pi))
-    hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
-    print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
+    # roll_cols =  0 #int(hmi_map.data.shape[1] * (9 / 3) / (2 * np.pi))
+    # hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
+    # print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
     if do_print_top:
         print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
     hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
@@ -642,7 +694,7 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
 
 
 # --- Helper: process PFSS results and perform morphology, distance, and plotting ---
-def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr: int | None = None):
+def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr: int | None = None, expfs=None):
     from fluxpype.pipe_helper import shorten_path
     import numpy as np
     import matplotlib.pyplot as plt
@@ -700,17 +752,61 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     np.savez_compressed(
         ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
     )
+    # Original (legacy) saves — keep them to avoid breaking existing consumers
     ch_out_csv = floc_path + f"pfss_distances.csv"
     np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
-    # Back-compat: preserve old downstream expectation of floc/distances.csv
-    compat_csv = os.path.join(floc_path, "distances.csv")
-    np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
-    if do_print_top:
-        print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
-    from scipy import interpolate as _interp
-    ch_distance_interp = _interp.RectBivariateSpline(lat_1d, lon_1d, ch_distance_deg)
-    # Plotting
-    fig_ch, ax_ch = plt.subplots(figsize=(2 * 6.4, 2 * 4.8))
+    if expfs is not None:
+        exp_out_csv = floc_path + f"pfss_expansions.csv"
+        np.savetxt(exp_out_csv, expfs, delimiter=", ")
+
+    # NEW: explicit, orientation‑labeled CSVs and metadata to remove ambiguity when loading in Perl/PDL
+    # Canonical orientation in this script is [lat, lon] == (n_lat, n_lon) == (len(lat_1d), len(lon_1d))
+    lat_len = int(lat_1d.size)
+    lon_len = int(lon_1d.size)
+    print(f"[save] distance shape {ch_distance_deg.shape} (rows=lat={lat_len}, cols=lon={lon_len})")
+    if expfs is not None:
+        print(f"[save] expansion shape {expfs.shape} (rows=lat={lat_len}, cols=lon={lon_len})")
+
+    # Write comma‑only CSVs to simplify PDL parsing; also write transposed companions for consumers that expect [lon,lat]
+    np.savetxt(floc_path + "pfss_distances_latlon.csv", ch_distance_deg, delimiter=",", fmt="%.8f")
+    np.savetxt(floc_path + "pfss_distances_lonlat.csv", ch_distance_deg.T, delimiter=",", fmt="%.8f")
+    if expfs is not None:
+        np.savetxt(floc_path + "pfss_expansions_latlon.csv", expfs, delimiter=",", fmt="%.8f")
+        np.savetxt(floc_path + "pfss_expansions_lonlat.csv", expfs.T, delimiter=",", fmt="%.8f")
+
+    # Helpful masks and quick stats (optional but nice for downstream)
+    if expfs is not None:
+        open_mask = (expfs > 0)
+        np.savetxt(floc_path + "pfss_open_mask_latlon.csv", open_mask.astype(int), delimiter=",", fmt="%d")
+        nz = int(np.count_nonzero(open_mask))
+        ntot = int(open_mask.size)
+        print(f"[save] open_mask: {nz}/{ntot} pixels marked open (expansion>0).")
+
+    # Save a small JSON metadata file describing orientation and units
+    meta = {
+        "distance_csv_latlon": "pfss_distances_latlon.csv",
+        "distance_csv_lonlat": "pfss_distances_lonlat.csv",
+        "expansion_csv_latlon": "pfss_expansions_latlon.csv" if expfs is not None else None,
+        "expansion_csv_lonlat": "pfss_expansions_lonlat.csv" if expfs is not None else None,
+        "open_mask_csv_latlon": "pfss_open_mask_latlon.csv" if expfs is not None else None,
+        "distance_shape_latlon": list(map(int, ch_distance_deg.shape)),
+        "expansion_shape_latlon": list(map(int, expfs.shape)) if expfs is not None else None,
+        "lat_len": lat_len,
+        "lon_len": lon_len,
+        "orientation": "rows=lat, cols=lon",
+        "lon_units": "radians",
+        "lat_units": "radians",
+        "notes": "CSV companions provided in both [lat,lon] and [lon,lat] for easy loading from PDL; legacy files still written."
+    }
+    with open(floc_path + "pfss_maps_meta.json", "w") as f:
+        json.dump(meta, f, indent=2)
+    # # Back-compat: preserve old downstream expectation of floc/distances.csv
+    # compat_csv = os.path.join(floc_path, "distances.csv")
+    # np.savetxt(compat_csv, ch_distance_deg, delimiter=", ")
+    # if do_print_top:
+    #     print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
+
+    fig_ch, ax_ch = plt.subplots(figsize=(13,4))
     im = ax_ch.imshow(
         ch_distance_deg,
         cmap="viridis",
@@ -766,7 +862,9 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     plt.tight_layout()
     plt.savefig(top_dir + f"{fname_base}.png", dpi=300)
     plt.savefig(top_dir + f"t_{fname_base}_{time.time():0.0f}.png", dpi=300)
-    plt.show()
+    plt.close()
+    # plt.show()
+    return ch_distance_deg
 
 
 ########################################################################
@@ -777,7 +875,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
 if __name__ == "__main__":
     # Create the argument parser
     parser = argparse.ArgumentParser(description="This script determines coronal hole boundary distances from a magnetogram")
-    parser.add_argument("--cr", type=int, default=2230, help="Carrington Rotation")
+    parser.add_argument("--cr", type=int, default=2190, help="Carrington Rotation")
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)
 

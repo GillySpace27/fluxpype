@@ -203,8 +203,13 @@ def magnet_plot(
         ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
         ph_clow, th_clow = np.sin(np.deg2rad(clat_low)), np.deg2rad(clon_low)
 
-        fig, new_ax = plt.subplots()
-        figbox.append(fig)
+        plt.savefig(fluxon_map_histput_path, dpi=200)
+        print(fluxon_map_histput_path)
+        plt.show(block=True)
+
+        ########## FIGURE 2 ###########
+        # fig, new_ax = plt.subplots()
+        # figbox.append(fig)
 
         # plt.scatter(th_olow, ph_olow, c='r', s=5, label='Open')
         # plt.scatter(th_clow, ph_clow, c='b', s=5, label='Closed')
@@ -286,6 +291,10 @@ def magnet_plot(
         print("C")
         # plt.show(block=True)
 
+        ######## FIGURE 3 #########
+        fig, new_ax = plt.subplots()
+        figbox.append(fig)
+
         # import numpy as np
         # import matplotlib.pyplot as plt
         from scipy import interpolate
@@ -328,8 +337,8 @@ def magnet_plot(
             for seg in lvl:
                 contour_paths.append(np.asarray(seg))
 
+        plt.show(block=True)
         print("D")
-        # plt.show(block=True)
         # Prepare a new figure/axes for the contour-derived distance map
         fig, ax = plt.subplots()
         figbox.append(fig)
@@ -428,7 +437,7 @@ if __name__ == "__main__":
     # Create the argument parser
     parser = argparse.ArgumentParser(description=
             'This script plots the expansion factor of the given radial_fr.dat')
-    parser.add_argument('--cr', type=int, default=None, help='Carrington Rotation')
+    parser.add_argument('--cr', type=int, default=2135, help='Carrington Rotation')
     parser.add_argument('--file', type=str, default=None, help='Data File Name')
     parser.add_argument('--nwant', type=int, default=None, help='Number of Fluxons')
     parser.add_argument('--open', type=str, default=None)
