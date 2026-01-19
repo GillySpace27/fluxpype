@@ -248,7 +248,7 @@ sub make_world_from_pfss {
                 if ($print_debug) {print "Extended open: $open\n";}
             }
 
-            $print_debug = 0;
+            $print_debug = 1;
             if ($extend_up) {
                 if ($print_debug) {print "EXTEND UP\n";}
                 # Deep copy of the last column
@@ -291,7 +291,7 @@ sub make_world_from_pfss {
                 $open = $open->glue(1, $replicated_last_col)->squeeze;
                 if ($print_debug) {print "Extended open: $open\n";}
             }
-            my $print_debug = 0;
+            my $print_debug = 1;
 
             # Print radial values before sorting
             if ($print_debug) {print "Radial values before sorting: ", $open(2, :), "\n";}
@@ -347,8 +347,8 @@ sub make_world_from_pfss {
 
     ## Generate the world  ############################################
         print "\n\tGenerating the Initial World...\n \n";
-        my $fbg = make_world_sphere(@flines, {rmax=>21.5});
-        # my $fbg = make_world_sphere(@flines, {rmax=>215});
+        # my $fbg = make_world_sphere(@flines, {rmax=>21.5});
+        my $fbg = make_world_sphere(@flines, {rmax=>199});
 
         $world = str2world($fbg);
 

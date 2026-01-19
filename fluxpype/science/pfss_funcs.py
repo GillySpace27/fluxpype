@@ -617,8 +617,8 @@ def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_c
         if True:
             #extend up to 21.5 R_sun logarithmically
             extend_height = np.amax(fl_rads)
-            extend_height2 = 21.5
-            extend_num2 = 10
+            extend_height2 = 200.
+            extend_num2 = 40
             fl_lats = np.concatenate((fl_lats, fl_lats[-1]*np.ones(extend_num2)), axis=0)
             fl_lons = np.concatenate((fl_lons, fl_lons[-1]*np.ones(extend_num2)), axis=0)
             higher2 = np.logspace(np.log10(extend_height), np.log10(extend_height2), extend_num2+1)[1:]
