@@ -17,10 +17,8 @@ sigma_T = 6.652e-25 * u.cm**2
 
 # Specific intensity of the sun center
 I_sp_solar_surface = (L_sun / (4 * np.pi**2 * R_sun**2)).to(u.erg / u.cm**2 / u.s / u.sr, equivalencies=u.dimensionless_angles())
-u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": r"I_{\odot}", "unicode": "I☉"})
+u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": "$I_{\odot}$", "unicode": "I☉"})
 I_sp_solar_surface = 1.0 * u.I_sun
-
-from astropy import units as u
 
 
 @u.quantity_input(r=u.R_sun)
@@ -51,8 +49,20 @@ def incident_solar_intensity(r):
 
 
 def simulate_thomson_scattering(
-    npix=500, nz=500, fov=3.0, lower_bound=1.01, upper_bound=3.0, scale=100,
-    flux_world=None, influence_length=1.0, z_max = 10.0, parallel=False, method="voronoi",
+    npix=500,
+    nz=500,
+    fov=3.0,
+    lower_bound=1.01,
+    upper_bound=100.0,
+    scale=100,
+    flux_world=None,
+    influence_length=1.0,
+    z_max=10.0,
+    parallel=False,
+    method="voronoi",
+    # Voronoi smoothing (reduces hard cell boundaries by locally averaging densities)
+    voronoi_blur=0.0,
+    voronoi_samples=1,
 ):
     """
     Simulate Thomson scattering brightness and polarization in the solar corona.
@@ -75,6 +85,13 @@ def simulate_thomson_scattering(
         If provided, uses the fluxon-based density model.
     influence_length : float or Quantity
         Length scale of influence of a fluxon's density enhancement.
+    voronoi_blur : float or Quantity
+        If > 0 and method == "voronoi", apply a small spatial dithering (in R_sun) to the
+        sample coordinates and average the resulting densities. This acts like an
+        interpolation/anti-aliasing step that suppresses hard Voronoi cell boundaries.
+        Set to ~0.01–0.05 for gentle smoothing.
+    voronoi_samples : int
+        Number of dither samples to average when voronoi_blur > 0. Typical values: 4–9.
 
     Returns
     -------
@@ -94,6 +111,13 @@ def simulate_thomson_scattering(
     lower_bound = ensure_rsun_quantity(lower_bound)
     upper_bound = ensure_rsun_quantity(upper_bound)
     influence_length = ensure_rsun_quantity(influence_length)
+    # Voronoi smoothing controls
+    voronoi_blur = ensure_rsun_quantity(voronoi_blur)
+    try:
+        voronoi_samples = int(voronoi_samples)
+    except Exception:
+        voronoi_samples = 1
+    voronoi_samples = max(1, voronoi_samples)
 
     # Create a coordinate grid in solar radii
     side = np.linspace(-fov, fov, npix)
@@ -110,13 +134,35 @@ def simulate_thomson_scattering(
     Polarization_angle = np.zeros((npix, npix)) #* u.rad
     Column_Density = np.zeros((npix, npix)) * u.cm**-2
 
-    # Precompute fluxel segment structures if needed (before parallel block)
-    if flux_world is not None and method == "fluxel":
-        print("Precomputing fluxel segment structures...")
-        dummy_coord = np.array([[0, 0, 2]]) * u.R_sun
-        _ = flux_world.compute_electron_density(
-            dummy_coord, influence_length=influence_length, scale=scale, method=method
-        )
+    # Precompute segment geometry once (before parallel block)
+    voronoi_b_ref = None
+    voronoi_area_method = "halfplane"
+
+    if flux_world is not None and method in ["fluxel", "voronoi", "soft_voronoi", "voronoi_soft"]:
+        flux_world.prepare_segment_geometry()
+
+    # If we're using the Voronoi density model, precompute the expensive pieces
+    # (cross-sectional areas + a reference basal field proxy) ONCE in the parent
+    # process so worker processes don't repeat this work.
+    if flux_world is not None and method in ("voronoi", "soft_voronoi", "voronoi_soft"):
+        try:
+            # Ensure areas exist for basal-B0 proxying.
+            # This prevents `get_basal_B0()` from repeatedly triggering area computation.
+            if getattr(flux_world, "areas_by_fluxon", None) is None or getattr(flux_world, "method", None) != voronoi_area_method:
+                flux_world.compute_cross_sectional_areas(method=voronoi_area_method, smooth=True)
+
+            # Compute a stable reference B0 once and pass it into density calls.
+            b0s = []
+            for fid in flux_world.fluxons.keys():
+                b0 = flux_world.get_basal_B0(fid, area_method=voronoi_area_method)
+                if np.isfinite(b0) and b0 > 0:
+                    b0s.append(b0)
+            voronoi_b_ref = float(np.nanmedian(b0s)) if b0s else 1.0
+            if not np.isfinite(voronoi_b_ref) or voronoi_b_ref <= 0:
+                voronoi_b_ref = 1.0
+        except Exception as e:
+            # Fall back gracefully; we can still run without precomputed areas.
+            voronoi_b_ref = None
 
     def process_row(ix):
         # Impact param row, pos angle row
@@ -138,9 +184,59 @@ def simulate_thomson_scattering(
                 np.repeat(Z_grid, rho_row.shape[0], axis=0),
             ], axis=-1)  # (npix, nz, 3)
             coords_flat = coords.reshape(-1, 3)
-            ne_flat = flux_world.compute_electron_density(
-                coords_flat, influence_length=influence_length, scale=scale, method=method,
-            )
+            # Pass the precomputed Voronoi reference field + area method so workers
+            # don't repeatedly recompute cross-sectional areas / b_ref.
+            if method in ("voronoi", "soft_voronoi", "voronoi_soft"):
+                # Optional anti-aliasing: dither coords by a small blur length and
+                # average densities to suppress hard Voronoi cell boundaries.
+                if (method == "voronoi") and (voronoi_blur.to_value(u.R_sun) > 0) and (voronoi_samples > 1):
+                    d = voronoi_blur.to_value(u.R_sun)
+                    # Deterministic set of offsets (in R_sun). Use the first N.
+                    base_offsets = np.array(
+                        [
+                            [0.0, 0.0, 0.0],
+                            [ d,  0.0, 0.0],
+                            [-d,  0.0, 0.0],
+                            [0.0,  d,  0.0],
+                            [0.0, -d,  0.0],
+                            [ d,  d,  0.0],
+                            [ d, -d,  0.0],
+                            [-d,  d,  0.0],
+                            [-d, -d,  0.0],
+                        ],
+                        dtype=float,
+                    )
+                    # Make offsets a Quantity in R_sun so it can be added to coords_flat (also a Quantity).
+                    offsets = base_offsets[:voronoi_samples] * u.R_sun
+
+                    # Broadcast offsets across all coords, compute densities in one call.
+                    # Shape: (samples, N, 3) -> (samples*N, 3)
+                    coords_dither = (coords_flat[None, :, :] + offsets[:, None, :]).reshape(-1, 3)
+                    ne_dither = flux_world.compute_electron_density(
+                        coords_dither,
+                        scale=scale,
+                        method=method,
+                        b_ref=voronoi_b_ref,
+                        area_method=voronoi_area_method,
+                    )
+                    # Reshape back and average across samples: (samples, N) -> (N,)
+                    ne_flat = np.nanmean(ne_dither.reshape(voronoi_samples, -1), axis=0)
+                else:
+                    ne_flat = flux_world.compute_electron_density(
+                        coords_flat,
+                        scale=scale,
+                        method=method,
+                        b_ref=voronoi_b_ref,
+                        area_method=voronoi_area_method,
+                    )
+            else:
+                ne_flat = flux_world.compute_electron_density(
+                    coords_flat,
+                    influence_length=influence_length,
+                    scale=scale,
+                    method=method,
+                )
+
             ne = ne_flat.reshape(rho_row.shape[0], nz)  # * u.cm**-3
         else:
             ne = default_electron_density(r_LOS)
@@ -207,6 +303,7 @@ def simulate_thomson_scattering(
         "position_angle": position_angle,
         "fov": fov,
         "Column_Density": Column_Density,
+        "influence_length": influence_length,
     }
 
 
@@ -231,43 +328,3 @@ if __name__ == "__main__":
 
 
 
-
-
-
-
-
-    # res = simulate_thomson_scattering(parallel=True)
-
-
-
-
-
-
-
-
-
-
-
-    # print("Result shape:", res["B_total"].shape)
-    # plt.imshow(
-    #     res["B_total"].value,
-    #     origin="lower",
-    #     cmap="plasma",
-    #     norm=LogNorm(vmin=np.nanmin(res["B_total"].value), vmax=np.nanmax(res["B_total"].value)),
-    # )
-    # plt.gca().set_facecolor("black")
-    # plt.title("B_total in from Thomson Scattering")
-    # plt.colorbar(label=res["B_total"].unit)
-
-    # if filename is not None:
-    #     from os.path import basename
-    #     import re
-
-    #     self.name = basename(filename)
-    #     self.out_dir = os.path.join(filename.split("data/cr")[0], "imgs", "world")
-    #     match = re.search(r"cr(\d{4})", filename)
-    #     if match:
-    #         self.cr = match.group(1)
-    #     match_f = re.search(r"_f(\d+)_", filename)
-    #     if match_f:
-    #         self.nflx = match_f.group(1)
