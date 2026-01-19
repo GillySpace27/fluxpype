@@ -168,7 +168,7 @@ sub get_wind {
 
 
 
-    my $do_wind_calc = 1;
+    my $do_wind_calc = 0;
 
     my $wind_out_dir   = $datdir . "/batches/$batch_name/data/cr" . $CR . '/wind';
     my $prefix         = "$wind_out_dir/cr$CR\_f$n_fluxons_wanted";
@@ -214,6 +214,8 @@ sub get_wind {
     print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
     print color("reset");
 
+    # $do_wind_calc = 0;
+
     # Perform the calculation if necessary
     if ($do_wind_calc ) {
 
@@ -251,14 +253,14 @@ sub get_wind {
 
         # Pass the image into the main function
         if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want); }
-        else { print $skipstring;}
+        else { print "Skipped on Line 256\n\n";}
 
         # #run the python script to plot the angles
         # system("python3 fluxon-mhd/fluxpype/fluxpype/plotting/plot_angles.py");
 
     }
     else {
-        print $skipstring;
+        print "Skipped on line 263";
         return $out_b, $out_fr, $out_wind, $out_b_all;
     }
 

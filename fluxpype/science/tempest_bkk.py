@@ -12,26 +12,7 @@ import pandas as pd
 from scipy.interpolate import interp1d
 import os
 import re
-
-# np.seterr(divide='raise',invalid='raise')
-np.seterr(all="raise")  # Raises actual errors instead of warnings
-
-# Numerical safety thresholds
-EPS = 1e-30  # Generic tiny floor for floats
-BMIN = 1e-6  # Minimum magnetic field strength (Gauss or Tesla units as appropriate)
-TMIN = 1e-6  # Minimum temperature (Kelvin, typically)
-UMIN = 1e-12  # Minimum velocity or speed threshold
-
-
-def _floor(x, minval):
-    """
-    Return the absolute value of x, floored at minval,
-    while preserving finite values and zeroing out NaNs/Infs.
-    """
-    x = np.asarray(x)
-    x = np.where(np.isfinite(x), np.abs(x), 0.0)
-    return np.maximum(x, minval)
-
+np.seterr(divide='raise',invalid='raise')
 
 def main(file=None):
     """
@@ -62,69 +43,59 @@ def main(file=None):
     init(file)
     # read in heights and magnetic field models
     #   read_bzin: uses a zephyr_bz.in formatted file
-    multiple = 2
-    nmods, nsteps, B, zx = read_bzin(infile, multiple)
+    multiple=2
+    nmods,nsteps,B,zx = read_bzin(infile,multiple)
     if zx[0] == 0:
-        zx[0] = _floor(10, EPS) ** -10
+        zx[0] = 10**-10
     rx = zx + 1.0
-    zm = zx * Rsun
-    rm = rx * Rsun
+    zm = zx*Rsun
+    rm = rx*Rsun
 
-    dBdr = quickDeriv(B, rm, nmods, nsteps)
-    T, dTdr, zTR = fitT(B, zx)
-    np.savez(filename + "_inputs", zx=zx, B=B, T=T, zTR=zTR)
+    dBdr = quickDeriv(B,rm,nmods,nsteps)
+    T,dTdr,zTR = fitT(B,zx)
+    np.savez(filename+'_inputs', zx=zx, B=B, T=T, zTR=zTR)
     # ***************************************************************
     print("MIRANDA", flush=True)
-    u1, zC1 = miranda(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR)
+    u1,zC1 = miranda(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR)
 
-    itexp = 0.1
+    itexp=0.1
     changemodels = np.ones(nmods)
     change = 1
-    allchange = np.zeros((nmods, nsteps))
-    uout = np.zeros((nmods, nsteps))
+    allchange=np.zeros((nmods,nsteps))
+    uout=np.zeros((nmods,nsteps))
     uin = u1.copy()
 
     # need to run models individually until each converges
     print("PROSPERO", flush=True)
-    Bj = np.zeros((1, nsteps))
-    dBdrj = np.zeros((1, nsteps))
-    Tj = np.zeros((1, nsteps))
-    dTdrj = np.zeros((1, nsteps))
-    uinj = np.zeros((1, nsteps))
-    fail = 0
-    for j in range(0, nmods):
+    Bj = np.zeros((1,nsteps))
+    dBdrj = np.zeros((1,nsteps))
+    Tj = np.zeros((1,nsteps))
+    dTdrj = np.zeros((1,nsteps))
+    uinj = np.zeros((1,nsteps))
+    for j in range(0,nmods):
         it = 0
-        Bj[0, :] = B[j, :].copy()
-        dBdrj[0, :] = dBdr[j, :].copy()
-        Tj[0, :] = T[j, :].copy()
-        dTdrj[0, :] = dTdr[j, :].copy()
-        uinj[0, :] = uin[j, :].copy()
-        while ((changemodels[j] > 0.005) and (it < 100)) or (it < 10):
+        Bj[0,:] = B[j,:].copy()
+        dBdrj[0,:] = dBdr[j,:].copy()
+        Tj[0,:] = T[j,:].copy()
+        dTdrj[0,:] = dTdr[j,:].copy()
+        uinj[0,:] = uin[j,:].copy()
+        while(((changemodels[j] > 0.005) and (it<300)) or (it<10)):
             try:
-                uj, zCj = prospero(rm, 1, nsteps, Bj, dBdrj, Tj, dTdrj, zTR[j], uinj)
+                uj,zCj = prospero(rm,1,nsteps,Bj,dBdrj,Tj,dTdrj,zTR[j],uinj)
                 # allchange for model j based on a single model run
-                allchange[j, :] = abs((uj[0, :] - uinj[0, :]) / uinj[0, :])
+                allchange[j,:]=abs((uj[0,:]-uinj[0,:])/uinj[0,:])
 
-                uinj[0, :] = (uinj[0, :] ** (1.0 - itexp)) * (uj[0, :] ** (itexp))
-                changemodels[j] = np.mean(allchange[j, :])
+                uinj[0,:]=((uinj[0,:]**(1.0-itexp))*(uj[0,:]**(itexp)))
+                changemodels[j]=np.mean(allchange[j,:])
             except FloatingPointError as e:
                 print(f"Floating point error: {e}")
-                break
             it += 1
-        uout[j, :] = uinj[0, :].copy()
-        if changemodels[j] > 0.005:
-            uout[j, :] *= 0
-            print("Model did not converge!!")
-            fail += 1
-        print(j, ", # iterations:", it, ", conv:", changemodels[j])
+        uout[j,:] = uinj[0,:].copy()
+        print (j,', # iterations:',it,', conv:',changemodels[j])
 
-    success = 100 * (1 - fail / j)
-
-    u, zC = prospero(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR, uout)
+    u,zC = prospero(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR,uout)
     print("Saving Prospero Model...")
-    np.savez(filename + "_prospero", u=u, zC=zC)
-    print(f"{success = :0.3f}")
-
+    np.savez(filename+'_prospero', u=u, zC=zC)
 
 def init(file=None):
     """
@@ -135,42 +106,41 @@ def init(file=None):
     OUTPUT: defined global variables used throughout TEMPEST
     EXTERNAL PACKAGES: none
     """
-    # fundamental constants of nature in cgs units:
+    #fundamental constants of nature in cgs units:
     global G, Msun, boltzk, mH, Rsun
-    G = 6.67e-8  # cm^3 g^-1 s^-2
-    Msun = 1.988e33  # g
-    boltzk = 1.381e-16  # erg/K = g cm^2 s^-2 K^-1
-    mH = 1.674e-24  # g
-    Rsun = 6.955e10  # cm
+    G = 6.67e-8 #cm^3 g^-1 s^-2
+    Msun = 1.988e33 #g
+    boltzk = 1.381e-16 #erg/K = g cm^2 s^-2 K^-1
+    mH = 1.674e-24 #g
+    Rsun = 6.955e10 #cm
 
-    # constants used in the code that can be adjusted if needed:
+    #constants used in the code that can be adjusted if needed:
     global zSS, zAU, ztran, zlow
-    zSS = 1.5  # Rsun, accepted standard
-    zAU = 214.1  # Rsun, physical constant
-    ztran = 0.006  # Rsun, typically between 0.005 and 0.025
-    zlow = 0.04  # Rsun, used for calculating expansion factor
+    zSS = 1.5     #Rsun, accepted standard
+    zAU = 214.1   #Rsun, physical constant
+    ztran = 0.006 #Rsun, typically between 0.005 and 0.025
+    zlow = 0.04   #Rsun, used for calculating expansion factor
     global TTR, rhomin, ellbase, Sbase
-    TTR = 1.2e6  # K
-    # rhoTR = 7.e-15  #g/cm3, a better point for mass flux cons.
-    rhomin = 1.0e-28  # minimum density used in rhofloor
-    ellbase = 7.5e6  # cm, correlation length for turbulent eddies
-    Sbase = 9.0e4  # erg _floor(cm, EPS) ** -2 _floor(s, EPS) ** -1 _floor(G, EPS) ** -1
+    TTR = 1.2e6 #K
+    #rhoTR = 7.e-15  #g/cm3, a better point for mass flux cons.
+    rhomin = 1.0e-28 #minimum density used in rhofloor
+    ellbase = 7.5e6 #cm, correlation length for turbulent eddies
+    Sbase = 9.e4 #erg cm**-2 s**-1 G**-1
     global infile, filename
     # infile="example_input_profile.in"
     # infile = "~/vscode/fluxons/tempest/example_input_profile.in"
     infile = file or infile
     # print(infile)
-    filename = infile.replace("tempest.dat", "tempest_result")
+    filename= infile.replace("tempest.dat", "tempest_result")
 
-
-def miranda(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR):
+def miranda(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR):
     """
     PURPOSE: To find an initial solution for the solar wind outflow
         speed without the wave pressure term in the momentum equation.
         {u(r) - [uc(r)**2/u(r)]}*(du/dr) = RHS
         where uc(r)**2 = a(r)**2 = boltzk*T(r)/mH
-        and RHS = (-G*Msun/_floor(r, EPS) ** 2)-[_floor(ucr, EPS) ** 2/B]*(dB/dr)-[boltzk/mh]*(dT/dr)
-        such that du/dr = RHS / (u - [_floor(ucr, EPS) ** 2/u])
+        and RHS = (-G*Msun/r**2)-[ucr**2/B]*(dB/dr)-[boltzk/mh]*(dT/dr)
+        such that du/dr = RHS / (u - [ucr**2/u])
     INPUTS:
         rm - array of radii where the profiles are defined
         nmods - number of models in the input arrays (>= 1)
@@ -186,27 +156,26 @@ def miranda(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR):
     EXTERNAL PACKAGES: numpy
     """
     init()
-    ucr = np.zeros((nmods, nsteps))
-    rhs = np.zeros((nmods, nsteps))
+    ucr = np.zeros((nmods,nsteps))
+    rhs = np.zeros((nmods,nsteps))
     print((nmods, nsteps))
-    for j in range(0, nmods):
-        for k in range(0, nsteps):
-            if (rm[k] / Rsun) < zTR[j] + 1:
+    for j in range(0,nmods):
+        for k in range(0,nsteps):
+            if (rm[k]/Rsun) < zTR[j]+1:
                 xion = 0
-            if (rm[k] / Rsun) >= zTR[j] + 1:
+            if (rm[k]/Rsun) >= zTR[j]+1:
                 xion = 1
-            ucr[j, k] = np.sqrt((1 + xion) * boltzk * T[j, k] / mH)
-            gravterm = -G * Msun / _floor(rm[k], EPS) ** 2
-            magterm = -_floor(ucr[j, k], EPS) ** 2 * (dBdr[j, k] / B[j, k])
-            tempterm = -_floor(ucr[j, k], EPS) ** 2 * (dTdr[j, k] / T[j, k])
-            rhs[j, k] = gravterm + magterm + tempterm
+            ucr[j,k] = np.sqrt((1+xion)*boltzk*T[j,k]/mH)
+            gravterm = -G*Msun/rm[k]**2
+            magterm = -ucr[j,k]**2*(dBdr[j,k]/B[j,k])
+            tempterm = -ucr[j,k]**2*(dTdr[j,k]/T[j,k])
+            rhs[j,k] = gravterm + magterm + tempterm
 
-    u, zcrit = outflows(rm, nmods, nsteps, rhs, ucr)
-    np.savez(filename + "_miranda", ucr=ucr, rhs=rhs, u=u, zcrit=zcrit)
-    return u, zcrit
+    u,zcrit = outflows(rm,nmods,nsteps,rhs,ucr)
+    np.savez(filename+'_miranda', ucr=ucr, rhs=rhs, u=u, zcrit=zcrit)
+    return u,zcrit
 
-
-def prospero(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR, u1):
+def prospero(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR,u1):
     """
     PURPOSE: To find the solar wind outflow solution containing the
         effects of wave-driven heating AND wave pressure acceleration.
@@ -225,12 +194,11 @@ def prospero(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR, u1):
         zcrit - height of critical points for all models
     EXTERNAL PACKAGES: numpy
     """
-    a, ucr, rhs = fullRHS(rm, nmods, nsteps, B, dBdr, T, dTdr, zTR, u1)
-    u, zcrit = outflows(rm, nmods, nsteps, rhs, ucr)
-    return u, zcrit
+    a,ucr,rhs = fullRHS(rm,nmods,nsteps,B,dBdr,T,dTdr,zTR,u1)
+    u,zcrit = outflows(rm,nmods,nsteps,rhs,ucr)
+    return u,zcrit
 
-
-def read_bzin(zephyrinfile, multiple):
+def read_bzin(zephyrinfile,multiple):
     """
     PURPOSE: To read in a text file that contains the magnetic
         field profiles for all of the models for use in calculations.
@@ -245,44 +213,44 @@ def read_bzin(zephyrinfile, multiple):
         zx - heights where B is defined (in solar radii)
     EXTERNAL PACKAGES: numpy
     """
-    # read zephyr_bz.in formatted infile to get zx, B(r)
+    #read zephyr_bz.in formatted infile to get zx, B(r)
     infileopen = open(zephyrinfile, "r")
     line1 = infileopen.readline()
-    nmods, nsteps = line1.split()
-    nmods = int(nmods)
-    nsteps = int(nsteps)
-    oB = np.zeros((nmods, nsteps))
+    nmods,nsteps = line1.split()
+    nmods=int(nmods)
+    nsteps=int(nsteps)
+    oB = np.zeros((nmods,nsteps))
 
-    # set of heights are next nsteps lines after line1
+    #set of heights are next nsteps lines after line1
     ozx = np.fromfile(infileopen, count=nsteps, sep=" ", dtype=float)
-    # loop over nmods to get magnetic field for each model
-    for i in range(0, nmods):
-        line2 = infileopen.readline()  # model number, latitude
-        Blist = np.fromfile(infileopen, count=nsteps, sep=" ", dtype=float)
-        oB[i, :] = Blist
+    #loop over nmods to get magnetic field for each model
+    for i in range(0,nmods):
+        line2 = infileopen.readline() # model number, latitude
+        Blist = np.fromfile(infileopen, count=nsteps,
+                            sep=" ", dtype=float)
+        oB[i,:] = Blist
     infileopen.close()
 
-    # Interpolate more points based on input 'multiple'
-    zx = np.zeros(nsteps * multiple)
-    flag = 0
-    for i in range(0, nsteps - 1):
-        for l in range(0, multiple):
-            delz = (ozx[i + 1] - ozx[i]) / float(multiple)
-            zx[flag] = ozx[i] + (delz * l)
-            flag += 1
-    for l in range(0, multiple):
-        delz = (ozx[nsteps - 1] - ozx[nsteps - 2]) / float(multiple)
-        zx[flag] = ozx[nsteps - 1] + (delz * l)
-        flag += 1
+    #Interpolate more points based on input 'multiple'
+    zx = np.zeros(nsteps*multiple)
+    flag=0
+    for i in range(0,nsteps-1):
+        for l in range(0,multiple):
+            delz = (ozx[i+1]-ozx[i])/float(multiple)
+            zx[flag] = ozx[i]+(delz*l)
+            flag+=1
+    for l in range(0,multiple):
+        delz = (ozx[nsteps-1]-ozx[nsteps-2])/float(multiple)
+        zx[flag] = ozx[nsteps-1]+(delz*l)
+        flag+=1
     nsteps = len(zx)
-    B = np.zeros((nmods, nsteps))
-    for j in range(0, nmods):
-        for k in range(0, nsteps):
-            B[j, k] = np.interp(zx[k], ozx, oB[j, :])
-    return nmods, nsteps, B, zx
+    B = np.zeros((nmods,nsteps))
+    for j in range(0,nmods):
+        for k in range(0,nsteps):
+            B[j,k] = np.interp(zx[k],ozx,oB[j,:])
+    return nmods,nsteps,B,zx
 
-
-def quickDeriv(f, r, fsets, steps):
+def quickDeriv(f,r,fsets,steps):
     """
     PURPOSE: To populate an array with numerical estimates of the
         derivative of an input array along one dimension.
@@ -295,42 +263,42 @@ def quickDeriv(f, r, fsets, steps):
         dfdr - value of the derivative of f w.r.t. r for each model.
     EXTERNAL PACKAGES: numpy
     """
-    # Slope taken from centered difference, general use
-    dfdr = np.zeros((fsets, steps))
-    for j in range(0, fsets):
+    #Slope taken from centered difference, general use
+    dfdr = np.zeros((fsets,steps))
+    for j in range(0,fsets):
         # first height value's derivative is slope from pt 0 to pt 1
-        dfdr[j, 0] = (f[j, 1] - f[j, 0]) / (r[1] - r[0])
+        dfdr[j,0] = (f[j,1]-f[j,0])/(r[1]-r[0])
         # middle points look at deltaB/deltah for pts above and below
-        for k in range(1, steps - 1):
-            dfdr[j, k] = (f[j, k + 1] - f[j, k - 1]) / (r[k + 1] - r[k - 1])
+        for k in range(1,steps-1):
+            dfdr[j,k] = (f[j,k+1]-f[j,k-1])/(r[k+1]-r[k-1])
         # last height's derivative is slope from pt last-1 to pt last
-        dfdr[j, steps - 1] = (f[j, steps - 1] - f[j, steps - 2]) / (r[steps - 1] - r[steps - 2])
+        dfdr[j,steps-1] = ((f[j,steps-1]-f[j,steps-2])/
+                            (r[steps-1]-r[steps-2]))
     return dfdr
 
-
-def rk4(fi, ri, dr, r, dfdr=None):
+def rk4(fi,ri,dr,r,dfdr=None):
     """
-    PURPOSE: To integrate a function using fourth-order
-    Runge-Kutta techniques from a starting point (ri,fi)
+        PURPOSE: To integrate a function using fourth-order
+        Runge-Kutta techniques from a starting point (ri,fi)
 
-    INPUTS:
-    fi - the starting value of the function
-    ri - the starting radius from which to integrate out
-    dr - the amount of distance over which to integrate
-    r - the full array of radii where dfdr is defined
-    dfdr - the derivative of f; alternately used to contain
-    the arrays for specific TEMPEST use: ucr and rhs
-    OUTPUT:
-    ff - the ending value of the function at a point ri + dr
-         (where dr may be in either direction)
-    EXTERNAL PACKAGES: numpy
-    """
-    # General RK4 routine with adaptive stepping
+        INPUTS:
+        fi - the starting value of the function
+        ri - the starting radius from which to integrate out
+        dr - the amount of distance over which to integrate
+        r - the full array of radii where dfdr is defined
+        dfdr - the derivative of f; alternately used to contain
+        the arrays for specific TEMPEST use: ucr and rhs
+        OUTPUT:
+        ff - the ending value of the function at a point ri + dr
+             (where dr may be in either direction)
+        EXTERNAL PACKAGES: numpy
+        """
+    #General RK4 routine with adaptive stepping
     adaptiveconstant = 0.1
-    # check if integrating up or down (sign of dr)
-    sign = np.sign(dr)  # result is -1, 1, or 0
-    rstep = ri
-    fstep = fi
+    #check if integrating up or down (sign of dr)
+    sign = np.sign(dr) #result is -1, 1, or 0
+    rstep=ri
+    fstep=fi
     stepstotal = 0.0
     stepstaken = 0
 
@@ -338,33 +306,33 @@ def rk4(fi, ri, dr, r, dfdr=None):
         r1 = rstep
         f1 = fstep
 
-        dlnf = dfdrval(fstep, rstep, r, dfdr) / fstep
-        deltar = sign * np.abs(adaptiveconstant / dlnf)
-        # check to see if deltar is too large or too many steps have happened
-        if (np.abs(stepstotal) + np.abs(deltar) > np.abs(dr)) or (stepstaken > 100):
-            deltar = sign * (np.abs(dr) - np.abs(stepstotal))
 
-        r2 = r1 + 0.5 * deltar
+        dlnf = dfdrval(fstep,rstep,r,dfdr)/fstep
+        deltar = sign*np.abs(adaptiveconstant/dlnf)
+        #check to see if deltar is too large or too many steps have happened
+        if ((np.abs(stepstotal)+np.abs(deltar)>np.abs(dr)) or (stepstaken>100)):
+            deltar = sign*(np.abs(dr) - np.abs(stepstotal))
+
+        r2 = r1 + 0.5*deltar
         r3 = r1 + deltar
 
         y1 = fstep
-        pk1 = dr * dfdrval(y1, r1, r, dfdr)
-        y2 = fstep + 0.5 * pk1
-        pk2 = dr * dfdrval(y2, r2, r, dfdr)
-        y3 = fstep + 0.5 * pk2
-        pk3 = dr * dfdrval(y3, r2, r, dfdr)
+        pk1 = dr*dfdrval(y1,r1,r,dfdr)
+        y2 = fstep + 0.5*pk1
+        pk2 = dr*dfdrval(y2,r2,r,dfdr)
+        y3 = fstep + 0.5*pk2
+        pk3 = dr*dfdrval(y3,r2,r,dfdr)
         y4 = fstep + pk3
-        pk4 = dr * dfdrval(y4, r3, r, dfdr)
+        pk4 = dr*dfdrval(y4,r3,r,dfdr)
 
-        ff = fstep + (pk1 + pk4) / 6.0 + (pk2 + pk3) / 3.0
+        ff = fstep + (pk1+pk4)/6. + (pk2+pk3)/3.
         stepstotal += np.abs(deltar)
         stepstaken += 1
-        rstep += deltar  # increase OR decrease
+        rstep += deltar #increase OR decrease
         fstep = ff
     return ff
 
-
-def dfdrval(uval, rval, rarray, dfdr=None):
+def dfdrval(uval,rval,rarray,dfdr=None):
     """
     PURPOSE: To interpolate the slope dfdr from a given
         point and the dfdr profile for a subset of models
@@ -379,16 +347,15 @@ def dfdrval(uval, rval, rarray, dfdr=None):
         slope - the value of dfdr AT the point r=rval, f=uval
     EXTERNAL PACKAGES: numpy
     """
-    if not isinstance(dfdr, np.ndarray):
-        ucrval = np.interp(rval, rarray, dfdr[0][:])
-        rhsval = np.interp(rval, rarray, dfdr[1][:])
-        slope = rhsval / (uval - (_floor(ucrval, EPS) ** 2 / uval))
+    if not isinstance(dfdr,np.ndarray):
+        ucrval = np.interp(rval,rarray,dfdr[0][:])
+        rhsval = np.interp(rval,rarray,dfdr[1][:])
+        slope = rhsval/(uval - (ucrval**2/uval))
     else:
-        slope = np.interp(rval, rarray, dfdr[:])
+        slope = np.interp(rval,rarray,dfdr[:])
     return slope
 
-
-def smooth(x, w_len):
+def smooth(x,w_len):
     """
     PURPOSE: To take an array x and smooth it using a Bartlett
         window of length w_len to provide a smooth array yfixed
@@ -402,16 +369,15 @@ def smooth(x, w_len):
     """
     if w_len < 3:
         return x
-    s = np.r_[2 * x[0] - x[w_len:1:-1], x, 2 * x[-1] - x[-1:-w_len:-1]]
-    w = np.ones(w_len, "d")
-    window = "bartlett"
-    w = eval("np." + window + "(w_len)")
-    y = np.convolve(w / w.sum(), s, mode="valid")
-    yfixed = y[(w_len // 2) : (len(y) - (w_len // 2))]
+    s=np.r_[2*x[0]-x[w_len:1:-1], x, 2*x[-1]-x[-1:-w_len:-1]]
+    w = np.ones(w_len,'d')
+    window = 'bartlett'
+    w = eval('np.'+window+'(w_len)')
+    y=np.convolve(w/w.sum(),s,mode='valid')
+    yfixed = y[(w_len//2):(len(y)-(w_len//2))]
     return yfixed
 
-
-def fitT(B, zx):
+def fitT(B,zx):
     """
     PURPOSE: To estimate temperature profiles of models based only
         on the input magnetic field profiles based on fitting
@@ -427,7 +393,7 @@ def fitT(B, zx):
     EXTERNAL PACKAGES: numpy
     """
     init()
-    rm = (zx + 1.0) * Rsun
+    rm = (zx+1.0)*Rsun
     steps = len(zx)
 
     aucheck = abs(zx - zAU)
@@ -443,36 +409,36 @@ def fitT(B, zx):
     zset = (0.00314, 0.4206, 2.0, 3.0)
     iset = np.zeros(4)
     for i in range(4):
-        iset[i] = int(abs(zx - zset[i]).argmin())
-    models = len(B[:, 0])
-    Bsetfit = np.zeros((models, 4))
+        iset[i] = int(abs(zx-zset[i]).argmin())
+    models=len(B[:,0])
+    Bsetfit = np.zeros((models,4))
     z_TR = np.zeros(models)
-    for j in range(0, models):
-        z_TR[j] = 0.0057 + 7.0e-6 / (B[j, int(iset[2])] ** 1.3)
+    for j in range(0,models):
+        z_TR[j] = 0.0057+7.e-6/(B[j,int(iset[2])]**1.3)
         for k in range(4):
-            Bsetfit[j, k] = B[j, int(iset[k])]
+            Bsetfit[j,k] = B[j,int(iset[k])]
 
-    zresid = (0.662, 0.0144)
-    iresid0 = int(np.abs(zx - zresid[0]).argmin())
-    iresid1 = int(np.abs(zx - zresid[1]).argmin())
-    Bresid = np.zeros((models, 2))
-    aTresid = np.zeros((models, 2))
-    for j in range(0, models):
-        Bresid[j, 0] = B[j, iresid0]
-        Bresid[j, 1] = B[j, iresid1]
-        aTresid[j, 0] = 0.0559 + 0.13985 * np.log10(Bresid[j, 0])
-        aTresid[j, 1] = -0.0424 + 0.09285 * np.log10(Bresid[j, 1])
+    zresid = (0.662,0.0144)
+    iresid0 = int(np.abs(zx-zresid[0]).argmin())
+    iresid1 = int(np.abs(zx-zresid[1]).argmin())
+    Bresid = np.zeros((models,2))
+    aTresid = np.zeros((models,2))
+    for j in range(0,models):
+        Bresid[j,0] = B[j,iresid0]
+        Bresid[j,1] = B[j,iresid1]
+        aTresid[j,0] = 0.0559 + 0.13985*np.log10(Bresid[j,0])
+        aTresid[j,1] = -0.0424 + 0.09285*np.log10(Bresid[j,1])
 
-    aTfit = np.zeros((models, 5))
-    Tsetfit = np.zeros((models, 5))
+    aTfit = np.zeros((models,5))
+    Tsetfit = np.zeros((models,5))
     for j in range(0, models):
-        aTfit[j, 0] = 5.554 + 0.1646 * np.log10(Bsetfit[j, 0]) + aTresid[j, 0]
-        aTfit[j, 1] = 5.967 + 0.2054 * np.log10(Bsetfit[j, 1]) + aTresid[j, 1]
-        aTfit[j, 2] = 6.228 + 0.2660 * np.log10(Bsetfit[j, 2])
-        aTfit[j, 3] = 6.249 + 0.3121 * np.log10(Bsetfit[j, 3])
-        aTfit[j, 4] = 6.041 + 0.3547 * np.log10(Bsetfit[j, 3])
+        aTfit[j,0] = 5.554 + 0.1646*np.log10(Bsetfit[j,0]) + aTresid[j,0]
+        aTfit[j,1] = 5.967 + 0.2054*np.log10(Bsetfit[j,1]) + aTresid[j,1]
+        aTfit[j,2] = 6.228 + 0.2660*np.log10(Bsetfit[j,2])
+        aTfit[j,3] = 6.249 + 0.3121*np.log10(Bsetfit[j,3])
+        aTfit[j,4] = 6.041 + 0.3547*np.log10(Bsetfit[j,3])
         for k in range(5):
-            Tsetfit[j, k] = 10.0 ** aTfit[j, k]
+            Tsetfit[j,k] = 10.**aTfit[j,k]
 
     zfit = (0.02, 0.2, 2.0, 20.0, 200.0)
     ifit = np.zeros(5)
@@ -481,43 +447,44 @@ def fitT(B, zx):
     for k in range(steps):
         azx[k] = np.log10(zx[k])
     for i in range(5):
-        ifit[i] = int(abs(zx - zfit[i]).argmin())
+        ifit[i] = int(abs(zx-zfit[i]).argmin())
         azfit[i] = np.log10(zfit[i])
 
-    Ttry = np.zeros((models, steps))
+    Ttry = np.zeros((models,steps))
     for j in range(0, models):
-        trcon = (_floor(Tsetfit[j, 0], EPS) ** 3.5 - _floor(TTR, EPS) ** 3.5) / (
-            _floor(zfit[0], EPS) ** 2 - _floor(z_TR[j], EPS) ** 2
-        )
+        trcon = (Tsetfit[j,0]**3.5 - TTR**3.5)/(zfit[0]**2 - z_TR[j]**2)
         for k in range(steps):
-            if zx[k] <= z_TR[j]:
-                Ttry[j, k] = TTR
+            if (zx[k] <= z_TR[j]):
+                Ttry[j,k] = TTR
             if (zx[k] > z_TR[j]) and (zx[k] <= zfit[0]):
-                Ttry[j, k] = (_floor(TTR, EPS) ** 3.5 + trcon * (_floor(zx[k], EPS) ** 2 - z_TR[j] ** 2)) ** (2.0 / 7.0)
+                Ttry[j,k] = (TTR**3.5+trcon*(zx[k]**2-z_TR[j]**2))**(2./7.)
             if (zx[k] > zfit[0]) and (zx[k] <= zfit[1]):
-                ay = aTfit[j, 0] + ((aTfit[j, 1] - aTfit[j, 0]) / (azfit[1] - azfit[0])) * (azx[k] - azfit[0])
-                Ttry[j, k] = _floor(10, EPS) ** ay
+                ay = aTfit[j,0] + ((aTfit[j,1]-aTfit[j,0])/
+                                   (azfit[1]-azfit[0]))*(azx[k]-azfit[0])
+                Ttry[j,k] = 10**ay
             if (zx[k] > zfit[1]) and (zx[k] <= zfit[2]):
-                ay = aTfit[j, 1] + ((aTfit[j, 2] - aTfit[j, 1]) / (azfit[2] - azfit[1])) * (azx[k] - azfit[1])
-                Ttry[j, k] = _floor(10, EPS) ** ay
+                ay = aTfit[j,1] + ((aTfit[j,2]-aTfit[j,1])/
+                                   (azfit[2]-azfit[1]))*(azx[k]-azfit[1])
+                Ttry[j,k] = 10**ay
             if (zx[k] > zfit[2]) and (zx[k] <= zfit[3]):
-                ay = aTfit[j, 2] + ((aTfit[j, 3] - aTfit[j, 2]) / (azfit[3] - azfit[2])) * (azx[k] - azfit[2])
-                Ttry[j, k] = _floor(10, EPS) ** ay
-            if zx[k] > zfit[3]:
-                ay = aTfit[j, 3] + ((aTfit[j, 4] - aTfit[j, 3]) / (azfit[4] - azfit[3])) * (azx[k] - azfit[3])
-                Ttry[j, k] = _floor(10, EPS) ** ay
+                ay = aTfit[j,2] + ((aTfit[j,3]-aTfit[j,2])/
+                                   (azfit[3]-azfit[2]))*(azx[k]-azfit[2])
+                Ttry[j,k] = 10**ay
+            if (zx[k] > zfit[3]):
+                ay = aTfit[j,3] + ((aTfit[j,4]-aTfit[j,3])/
+                                   (azfit[4]-azfit[3]))*(azx[k]-azfit[3])
+                Ttry[j,k] = 10**ay
 
     smoothW = 15
-    Tsmooth = np.zeros((models, steps))
-    for j in range(0, models):
-        Tsmooth[j, :] = smooth(Ttry[j, :], smoothW)
+    Tsmooth = np.zeros((models,steps))
+    for j in range(0,models):
+        Tsmooth[j,:] = smooth(Ttry[j,:],smoothW)
     T = Tsmooth.copy()
-    dTdr = quickDeriv(T, rm, models, steps)
+    dTdr = quickDeriv(T,rm,models,steps)
 
-    return T, dTdr, z_TR
+    return T,dTdr,z_TR
 
-
-def fit_refl(B1, zTR1, rm):
+def fit_refl(B1,zTR1,rm):
     """
     PURPOSE: To determine the profile of the Alfven wave reflection
         coefficient from correlations found in ZEPHYR.
@@ -530,7 +497,7 @@ def fit_refl(B1, zTR1, rm):
     EXTERNAL PACKAGES: numpy
     """
     init()
-    zx = (rm / Rsun) - 1.0
+    zx = (rm/Rsun)- 1.0
     steps = len(zx)
 
     aucheck = abs(zx - zAU)
@@ -545,59 +512,63 @@ def fit_refl(B1, zTR1, rm):
     zset = (0.00975, 0.011, 0.573, 0.315, 3.0)
     iset = np.zeros(5)
     for i in range(5):
-        iset[i] = int(abs(zx - zset[i]).argmin())
+        iset[i] = int(abs(zx-zset[i]).argmin())
     Bfit = np.zeros(5)
     for k in range(5):
         Bfit[k] = B1[int(iset[k])]
 
     arefl = np.zeros(6)
     fitrefl = np.zeros(6)
-    arefl[0] = np.log10(Bfit[0] / (0.7 + Bfit[0]))
-    arefl[1] = -1.081 + 0.3108 * np.log10(Bfit[1])
-    arefl[2] = -1.293 + 0.6476 * np.log10(Bfit[2])
-    arefl[3] = -2.238 + 0.6061 * np.log10(Bfit[3])
-    arefl[4] = -2.940 - 0.2576 * np.log10(Bfit[4])
-    arefl[5] = -3.404 - 0.4961 * np.log10(Bfit[4])
+    arefl[0] = np.log10(Bfit[0]/(0.7+Bfit[0]))
+    arefl[1] = -1.081+0.3108*np.log10(Bfit[1])
+    arefl[2] = -1.293+0.6476*np.log10(Bfit[2])
+    arefl[3] = -2.238+0.6061*np.log10(Bfit[3])
+    arefl[4] = -2.940-0.2576*np.log10(Bfit[4])
+    arefl[5] = -3.404-0.4961*np.log10(Bfit[4])
     for i in range(6):
-        fitrefl[i] = _floor(10, EPS) ** arefl[i]
+        fitrefl[i] = 10**arefl[i]
 
-    zfit = (zTR1, 0.02, 0.2, 2.0, 20.0, 200.0)
+    zfit = (zTR1,0.02, 0.2, 2.0, 20.0, 200.0)
     ifit = np.zeros(6)
     azfit = np.zeros(6)
     azx = np.zeros(steps)
     for k in range(steps):
         azx[k] = np.log10(zx[k])
     for i in range(6):
-        ifit[i] = int(abs(zx - zfit[i]).argmin())
+        ifit[i] = int(abs(zx-zfit[i]).argmin())
         azfit[i] = np.log10(zfit[i])
 
-    refl1 = np.zeros(steps)
+    refl1=np.zeros(steps)
     for k in range(steps):
         if zx[k] <= zTR1:
-            refl1[k] = fitrefl[0]  # reflection coeff. constant in chromo.
+            refl1[k] = fitrefl[0] #reflection coeff. constant in chromo.
         if (zx[k] > zfit[0]) and (zx[k] <= zfit[1]):
-            ay = arefl[0] + ((arefl[1] - arefl[0]) / (azfit[1] - azfit[0]) * (azx[k] - azfit[0]))
-            refl1[k] = _floor(10, EPS) ** ay
+            ay = arefl[0] + ((arefl[1]-arefl[0])/(azfit[1]-azfit[0])*
+                             (azx[k]-azfit[0]))
+            refl1[k] = 10**ay
 
         if (zx[k] > zfit[1]) and (zx[k] <= zfit[2]):
-            ay = arefl[1] + ((arefl[2] - arefl[1]) / (azfit[2] - azfit[1]) * (azx[k] - azfit[1]))
-            refl1[k] = _floor(10, EPS) ** ay
+            ay = arefl[1] + ((arefl[2]-arefl[1])/(azfit[2]-azfit[1])*
+                                              (azx[k]-azfit[1]))
+            refl1[k] = 10**ay
         if (zx[k] > zfit[2]) and (zx[k] <= zfit[3]):
-            ay = arefl[2] + ((arefl[3] - arefl[2]) / (azfit[3] - azfit[2]) * (azx[k] - azfit[2]))
-            refl1[k] = _floor(10, EPS) ** ay
+            ay = arefl[2] + ((arefl[3]-arefl[2])/(azfit[3]-azfit[2])*
+                             (azx[k]-azfit[2]))
+            refl1[k] = 10**ay
         if (zx[k] > zfit[3]) and (zx[k] <= zfit[4]):
-            ay = arefl[3] + ((arefl[4] - arefl[3]) / (azfit[4] - azfit[3]) * (azx[k] - azfit[3]))
-            refl1[k] = _floor(10, EPS) ** ay
+            ay = arefl[3] + ((arefl[4]-arefl[3])/(azfit[4]-azfit[3])*
+                             (azx[k]-azfit[3]))
+            refl1[k] = 10**ay
         if (zx[k] > zfit[4]) and (zx[k] <= zfit[5]):
-            ay = arefl[4] + ((arefl[5] - arefl[4]) / (azfit[5] - azfit[4]) * (azx[k] - azfit[4]))
-            refl1[k] = _floor(10, EPS) ** ay
-        if zx[k] > zfit[5]:
+            ay = arefl[4] + ((arefl[5]-arefl[4])/(azfit[5]-azfit[4])*
+                             (azx[k]-azfit[4]))
+            refl1[k] = 10**ay
+        if (zx[k] > zfit[5]):
             refl1[k] = fitrefl[5]
-    reflgood = smooth(refl1[:], 15)
+    reflgood = smooth(refl1[:],15)
     return reflgood
 
-
-def fullRHS(r, models, steps, B, dBdr, T, dTdr, zTR, u):
+def fullRHS(r,models,steps,B,dBdr,T,dTdr,zTR,u):
     """
     PURPOSE: To find the full RHS of the momentum equation, defined
         below, which includes wave pressure and damping effects.
@@ -621,18 +592,18 @@ def fullRHS(r, models, steps, B, dBdr, T, dTdr, zTR, u):
     """
     init()
 
-    zx = (r / Rsun) - 1.0
-    rho = np.zeros((models, steps))
-    VA = np.zeros((models, steps))
-    vperp = np.zeros((models, steps))
-    UA = np.zeros((models, steps))
-    QA = np.zeros((models, steps))
-    a = np.zeros((models, steps))
-    ucr = np.zeros((models, steps))
-    rhs = np.zeros((models, steps))
-    tref = np.zeros((models, steps))
-    teddy = np.zeros((models, steps))
-    eff = np.zeros((models, steps))
+    zx = (r/Rsun)-1.0
+    rho = np.zeros((models,steps))
+    VA = np.zeros((models,steps))
+    vperp = np.zeros((models,steps))
+    UA = np.zeros((models,steps))
+    QA = np.zeros((models,steps))
+    a = np.zeros((models,steps))
+    ucr = np.zeros((models,steps))
+    rhs = np.zeros((models,steps))
+    tref = np.zeros((models,steps))
+    teddy = np.zeros((models,steps))
+    eff = np.zeros((models,steps))
     # mass flux conservation: rho(r) = (rhoTR*uTR/BTR)*(B(r)/u(r))
     iTR = np.zeros(models)
     if models == 1:
@@ -640,60 +611,63 @@ def fullRHS(r, models, steps, B, dBdr, T, dTdr, zTR, u):
         zTR1 = np.zeros(1)
         zTR1[0] = zTR
         zTR = zTR1.copy()
-    for j in range(0, models):
-        chromosphere = np.where(T[j, :] < 1.1 * TTR)
+    for j in range(0,models):
+        chromosphere = np.where(T[j,:] < 1.1*TTR)
         try:
-            iTR[j] = chromosphere[0][len(chromosphere[0][:]) - 1]
+            iTR[j] = chromosphere[0][len(chromosphere[0][:])-1]
         except IndexError:
             iTR[j] = 0
 
-        rhoTRexp = -21.904 - (3.349 * np.log10(zTR[j]))
+        rhoTRexp = -21.904 - (3.349*np.log10(zTR[j]))
         TRcheck = abs(zx - zTR[j])
         iTR[j] = int(TRcheck.argmin())
         iTRint = int(iTR[j])
-        rho[j, iTRint] = _floor(10, EPS) ** rhoTRexp  # * 1.4?
+        rho[j,iTRint] = 10**rhoTRexp # * 1.4?
         try:
-            rho[j, :] = (rho[j, iTRint] * u[j, iTRint] / B[j, iTRint]) * (B[j, :] / u[j, :])
+            rho[j,:] = ((rho[j,iTRint]*u[j,iTRint]/B[j,iTRint])*
+                        (B[j,:]/u[j,:]))
         except FloatingPointError as e:
             print(e)
     # wave action conservation (Cranmer 2010, eq. 29):
     #   (u(r)+VA)**2 UA / (VA*B(r)) = constant, Sbase in init()
     limit = 10.0
-    rho = _floor(np.abs(rho), EPS)
+    rho = np.abs(rho) + 1e-4 * np.abs(rho)
     B = np.abs(B)
-    VA = B / np.sqrt(4 * np.pi * rho)
-    UA, QA = waveaction(r, B, zTR, u, rho, VA, Sbase, np.ones((models, steps)))
+    VA = B/np.sqrt(4*np.pi*rho)
+    UA,QA = waveaction(r,B,zTR,u,rho,VA,Sbase,np.ones((models,steps)))
 
-    vperp1 = np.sqrt(UA / rho)
-    tref = ((r + Rsun) * (r - Rsun)) / (r * VA)
-    BBase = B[:, 0]
-    ellperp = ellbase * np.sqrt(BBase[:, None] / B)
-    teddy = (ellperp * np.sqrt(3 * np.pi)) / ((1 + (u / VA)) * vperp1)
-    eff = 1 / (1 + (teddy / tref))
-    UA, QA = waveaction(r, B, zTR, u, rho, VA, Sbase, eff)
-    vperp = np.sqrt(UA / rho)
+    vperp1 = np.sqrt(UA/rho)
+    tref = ((r+Rsun)*(r-Rsun))/(r*VA)
+    BBase = B[:,0]
+    ellperp = ellbase*np.sqrt(BBase[:,None]/B)
+    teddy = ((ellperp*np.sqrt(3*np.pi))/((1+(u/VA))*vperp1))
+    eff = 1/(1+(teddy/tref))
+    UA,QA = waveaction(r,B,zTR,u,rho,VA,Sbase,eff)
+    vperp = np.sqrt(UA/rho)
 
-    for j in range(0, models):
-        for k in range(0, steps):
-            if (r[k] / Rsun) < zTR[j] + 1:
+    for j in range(0,models):
+        for k in range(0,steps):
+            if (r[k]/Rsun) < zTR[j]+1:
                 xion = 0
-            if (r[k] / Rsun) >= zTR[j] + 1:
+            if (r[k]/Rsun) >= zTR[j]+1:
                 xion = 1
-            a[j, k] = np.sqrt((1 + xion) * boltzk * T[j, k] / mH)
-            MA = u[j, k] / VA[j, k]
-            ucr[j, k] = np.sqrt(_floor(a[j, k], EPS) ** 2 + (UA[j, k] / (4 * rho[j, k])) * ((1 + (3 * MA)) / (1 + MA)))
-            gravterm = -G * Msun / _floor(r[k], EPS) ** 2
-            magucterm = -_floor(ucr[j, k], EPS) ** 2 * (dBdr[j, k] / B[j, k])
-            tempaterm = -_floor(a[j, k], EPS) ** 2 * (dTdr[j, k] / T[j, k])
-            alfterm = QA[j, k] / (2 * rho[j, k] * (u[j, k] + VA[j, k]))
+            a[j,k] = np.sqrt((1+xion)*boltzk*T[j,k]/mH)
+            MA = u[j,k]/VA[j,k]
+            ucr[j,k] = np.sqrt(a[j,k]**2 + (UA[j,k]/(4*rho[j,k]))*
+                            ((1+(3*MA))/(1+MA)))
+            gravterm = -G*Msun/r[k]**2
+            magucterm = -ucr[j,k]**2*(dBdr[j,k]/B[j,k])
+            tempaterm = -a[j,k]**2*(dTdr[j,k]/T[j,k])
+            alfterm = QA[j,k]/(2*rho[j,k]*(u[j,k]+VA[j,k]))
             soundterm = 0
-            rhs[j, k] = gravterm + magucterm + tempaterm + alfterm + soundterm
+            rhs[j,k] = (gravterm + magucterm + tempaterm
+                        + alfterm + soundterm)
 
-    np.savez(filename + "_fullRHS", rho=rho, UA=UA, vperp=vperp, ucr=ucr, rhs=rhs, eff=eff)
-    return a, ucr, rhs
+    np.savez(filename + '_fullRHS', rho=rho, UA=UA, vperp=vperp,
+             ucr=ucr, rhs=rhs, eff=eff)
+    return a,ucr,rhs
 
-
-def waveaction(r, B, zTR, u, rho, VA, S0, eff):
+def waveaction(r,B,zTR,u,rho,VA,S0,eff):
     """
     PURPOSE: To determined the Alfven wave energy density and
         heating rate including wave action conservation with damping;
@@ -716,42 +690,41 @@ def waveaction(r, B, zTR, u, rho, VA, S0, eff):
     """
     init()
     steps = len(r)
-    zx = (r / Rsun) - 1.0
-    zm = r - Rsun
+    zx = (r/Rsun)-1.0
+    zm = r-Rsun
     fivecheck = abs(zx - 5)
     ifive = int(fivecheck.argmin())
 
-    models = len(B[:, 0])
+    models = len(B[:,0])
 
-    refl = np.zeros((models, steps))
-    ell_perp = np.zeros((models, steps))
+    refl = np.zeros((models,steps))
+    ell_perp = np.zeros((models,steps))
     for j in range(models):
-        # Can only send one model through to fit_refl at a time.
-        refl[j, :] = fit_refl(B[j, :], zTR[j], r)
+        #Can only send one model through to fit_refl at a time.
+        refl[j,:] = fit_refl(B[j,:],zTR[j],r)
     for i in range(steps):
-        ell_perp[:, i] = ellbase * np.sqrt(B[:, 0] / B[:, i])
+        ell_perp[:,i] = ellbase*np.sqrt(B[:,0]/B[:,i])
 
-    # S = (u+VA)**2*UA/(VA*B)
-    # Can show that S**(-3/2)dS = RS*dr, where RS given by:
-    alphatilde = 2 * eff * (refl * (1 + refl) * (1 + _floor(refl, EPS) ** 2) ** (-1.5))
-    RS = (-alphatilde / ell_perp) * (np.sqrt(B * VA / rho) / (u + VA) ** 2)
+    #S = (u+VA)**2*UA/(VA*B)
+    #Can show that S**(-3/2)dS = RS*dr, where RS given by:
+    alphatilde=2*eff*(refl*(1+refl)*(1+refl**2)**(-1.5))
+    RS = ((-alphatilde/ell_perp)*(np.sqrt(B*VA/rho)/(u+VA)**2))
 
-    UAdamped = np.zeros((models, steps))
-    S = np.zeros((models, steps))
-    QA = np.zeros((models, steps))
-    intRS = np.zeros((models, steps))
+    UAdamped = np.zeros((models,steps))
+    S = np.zeros((models,steps))
+    QA = np.zeros((models,steps))
+    intRS = np.zeros((models,steps))
     for j in range(models):
-        intRS[j, 0] = ((RS[j, 1] + RS[j, 0]) / 2) * (r[1] - r[0])  #
-        for i in range(0, steps - 1):
-            dr = r[i + 1] - r[i]
-            intRS[j, i + 1] = rk4(intRS[j, i], r[i], dr, r, dfdr=RS[j, :])
-    S = ((1 / np.sqrt(S0)) - 0.5 * (intRS)) ** (-2)
-    UAdamped = (VA * S * B) / (u + VA) ** 2
-    QA = alphatilde * (rho * UAdamped) ** 0.5 / ell_perp
-    return UAdamped, QA
+        intRS[j,0] = ((RS[j,1]+RS[j,0])/2)*(r[1]-r[0]) #
+        for i in range(0,steps-1):
+            dr = r[i+1]-r[i]
+            intRS[j,i+1] = rk4(intRS[j,i],r[i],dr,r,dfdr=RS[j,:])
+    S = ((1/np.sqrt(S0))-0.5*(intRS))**(-2)
+    UAdamped = ((VA*S*B)/(u+VA)**2)
+    QA = alphatilde*(rho*UAdamped)**0.5/ell_perp
+    return UAdamped,QA
 
-
-def outflows(r, nmods, nsteps, rhs, ucr):
+def outflows(r,nmods,nsteps,rhs,ucr):
     """
     PURPOSE: To find the correct critical point based on the zero of the
         RHS, where the integral of the RHS is at an absolute minumum
@@ -773,62 +746,63 @@ def outflows(r, nmods, nsteps, rhs, ucr):
     modcmp = np.zeros(nsteps)
     rhscmp = np.zeros(nsteps)
     rootflag = np.zeros(nsteps)
-    badflag = 0
+    badflag=0
     icrit = np.zeros(nmods)
 
-    F = np.zeros((nmods, nsteps))
-    for j in range(0, nmods):
-        F[j, 0] = 1  # arbitrary amplitude
-        fnow = F[j, 0]
-        for k in range(0, nsteps - 1):
+    F = np.zeros((nmods,nsteps))
+    for j in range(0,nmods):
+        F[j,0] = 1 #arbitrary amplitude
+        fnow = F[j,0]
+        for k in range(0,nsteps-1):
             rstart = r[k]
-            dr = r[k + 1] - r[k]
+            dr = r[k+1]-r[k]
             fstart = fnow
-            F[j, k + 1] = rk4(fstart, rstart, dr, r[:], dfdr=rhs[j, :])
-            fnow = F[j, k + 1]
-    # Find all roots of RHS
-    for j in range(0, nmods):
-        for k in range(1, nsteps - 2):
-            if (np.sign(rhs[j, k]) != np.sign(rhs[j, k + 1])) and (np.sign(rhs[j, k - 1]) != np.sign(rhs[j, k + 2])):
+            F[j,k+1] = rk4(fstart,rstart,dr,r[:],dfdr=rhs[j,:])
+            fnow = F[j,k+1]
+    #Find all roots of RHS
+    for j in range(0,nmods):
+        for k in range(1,nsteps-2):
+            if ((np.sign(rhs[j,k]) != np.sign(rhs[j,k+1])) and
+                (np.sign(rhs[j,k-1]) != np.sign(rhs[j,k+2]))):
                 rootflag[k] = 1
         roots = np.where(rootflag > 0)
         if len(roots[0]) == 0:
             icrit[j] = -1
-            print("CAUTION: No critical point for model", j)
-            badflag = 1
-        else:  # Find the absolute minimum of F for all roots
-            extrema = F[j, roots[0]]
+            print ('CAUTION: No critical point for model',j)
+            badflag=1
+        else: #Find the absolute minimum of F for all roots
+            extrema = F[j,roots[0]]
             xpt = extrema.argmin()
             icrit[j] = roots[0][xpt]
     if badflag == 1:
-        print("indexCrit set to -1 for failed models")
+        print ('indexCrit set to -1 for failed models')
 
-    rCplus, uCplus, dUdrcplus = critSlope(r, nmods, nsteps, rhs, ucr, icrit + 1)
-    rCminus, uCminus, dUdrcminus = critSlope(r, nmods, nsteps, rhs, ucr, icrit)
+    rCplus,uCplus,dUdrcplus = critSlope(r,nmods,nsteps,rhs,ucr,icrit+1)
+    rCminus,uCminus,dUdrcminus = critSlope(r,nmods,nsteps,rhs,ucr,icrit)
 
     rC = np.zeros(nmods)
     uC = np.zeros(nmods)
-    dUdrc = np.zeros((nmods, 2))
+    dUdrc = np.zeros((nmods,2))
     locCrit = np.zeros(nmods)
-    u = np.zeros((nmods, nsteps))
-    for j in range(0, nmods):
-        rC[j] = (rCminus[j] + rCplus[j]) / 2.0
-        uC[j] = (uCminus[j] + uCplus[j]) / 2.0
-        dUdrc[j, 0] = dUdrcminus[j]
-        dUdrc[j, 1] = dUdrcplus[j]
+    u = np.zeros((nmods,nsteps))
+    for j in range(0,nmods):
+        rC[j] = (rCminus[j] + rCplus[j])/2.0
+        uC[j] = (uCminus[j] + uCplus[j])/2.0
+        dUdrc[j,0] = dUdrcminus[j]
+        dUdrc[j,1] = dUdrcplus[j]
         if icrit[j] != -1:
-            locCrit[j] = rC[j] - 1.0
-            u[j, :] = slope2curve(r, icrit[j], rC[j], uC[j], dUdrc[j, :], ucr[j, :], rhs[j, :])
-    return u, locCrit
+            locCrit[j] = rC[j]-1.0
+            u[j,:] = slope2curve(r,icrit[j],rC[j],uC[j],dUdrc[j,:],
+                                 ucr[j,:],rhs[j,:])
+    return u,locCrit
 
-
-def critSlope(r, models, steps, rhs, ucr, indexcrit):
+def critSlope(r,models,steps,rhs,ucr,indexcrit):
     """
     PURPOSE: Given the RHS and critical speed profile, find the slope
         of the solar wind outflow at the critical point using the
         following method:
         du/dr = N/D = 0/0 at critical point : L'Hoptial's Rule
-        N = RHS from parkerRHS or fullRHS, D = u - (_floor(uC, EPS) ** 2/u)
+        N = RHS from parkerRHS or fullRHS, D = u - (uC**2/u)
         du/dr = [dN/dr] / [dD/dr]
         where dD/dr = (du/dr) + [(uC/u)**2](du/dr) - (uC/u)*duc/dr)
                     = 2(du/dr) - duC/dr  at r=rC, u=uC
@@ -846,29 +820,28 @@ def critSlope(r, models, steps, rhs, ucr, indexcrit):
         dUdrc - slope of outflow at indexcrit
     EXTERNAL PACKAGES: numpy
     """
-    dNdr = quickDeriv(rhs, r, models, steps)
-    duCdr = quickDeriv(ucr, r, models, steps)
+    dNdr = quickDeriv(rhs,r,models,steps)
+    duCdr = quickDeriv(ucr,r,models,steps)
     rC = np.zeros(models)
     uC = np.zeros(models)
     dUdrc = np.zeros(models)
     dNdrC = np.zeros(models)
-    for j in range(0, models):
+    for j in range(0,models):
         iCrit = int(indexcrit[j])
         if indexcrit[j] != -1:
-            uC[j] = ucr[j, iCrit]
+            uC[j] = ucr[j,iCrit]
             rC[j] = r[iCrit]
-            dNdrC[j] = dNdr[j, iCrit]
-            radicand = _floor(duCdr[j, iCrit], EPS) ** 2 + (2.0 * dNdrC[j])
+            dNdrC[j]=dNdr[j,iCrit]
+            radicand =duCdr[j,iCrit]**2+(2.0*dNdrC[j])
             if radicand <= 0:
                 radicand = 0
-                print("invalid value encountered in sqrt, set to 0")
-            dUdrc[j] = 0.5 * (duCdr[j, iCrit] + np.sqrt(radicand))
+                print ('invalid value encountered in sqrt, set to 0')
+            dUdrc[j] = (0.5*(duCdr[j,iCrit]+np.sqrt(radicand)))
     if models > 1:
-        print("range of slopes:", min(dUdrc), max(dUdrc))
-    return rC, uC, dUdrc
+        print ('range of slopes:',min(dUdrc),max(dUdrc))
+    return rC,uC,dUdrc
 
-
-def slope2curve(r, iC, rpt, upt, dUdrpt, ucrj, rhsj):
+def slope2curve(r,iC,rpt,upt,dUdrpt,ucrj,rhsj):
     """
     PURPOSE: To integrate out from critical point to get
         full outflow solution
@@ -884,38 +857,35 @@ def slope2curve(r, iC, rpt, upt, dUdrpt, ucrj, rhsj):
         u - full solar wind outflow speed profile for model j
     EXTERNAL PACKAGES: numpy
     """
-    # the "j" refers to a single model being considered
+    #the "j" refers to a single model being considered
     npoints = len(r)
     iC = int(iC)
     u = np.zeros(npoints)
 
-    u[iC] = upt + (r[iC] - rpt) * dUdrpt[0]
-    u[iC + 1] = upt + (r[iC + 1] - rpt) * dUdrpt[1]
+    u[iC] = upt + (r[iC] - rpt)*dUdrpt[0]
+    u[iC+1] = upt + (r[iC+1] - rpt)*dUdrpt[1]
 
-    u[iC - 1] = u[iC] + (r[iC - 1] - r[iC]) * dUdrpt[0]
-    u[iC + 2] = u[iC + 1] + (r[iC + 2] - r[iC + 1]) * dUdrpt[1]
+    u[iC-1] = u[iC] + (r[iC-1]-r[iC])*dUdrpt[0]
+    u[iC+2] = u[iC+1] + (r[iC+2]-r[iC+1])*dUdrpt[1]
 
-    for i in range(iC - 1, 0, -1):
-        # loops down from iC-1 to 1 inclusive
-        # populates u for iC-2 to 0, start of array
-        dr = r[i - 1] - r[i]  # < 0
-        u[i - 1] = rk4(u[i], r[i], dr, r, dfdr=(ucrj, rhsj))
-        if u[i - 1] < 0:
-            u[i - 1] = u[i]
-            print("Negative value encountered (down), i=", i)
-            # raise FloatingPointError
+    for i in range(iC-1,0,-1):
+        #loops down from iC-1 to 1 inclusive
+        #populates u for iC-2 to 0, start of array
+        dr = r[i-1]-r[i] # < 0
+        u[i-1] = rk4(u[i],r[i],dr,r,dfdr=(ucrj,rhsj))
+        if u[i-1] < 0:
+            u[i-1] = u[i]
+            print ('Negative value encountered (down), i=', i)
 
-    for i in range(iC + 2, npoints - 1):
-        # loops from iC+2 to npoints-2 inclusive
-        # populates u for iC+3 to npoints-1, end of array
-        dr = r[i + 1] - r[i]
-        u[i + 1] = rk4(u[i], r[i], dr, r, dfdr=(ucrj, rhsj))
-        if u[i + 1] < 0:
-            u[i + 1] = u[i]
-            print("Negative value encountered (up), i=", i)
-            # raise FloatingPointError
+    for i in range(iC+2,npoints-1):
+        #loops from iC+2 to npoints-2 inclusive
+        #populates u for iC+3 to npoints-1, end of array
+        dr = r[i+1]-r[i]
+        u[i+1] = rk4(u[i],r[i],dr,r,dfdr=(ucrj,rhsj))
+        if u[i+1] < 0:
+            u[i+1] = u[i]
+            print ('Negative value encountered (up), i=', i)
     return u
-
 
 # def upwindmapping(r,phi,nmodels,ubound):
 #     """
@@ -954,10 +924,9 @@ def slope2curve(r, iC, rpt, upt, dUdrpt, ucrj, rhsj):
 def load_data(filename, print_data=False):
     data = np.load(filename)
     if print_data:
-        a = [print(d, "\t", data[d]) for d in data.keys()]
+        a = [print(d, '\t', data[d]) for d in data.keys()]
         print()
     return data
-
 
 def plot_data(xx, mydict):
     for key in mydict.keys():
@@ -969,45 +938,43 @@ def plot_data(xx, mydict):
             # plt.axvline(yy)
             pass
     plt.legend()
-    plt.yscale("symlog")
-    plt.xscale("log")
+    plt.yscale('symlog')
+    plt.xscale('log')
     plt.show()
 
-
 def load_tempest(file):
-    file = file.replace("tempest.dat", "tempest_result")
+    file= file.replace("tempest.dat", "tempest_result")
 
     # directory = configs['data_dir']
     # file = "T3"
     inputs = f"{file}_inputs.npz"
-    miranda = f"{file}_miranda.npz"
-    prospero = f"{file}_prospero.npz"
-    fullRHS = f"{file}_fullRHS.npz"
+    miranda =f"{file}_miranda.npz"
+    prospero=f"{file}_prospero.npz"
+    fullRHS =f"{file}_fullRHS.npz"
 
     in_dict = load_data(inputs)
     mir_dict = load_data(miranda)
     pro_dict = load_data(prospero)
     rhs_dict = load_data(fullRHS)
 
-    zx = in_dict["zx"]
-    zTR = in_dict["zTR"]
-    zcrit = mir_dict["zcrit"]
-    u_miranda = np.squeeze(mir_dict["u"]) / 100 / 1000
-    u_prospero = np.squeeze(pro_dict["u"]) / 100 / 1000
-    rho = np.squeeze(rhs_dict["rho"])
+    zx = in_dict['zx']
+    zTR = in_dict['zTR']
+    zcrit = mir_dict['zcrit']
+    u_miranda = np.squeeze(mir_dict['u']) / 100 / 1000
+    u_prospero = np.squeeze(pro_dict['u']) / 100 / 1000
+    rho = np.squeeze(rhs_dict['rho'])
     return zx, zTR, zcrit, u_miranda, u_prospero, rho
-
 
 def plot_tempest(file, ax=None):
     print(f"Plotting {file}")
-    this_dir = file.split("/data/")[0] + "/imgs/wind/tempest/"
+    this_dir = file.split('/data/')[0]+'/imgs/wind/tempest/'
     if not os.path.exists(this_dir):
         os.makedirs(this_dir)
 
     print(f"{this_dir = }")
 
     # Define the regex pattern to find 'cr' followed by numbers
-    pattern = r"cr(\d+)"
+    pattern = r'cr(\d+)'
 
     # Search for the pattern in the given file path
     cr = re.search(pattern, file).group(1)
@@ -1019,37 +986,37 @@ def plot_tempest(file, ax=None):
 
     # ax.plot(zx-1, u_miranda.T, 'g')
     # ax.plot(zx-1, u_miranda[0].T, 'g', label='$u_{sw}~$Miranda')
-    ax.plot(zx, u_prospero.T, "m:")
-    ax.plot(zx, np.NAN * np.ones_like(u_prospero[0].T), "m:", label="$u_{sw}~$Prospero")
-    # ax.plot(zx, rho.T*_floor(10, EPS) ** 5, label='rho x $10^5$')
+    ax.plot(zx, u_prospero.T, 'm:')
+    ax.plot(zx, np.ones_like(u_prospero[0].T), 'm:', label='$u_{sw}~$Prospero')
+    # ax.plot(zx, rho.T*10**5, label='rho x $10^5$')
     # print(zTR)
     Rsun = 6.955e10
-    tr_label = f"TR Mean={np.mean(zTR):0.4}"
-    crit_label = f"CR Mean={(np.mean(zcrit)/Rsun):0.4f}"
+    tr_label = f'TR Mean={np.mean(zTR):0.4}'
+    crit_label = f'CR Mean={(np.mean(zcrit)/Rsun):0.4f}'
     for TR in zTR:
-        ax.axvline(TR, linestyle="-", label=tr_label, zorder=-10)
+        ax.axvline(TR, linestyle='--', label=tr_label, zorder=-10)
         tr_label = None
     for crit in zcrit:
-        ax.axvline(crit / Rsun - 1, color="r", linestyle="-", lw=0.5, label=crit_label, zorder=-10)
+        ax.axvline(crit/Rsun-1, color='r', linestyle='--', label=crit_label, zorder=-10)
         crit_label = None
     plt.legend()
-    plt.yscale("log")
-    plt.ylim([10**-4, 10**4])
-    plt.xscale("log")
-    plt.xlabel("Height above photosphere ($R_{O}$)")
-    plt.ylabel("Solar Wind Velocity (km/s)")
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.xlabel('Height above photosphere ($R_{\odot}$)')
+    plt.ylabel('Solar Wind Velocity (km/s)')
 
-    plt.savefig(f"{this_dir}/tempest_cr{cr}.png")
-    plt.show()
+
+
+
+    plt.savefig(f'{this_dir}/tempest_cr{cr}.png')
+    # plt.show()
     return zx, zTR, zcrit, u_miranda, u_prospero, rho
 
 
 def_file = "fluxpype/plotting/zephyr_2007_2013.sav"
 
-
-def load_zephyr(file=def_file):
+def load_zephyr(file = def_file):
     from scipy.io import readsav
-
     data = readsav(file)
     # nz ()
     # nmods ()
@@ -1069,50 +1036,47 @@ def load_zephyr(file=def_file):
 
 def write_interpolated_file(filename, tempest_file):
     print("\n\tMaking Tempest File in Python.")
-    # load the table from disk in pandas
+    #load the table from disk in pandas
     df = pd.read_csv(filename, delim_whitespace=True)
-    df_new = df.loc[:, ["fnum", "radius", "b_mag2"]]
+    df_new = df.loc[:, ['fnum', 'radius', 'b_mag2']]
     # thing = df_new.groupby("fnum")
 
-    fine_radial_distance = np.logspace(-1.25, np.log10(220), 100)
+    fine_radial_distance = np.logspace(-1.25,np.log10(220), 100)
     # print(fine_radial_distance)
-    doplot = True
+    doplot=True
     if doplot:
         fig, ax = plt.subplots(1)
         ax.set_ylabel("B_mag [Gauss]")
         ax.set_xlabel("Height above Photosphere [Rsun]")
-        ax.set_xscale("log")
-        ax.set_yscale("symlog")
+        ax.set_xscale('log')
+        ax.set_yscale('log')
         # ax.set_xlim(10**(-2), 10**(1))
         # ax.set_ylim(10**(-2), 10**(1))
         # ax.set_ylim(4, None)
 
-    n_model = len(df_new.groupby("fnum"))
+    n_model = len(df_new.groupby('fnum'))
 
     ax.set_title(f"{n_model} Fluxon models")
 
     b_mag_list = []
     first_label = "FLUX"
-    for group_name, group_data in df_new.groupby("fnum"):
+    for group_name, group_data in df_new.groupby('fnum'):
 
         # Interpolate values onto the finer grid
         # interpolated_b_mag = interp1d(group_data['radius']-1, group_data['b_mag'], kind='linear', fill_value="extrapolate")(fine_radial_distance)
-        interpolated_b_mag = interp1d(
-            group_data["radius"] - 1, group_data["b_mag2"], kind="linear", bounds_error=False, fill_value="extrapolate"
-        )(fine_radial_distance)
+        interpolated_b_mag = interp1d(group_data['radius']-1, group_data['b_mag2'], kind='linear', bounds_error=False, fill_value="extrapolate")(fine_radial_distance)
 
-        if doplot:
-            ax.plot(fine_radial_distance, interpolated_b_mag, "b:", label=first_label)
+        if doplot: ax.plot(fine_radial_distance, interpolated_b_mag, 'b:', label=first_label)
 
         b_mag_list.append(interpolated_b_mag)
         first_label = None
 
-    if doplot and False:
+    if doplot:
         cr = filename.split("/data")[1].split("/")[1][-4:]
         fig.suptitle(f"FLUX vs ZEPHYR for CR {cr}")
         zephyr = load_zephyr()
-        ax.plot(zephyr["rx"] - 1, zephyr["br"][0], "r:", label="Zephyr")
-        ax.plot(zephyr["rx"] - 1, zephyr["br"].T, "r:")
+        ax.plot(zephyr['rx']-1, zephyr['br'][0], 'r:', label='Zephyr')
+        ax.plot(zephyr['rx']-1, zephyr['br'].T, 'r:')
         plt.legend()
         # plt.show(block=True)
         outfile = filename.split("/data")[0] + f"/imgs/mag2/cr{cr}.png"
@@ -1123,7 +1087,8 @@ def write_interpolated_file(filename, tempest_file):
         plt.show(block=True)
         plt.close(fig)
 
-    with open(tempest_file, "w") as f:
+
+    with open(tempest_file, 'w') as f:
         first_line = "\t" + str(len(b_mag_list)) + " " + str(len(fine_radial_distance))
         f.write(first_line)
         for rr in fine_radial_distance:
@@ -1138,59 +1103,43 @@ def write_interpolated_file(filename, tempest_file):
 def reinterpolate_velocity(tempest_file, original_data_file):
     # Load the common grid and interpolated data
 
-    (
-        fine_radial_distance,
-        zTR,
-        zcrit,
-        interpolated_velocity_miranda,
-        interpolated_velocity_prospero,
-        interpolated_rho,
-    ) = load_tempest(tempest_file)
+    fine_radial_distance, zTR, zcrit, interpolated_velocity_miranda, interpolated_velocity_prospero, interpolated_rho = load_tempest(tempest_file)
     interpolated_velocity = interpolated_velocity_prospero
 
     # Load the original data for radius reference
     df_original = pd.read_csv(original_data_file, delim_whitespace=True)
-    grouped = df_original.groupby("fnum")
+    grouped = df_original.groupby('fnum')
 
     # Prepare DataFrame to store the results
     results = pd.DataFrame()
 
     # Reinterpolate for each fnum
     for fnum, group in grouped:
-        if fnum < len(interpolated_velocity):
-            # print(fnum)
-            original_radius = group["radius"].values
-            interpolator = interp1d(
-                fine_radial_distance, interpolated_velocity[fnum - 1, :], kind="linear", fill_value="extrapolate"
-            )
-            reinterpolated_velocity = interpolator(original_radius)
+        original_radius = group['radius'].values
+        interpolator = interp1d(fine_radial_distance, interpolated_velocity[fnum-1], kind='linear', fill_value='extrapolate')
+        reinterpolated_velocity = interpolator(original_radius)
 
-            if np.any(reinterpolated_velocity <= 10**-2) or np.any(reinterpolated_velocity > 2500):
-                reinterpolated_velocity = np.ones_like(reinterpolated_velocity)*np.NAN
-                print(f"Invalid values for velocity detected and excluded on {fnum = }")
-                continue
-
-            temp_df = pd.DataFrame({"fnum": fnum, "radius": original_radius, "velocity": reinterpolated_velocity})
-            results = pd.concat([results, temp_df], ignore_index=True)
+        temp_df = pd.DataFrame({
+            'fnum': fnum,
+            'radius': original_radius,
+            'velocity': reinterpolated_velocity
+        })
+        results = pd.concat([results, temp_df], ignore_index=True)
 
     # Optionally, return or save the DataFrame
-    # print(f"{original_data_file = }")
-    output = original_data_file.replace("bmag_all.dat", "wind_tempest_reinterpolated.dat")
-    # print(f"{output = }")
-    results.to_csv(output, sep=" ", index=False)
-    # import pdb; pdb.set_trace()
+    print(f"{original_data_file = }")
+    results.to_csv(original_data_file.replace('bmag_all.dat', 'wind_tempest_reinterpolated.dat'), sep=' ', index=False)
     return results
-
 
 def plot_reinterpolated_velocity(original_data_file, ax=None, show=False):
 
-    data_file = original_data_file.replace("bmag_all.dat", "wind_tempest_reinterpolated.dat")
+    data_file = original_data_file.replace('bmag_all.dat', 'wind_tempest_reinterpolated.dat')
 
     # Load the data
     df = pd.read_csv(data_file, delim_whitespace=True)
 
     # Group by 'fnum' to handle each line separately
-    grouped = df.groupby("fnum")
+    grouped = df.groupby('fnum')
 
     # Create a plot
     if ax is None:
@@ -1199,13 +1148,13 @@ def plot_reinterpolated_velocity(original_data_file, ax=None, show=False):
     # Loop over each group and plot
     first_label = "TEMPEST"
     for name, group in grouped:
-        plt.plot(group["radius"], group["velocity"], "m", label=first_label)
+        plt.plot(group['radius'], group['velocity'], "m", label=first_label)
         first_label = None
 
     # Adding title and labels
     # plt.title('Reinterpolated Velocity Profiles')
-    plt.xlabel("Radius")
-    plt.ylabel("Velocity")
+    plt.xlabel('Radius')
+    plt.ylabel('Velocity')
 
     # Adding legend
     plt.legend()
@@ -1219,40 +1168,38 @@ def plot_from_existing_file(filename):
     print("\n\tReading Tempest File for Plotting.")
     # Load the table from disk in pandas
     df = pd.read_csv(filename, delim_whitespace=True)
-    df_new = df.loc[:, ["fnum", "radius", "b_mag"]]
+    df_new = df.loc[:, ['fnum', 'radius', 'b_mag']]
 
     fine_radial_distance = np.logspace(-1.25, np.log10(220), 100)
     fig, ax = plt.subplots(1)
     ax.set_ylabel("B_mag [Gauss]")
     ax.set_xlabel("Height above Photosphere [Rsun]")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
+    ax.set_xscale('log')
+    ax.set_yscale('log')
 
-    n_model = len(df_new.groupby("fnum"))
+    n_model = len(df_new.groupby('fnum'))
 
     ax.set_title(f"{n_model} Fluxon models")
 
     b_mag_list = []
     first_label = "FLUX"
     doplot = True
-    for group_name, group_data in df_new.groupby("fnum"):
+    for group_name, group_data in df_new.groupby('fnum'):
         # Interpolate values onto the finer grid
-        interpolated_b_mag = interp1d(
-            group_data["radius"] - 1, group_data["b_mag"], kind="linear", bounds_error=False, fill_value="extrapolate"
-        )(fine_radial_distance)
+        interpolated_b_mag = interp1d(group_data['radius']-1, group_data['b_mag'], kind='linear', bounds_error=False, fill_value="extrapolate")(fine_radial_distance)
 
         if doplot:
-            ax.plot(fine_radial_distance, interpolated_b_mag, "b:", label=first_label)
+            ax.plot(fine_radial_distance, interpolated_b_mag, 'b:', label=first_label)
 
         b_mag_list.append(interpolated_b_mag)
         first_label = None
 
-    if doplot and False:
+    if doplot:
         cr = filename.split("/data")[1].split("/")[1][-4:]
         fig.suptitle(f"FLUX vs ZEPHYR for CR {cr}")
         zephyr = load_zephyr()
-        ax.plot(zephyr["rx"] - 1, zephyr["br"][0], "r:", label="Zephyr")
-        ax.plot(zephyr["rx"] - 1, zephyr["br"].T, "r:")
+        ax.plot(zephyr['rx']-1, zephyr['br'][0], 'r:', label='Zephyr')
+        ax.plot(zephyr['rx']-1, zephyr['br'].T, 'r:')
         plt.legend()
         outfile = filename.split("/data")[0] + f"/imgs/mag/cr{cr}.png"
         print(f"Mag Plotting {outfile}")
@@ -1261,31 +1208,25 @@ def plot_from_existing_file(filename):
         plt.savefig(outfile)
         plt.close(fig)
 
-
 from fluxpype.pipe_helper import configurations
-
 
 def parse_args():
     # Create the argument parser
     # print("\n\tMaking Tempest File in Python.")
     configs = configurations()
     import argparse
-
-    parser = argparse.ArgumentParser(
-        description="This script plots the expansion factor of the given radial_bmag_all.dat"
-    )
-    parser.add_argument("--cr", type=int, default=configs["rotations"][0], help="Carrington Rotation")
-    parser.add_argument("--dat_dir", type=str, default=configs["data_dir"], help="data directory")
-    parser.add_argument("--batch", type=str, default=configs["batch_name"], help="select the batch name")
-    parser.add_argument("--nwant", type=int, default=configs["fluxon_count"][0], help="magnetogram file")
-    parser.add_argument("--show", type=int, default=0)
-    parser.add_argument("--file", type=str, default=None)
-    parser.add_argument("--adapt", type=int, default=0, help="Use ADAPT magnetograms")
+    parser = argparse.ArgumentParser(description=
+                            'This script plots the expansion factor of the given radial_bmag_all.dat')
+    parser.add_argument('--cr',     type=int, default=configs['rotations'][0],    help='Carrington Rotation')
+    parser.add_argument('--dat_dir',type=str, default=configs["data_dir"],        help='data directory')
+    parser.add_argument('--batch',  type=str, default=configs["batch_name"],      help='select the batch name')
+    parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
+    parser.add_argument('--show',   type=int, default=0)
+    parser.add_argument('--file',   type=str, default=None)
+    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
     args = parser.parse_args()
-    filename = (
-        f"{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat"
-    )
-    # print(filename.split("/data")[1].split("/")[1][-4:])
+    filename = f'{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat'
+    print(filename.split("/data")[1].split("/")[1][-4:])
     configs = configurations(args=args)
     return filename, configs
 
@@ -1303,11 +1244,8 @@ def run_tempest():
         reinterpolate_velocity(tempest_file, filename)
     else:
         print(f"Tempest file exists at {tempest_file}")
-    plot_tempest(tempest_file)
-    # import pdb; pdb.set_trace()
-
+    # plot_tempest(tempest_file)
     # plot_from_existing_file(filename)
 
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     run_tempest()

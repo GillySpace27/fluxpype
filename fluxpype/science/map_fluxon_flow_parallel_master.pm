@@ -226,10 +226,12 @@ sub map_fluxon_flow_parallel_master {
     elsif ($flow_method eq "wsa") {
         # run the python file footpoint_distances.py
         print("Building footpoint_distances...");
-        system("python3 fluxpype/science/footpoint_distances_2.py --cr $CR") == 0
-            or die "footpoint_distances_2.py returned error $?";
+        system("python3 fluxpype/science/footpoint_distances_wsa.py --cr $CR") == 0
+            or die "footpoint_distances_wsa.py returned error $?";
 
-        my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/distances.csv";
+        my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/pfss_distances.csv";
+        my $expansion_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/pfss_expansions.csv";
+
         open my $fh, '<', $distance_file or die "Could not open '$distance_file': $!";
 
         my @rows;
@@ -242,6 +244,21 @@ sub map_fluxon_flow_parallel_master {
 
         # Combine all rows into a 2D PDL array
         our $distance_array_degrees = cat(@rows);
+
+
+
+        open my $fh, '<', $expansion_file or die "Could not open '$expansion_file': $!";
+
+        my @rows;
+        while (my $line = <$fh>) {
+            chomp $line;
+            my @values = split /, /, $line;  # split on comma+space
+            push @rows, pdl(@values);
+        }
+        close $fh;
+
+        # Combine all rows into a 2D PDL array
+        our $expansion_array = cat(@rows);
     }
     elsif ($flow_method =~ /^(parker|schonfeld|psw|ghosts)$/ ) {
         # No special precomputation needed (assuming these exist).
@@ -307,8 +324,9 @@ sub map_fluxon_flow_parallel_master {
             # Dispatch to correct flow subroutine
             if ($flow_method eq 'wsa') {
                 our $distance_array_degrees;  # Must be "our" for lexical scoping if truly global
+                our $expansion_array;  # Must be "our" for lexical scoping if truly global
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                    = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $fluxon_id);
+                    = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $expansion_array, $fluxon_id);
             }
             elsif ($flow_method eq 'parker') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_tflow($fluxon);
