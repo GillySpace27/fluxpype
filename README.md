@@ -5,7 +5,7 @@ This package acts as a wrapper around the Field Line Universal relaXer (FLUX), a
 
 ## Installation
 
-Instructions for installation on Linux or on Macos can be found in the [main FLUX repo here](https://github.com/lowderchris/fluxon-mhd/tree/main/doc). This will help with the harmonious installation of C, Perl, and Python.
+Instructions for installation on Linux or on Macos can be found in the [main FLUX repo here](https://github.com/lowderchris/fluxon-mhd/tree/main/doc). This will help with the harmonious installation of C, Perl, and Python. Please attempt this semi-automated installation process exactly as written.
 
 ## Configuration
 Once the code is all installed correctly, you'll be able to edit the configuration file and run it in the following manner.
