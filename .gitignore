@@ -150,6 +150,7 @@ perl_lib/
 
 # fluxpype-specific
 fluxpype/fluxpype/data/
+fluxpype/logs/
 fluxpype/data/
 src/science/_Inline/*
 !zephyr_2007_2013.sav

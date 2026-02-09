@@ -43,6 +43,9 @@ Author:
 import copy
 import os
 import pickle
+import re
+import warnings
+from concurrent import futures
 from os import path
 from time import time
 
@@ -59,12 +62,45 @@ import timeout_decorator
 from pfsspy import tracing
 from tqdm import tqdm
 
+from fluxpype.console import emit
 from fluxpype.pipe_helper import load_fits_magnetogram, read_fits_data, shorten_path
 
 try:
     mpl.use("qt5agg")
 except ImportError:
     mpl.use("Agg")
+
+# Suppress sunpy/astropy INFO and noisy warnings unless high debug.
+# Call set_sunpy_log_level(verbose) with verbose >= 2 from entry points to show those messages.
+def set_sunpy_log_level(verbose=0):
+    """Set sunpy (and astropy) log level and warning filters: quiet by default; INFO + show warnings if verbose >= 2."""
+    import logging
+    show_all = verbose >= 2 or os.environ.get("FLUXPYPE_SUNPY_VERBOSE")
+    level = logging.INFO if show_all else logging.WARNING
+    try:
+        from sunpy import log as sunpy_log
+        sunpy_log.setLevel(level)
+    except Exception:
+        pass
+    try:
+        logging.getLogger("astropy").setLevel(level)
+    except Exception:
+        pass
+    # pfsspy "Could not parse unit string ... Mx/cm^2 ..." UserWarning (suppress unless high debug)
+    _pfsspy_unit_msg = r".*Could not parse unit string.*"
+    if show_all:
+        # Insert so it wins over any earlier "ignore" from import
+        warnings.filters.insert(0, ("default", re.compile(_pfsspy_unit_msg, re.IGNORECASE), UserWarning, None, 0))
+    else:
+        warnings.filterwarnings("ignore", message=_pfsspy_unit_msg, category=UserWarning)
+
+
+def _suppress_sunpy_info_default():
+    """Run at import so worker processes and default runs suppress noisy INFO and warnings."""
+    set_sunpy_log_level(0)
+
+
+_suppress_sunpy_info_default()
 
 # A note from the original author:
     # We can now use SunPy to load the HMI fits file, and extract the magnetic field data. Interpolate the data down to a more reasonable resolution.
@@ -98,16 +134,14 @@ def load_and_condition_fits_file(fname, datdir, adapt):
         FITS file path
     """
 
-    # Load the fits file and format the data and header
-    print("\n\tLoading and conditioning fits file...")
-
+    emit("\n\tLoading and conditioning fits file...")
     try:
         fits_path = fname
         hdulist = read_fits_data(fits_path)
     except FileNotFoundError:
         fits_path = os.path.join(datdir, fname)
         hdulist = read_fits_data(fits_path)
-    print("\t\t", shorten_path(fits_path))
+    emit(f"\t\t{shorten_path(fits_path)}")
 
     hdu_0 = hdulist[0]
     brdat = hdu_0.data
@@ -173,15 +207,15 @@ def load_pfss(pickle_path):
         PFSS solution state function
     """
 
-    print("\n\tGetting PFSS...", end="")
+    emit("\n\tGetting PFSS...", end="")
     try:
         pickle_path = os.path.expanduser(pickle_path)
         with open(pickle_path, 'rb') as inp:
             output = pickle.load(inp)
-            print(f"Success! Loaded: \n\t\t {shorten_path(pickle_path)}")
+            emit(f" Success! Loaded: {shorten_path(pickle_path)}")
         return output
     except (FileNotFoundError, TypeError):
-        print("File not found.")
+        emit(" File not found.")
         return None
 
 
@@ -212,7 +246,7 @@ def compute_pfss(br_safe, pickle_path, nrho=60, rss=2.5):
     # Ingest inputs
     elapsed = 0
     shp = br_safe.data.shape
-    print(f"\t\tComputing PFSS on {shp} magnetogram (fairly slow)...", end="", flush=True)
+    emit(f"\t\tComputing PFSS on {shp} magnetogram...", end="")
     before = time()
 
     ###############################################################################
@@ -227,14 +261,14 @@ def compute_pfss(br_safe, pickle_path, nrho=60, rss=2.5):
     ###############################################################################
     # Report the time taken
     elapsed = time() - before
-    print(f"Done! Took {elapsed:.2f} seconds.")
+    emit(f" Done! ({elapsed:.2f}s)")
 
     ###############################################################################
     # Save the results
     with open(pickle_path, 'wb') as outp:
-        print("\t\tSaving Pickled Results...", end="")
+        emit("\t\tSaving pickled results...", end="")
         pickle.dump(output, outp, pickle.HIGHEST_PROTOCOL)
-        print("Success!")
+        emit(" Success!")
         # print(pickle_path)
     return output, elapsed
 
@@ -361,7 +395,6 @@ def plot_fluxon_locations(br_safe, cr, datdir, fits_path, reduce,
     """
 
     floc_path = f"{datdir}/batches/{batch}/data/cr{cr}/floc/floc_cr{cr}_r{reduce}_f{nwant}.dat"
-    print(f"{floc_path = }")
     f_lat, f_lon, f_sgn, n_flux = get_fluxon_locations(floc_path, batch, cr=cr)
     fluxon_location = np.genfromtxt(floc_path)
 
@@ -388,7 +421,7 @@ def plot_fluxon_locations(br_safe, cr, datdir, fits_path, reduce,
         fluxon_map_output_path_blank,
     ]
 
-    print("\n\tPlotting Fluxon Footpoint Locations...")
+    emit("\n\tPlotting fluxon footpoint locations...")
 
     need_plot = False
     for testpath in plot_paths:
@@ -441,14 +474,33 @@ def plot_fluxon_locations(br_safe, cr, datdir, fits_path, reduce,
         # plot the fluxons scattered on top of the map
         plt.savefig(fluxon_map_output_path_top, bbox_inches='tight', dpi=4*DPI)
         plt.close()
-        print("Success! Files saved to: ", end="\n\t\t")
+        emit("Success! Files saved to:")
     else:
-        print("Skipped! Files already exist:", end="\n\t\t")
+        emit("Skipped! Files already exist:")
 
     for testpath in plot_paths:
-        print(shorten_path(testpath), end="\n\t\t")
+        emit(f"\t\t{shorten_path(testpath)}")
 
     return f_lat, f_lon, f_sgn, n_flux
+
+
+def _trace_chunk_worker(args):
+    """Run a batch of fieldline traces in one process. Receives output once per chunk (efficient).
+    args: (output, chunk_items, r0, f_sgn, adapt), chunk_items = [(i, coords), ...].
+    Returns: [(i, msg), ...] with msg = ('ok', fl_open[1:], fl_closed[1:], no, nc) or ('err', e)."""
+    output, chunk_items, r0, f_sgn, adapt = args
+    tracer = tracing.PythonTracer()
+    results = []
+    for (i, coords) in chunk_items:
+        fl_open = np.zeros([1, 5])
+        fl_closed = np.zeros([1, 5])
+        try:
+            _, fl_open, fl_closed, no, nc, _ = _trace_each_single_core(
+                coords, i, output, fl_open, fl_closed, 0, 0, tracer, r0, f_sgn, adapt)
+            results.append((i, ("ok", fl_open[1:].copy(), fl_closed[1:].copy(), no, nc)))
+        except Exception as e:
+            results.append((i, ("err", e)))
+    return results
 
 
 def trace_lines(output, f_vars, open_path, closed_path, adapt):
@@ -497,86 +549,74 @@ def trace_lines(output, f_vars, open_path, closed_path, adapt):
     flnum_closed = 0
 
     r0 = 1.01 * const.R_sun
-    tracer = tracing.PythonTracer()
-    # tracer = tracing.FortranTracer(max_steps=3000)
-
+    # One trace per task (5s timeout, progress bar = field lines). Submit in small batches so we never
+    # queue 1000+ copies of the PFSS output (each task pickles output) and blow RAM.
+    _MAX_TRACE_WORKERS = min(8, max(1, (os.cpu_count() or 4) - 1))
+    _TRACE_TIMEOUT_SEC = 5
+    _BATCH_SIZE = max(_MAX_TRACE_WORKERS, 16)  # in-flight tasks capped → bounded memory
     skip_num = 0
     timeout_num = 0
-    for i, coords in enumerate(tqdm(zip(f_lon, f_lat),
-                            desc="Tracing Field Lines", total=len(f_lat))):
-        try:
-            output, fl_open, fl_closed, flnum_open, flnum_closed, tracer = trace_each_single(
-                coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt)
-        except timeout_decorator.TimeoutError:
+    items = list(enumerate(zip(f_lon, f_lat)))
+    chunks = [[item] for item in items]
+    results_by_i = {}
+    with futures.ProcessPoolExecutor(max_workers=_MAX_TRACE_WORKERS) as executor:
+        pbar = tqdm(total=len(items), desc="Tracing Field Lines")
+        for start in range(0, len(chunks), _BATCH_SIZE):
+            batch = chunks[start:start + _BATCH_SIZE]
+            future_to_chunk = {
+                executor.submit(_trace_chunk_worker, (output, chunk, r0, f_sgn, adapt)): chunk
+                for chunk in batch
+            }
+            for future in futures.as_completed(future_to_chunk):
+                chunk = future_to_chunk[future]
+                try:
+                    for i, msg in future.result(timeout=_TRACE_TIMEOUT_SEC):
+                        results_by_i[i] = msg
+                except futures.TimeoutError:
+                    for i, _ in chunk:
+                        results_by_i[i] = ("timeout",)
+                pbar.update(len(chunk))
+        pbar.close()
+    for i, _ in items:
+        msg = results_by_i[i]
+        if msg[0] == "timeout":
             timeout_num += 1
-        except ValueError:
+            continue
+        if msg[0] == "err":
             skip_num += 1
+            continue
+        _, new_open, new_closed, no, nc = msg
+        if len(new_open) > 0:
+            new_open = np.asarray(new_open)
+            new_open[:, 0] += flnum_open
+            fl_open = np.vstack((fl_open, new_open))
+        if len(new_closed) > 0:
+            new_closed = np.asarray(new_closed)
+            new_closed[:, 0] += flnum_closed
+            fl_closed = np.vstack((fl_closed, new_closed))
+        flnum_open += no
+        flnum_closed += nc
 
     if skip_num > 0 or timeout_num > 0:
         t_perc = 100*timeout_num/len(f_lon)
         s_perc = 100*skip_num/len(f_lon)
-        print(f"\n\t\tSome iterations failed. Timed-out: {timeout_num} \
-                ({t_perc:0.2f}%), ValueError: {skip_num} ({s_perc:0.2f}%)\n")
+        emit(f"\n\t\tSome iterations failed. Timed-out: {timeout_num} ({t_perc:.2f}%), ValueError: {skip_num} ({s_perc:.2f}%)", style="yellow")
 
-    print(f"\nOpen Lines: {flnum_open+1}, Closed Lines: {flnum_closed}, \
-          Failures: {skip_num+timeout_num}, Total Good: {flnum_open+flnum_closed}")
+    emit(f"\n\tOpen: {flnum_open+1}, Closed: {flnum_closed}, Failures: {skip_num+timeout_num}")
 
     fl_open = fl_open[1:]
     fl_closed = fl_closed[1:]
 
-    # Save these coordinates to file
-    print("\n\tSaving Fluxons...", end="")
+    emit("\n\tSaving fluxons...", end="")
     np.savetxt(open_path, fl_open)
     np.savetxt(closed_path, fl_closed)
-    print("Success!")
+    emit(" Success!")
 
     return fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed
 
 
-@timeout_decorator.timeout(5)
-def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt):
-    # import pdb; pdb.set_trace()
-    """Fieldline tracer for each fieldline
-
-    Parameters
-    ----------
-    coords : Tuple
-        Set of input fieldline longitude and latitudes
-    i : int
-        Fieldline tracing counter
-    output
-        PFSS solution state function
-    fl_open : np.ndarray
-        Open feldline coordinates
-    fl_closed : np.ndarray
-        Closed fieldline coordiantes
-    flnum_open : int
-        Count of open fieldlines
-    flnum_closed : int
-        Count of closed fieldlines
-    tracer
-        PFSSPy tracing function
-    r0 : float
-        Starting radius
-    f_sgn : float
-        Fluxon magnetic sign
-
-    Returns
-    -------
-    output
-        PFSS solution state function
-    fl_open : np.ndarray
-        Open feldline coordinates
-    fl_closed : np.ndarray
-        Closed fieldline coordiantes
-    flnum_open : int
-        Count of open fieldlines
-    flnum_closed : int
-        Count of closed fieldlines
-    tracer
-        PFSSPy tracing function
-    """
-
+def _trace_each_single_impl(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt):
+    """Single-fieldline trace implementation (no timeout). Blocking call is output.trace() (pfsspy C/Fortran)."""
     (this_flon, this_flat) = coords
     if adapt:
         this_flat = np.deg2rad(this_flat)
@@ -668,6 +708,16 @@ def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_c
         flnum_closed += 1
     return output, fl_open, fl_closed, flnum_open, flnum_closed, tracer
 
+
+def _trace_each_single_core(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt):
+    """Core fieldline tracer (no timeout). Used by process-based timeout worker."""
+    return _trace_each_single_impl(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt)
+
+
+@timeout_decorator.timeout(5)
+def trace_each_single(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt):
+    """Fieldline tracer for each fieldline. Signal-based 5s timeout may not fire if trace runs in C/Fortran (GIL held)."""
+    return _trace_each_single_impl(coords, i, output, fl_open, fl_closed, flnum_open, flnum_closed, tracer, r0, f_sgn, adapt)
 
 
 import numpy as np
@@ -798,10 +848,10 @@ def trace_lines_parallel_OLD(pfss_output, f_vars, open_path, closed_path, adapt)
 
     seeds = SkyCoord(f_lon.ravel(), f_lat.ravel(), r0, frame=pfss_output.coordinate_frame)
 
-    print('Tracing field lines...')
+    emit("\tTracing field lines...")
     tracer = tracing.FortranTracer(max_steps=3000)
     field_lines = tracer.trace(seeds, pfss_output)
-    print('Finished tracing field lines')
+    emit("\tFinished tracing field lines")
 
     results = [] #trace_all(field_lines)
     # trace_each_partial = partial(trace_each, r0=r0, adapt=adapt, output=output)
@@ -819,17 +869,14 @@ def trace_lines_parallel_OLD(pfss_output, f_vars, open_path, closed_path, adapt)
     if skip_num > 0 or timeout_num > 0:
         t_perc = 100 * timeout_num / len(f_lon)
         s_perc = 100 * skip_num / len(f_lon)
-        print(f"\n\t\tSome iterations failed. Timed-out: {timeout_num} \
-                ({t_perc:0.2f}%), ValueError: {skip_num} ({s_perc:0.2f}%)\n")
+        emit(f"\n\t\tSome iterations failed. Timed-out: {timeout_num} ({t_perc:.2f}%), ValueError: {skip_num} ({s_perc:.2f}%)", style="yellow")
 
-    print(f"\nOpen Lines: {flnum_open}, Closed Lines: {flnum_closed}, \
-          Failures: {skip_num+timeout_num}, Total Good: {flnum_open+flnum_closed}")
+    emit(f"\n\tOpen: {flnum_open}, Closed: {flnum_closed}, Failures: {skip_num+timeout_num}")
 
-    # Save these coordinates to file
-    print("\n\tSaving Fluxons...", end="")
+    emit("\n\tSaving fluxons...", end="")
     np.savetxt(open_path, np.concatenate(fl_open))
     np.savetxt(closed_path, np.concatenate(fl_closed))
-    print("Success!")
+    emit(" Success!")
 
     return fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed
 

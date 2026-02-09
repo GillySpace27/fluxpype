@@ -153,7 +153,11 @@ sub relax_pfss_world {
         # $this_world_relaxed->forces('f_p_eqa_radial', 'f_curv_hm', 'f_vert', 'b_eqa');
         # $this_world_relaxed->{scale_b_power} = -1;
 
-        $this_world_relaxed->{concurrency} = $configs{concurrency};
+        # Use relax_concurrency if set (e.g. 0 for serial when run under subprocess to avoid
+        # SIGPIPE in forked daughters sharing stdout/stderr). Otherwise use global concurrency.
+        $this_world_relaxed->{concurrency} = defined $configs{relax_concurrency}
+            ? int( $configs{relax_concurrency} )
+            : int( $configs{concurrency} );
 
         my $starttime = clock_gettime();
         my $cycle = 0;

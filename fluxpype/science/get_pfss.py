@@ -35,7 +35,14 @@ os, argparse, numpy, pfss_funcs, pipe_helper
 import os
 import argparse
 import numpy as np
-from fluxpype.science.pfss_funcs import trace_lines, load_pfss, compute_pfss, load_and_condition_fits_file, get_fluxon_locations
+from fluxpype.science.pfss_funcs import (
+    trace_lines,
+    load_pfss,
+    compute_pfss,
+    load_and_condition_fits_file,
+    get_fluxon_locations,
+    set_sunpy_log_level,
+)
 from fluxpype.pipe_helper import shorten_path, configurations
 import astropy.constants as const
 import astropy.units as u
@@ -61,6 +68,7 @@ def get_pfss(configs):
     """
 
     configs = configs or configurations()
+    set_sunpy_log_level(configs.get("verbose", 0))
 
     # from fluxpype.pipe_helper import update_magdir_paths
     # update_magdir_paths(configs)

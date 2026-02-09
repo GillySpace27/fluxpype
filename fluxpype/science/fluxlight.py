@@ -54,8 +54,8 @@ def light_figs():
     matplotlib.rcParams["text.usetex"] = False
 
 
-keynote_figs()
-# light_figs()
+# keynote_figs()
+light_figs()
 
 
 # Load the flux world data

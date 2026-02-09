@@ -20,12 +20,18 @@ Examples
 import subprocess
 import os
 import logging
-from importlib import import_module
 from tqdm import tqdm
-from rich import print
 from rich.panel import Panel
 from rich.console import Console
 import timeout_decorator
+
+from fluxpype.console import (
+    init_log,
+    close_log,
+    emit,
+    emit_raw,
+    write_to_log,
+)
 
 os.nice(16)
 
@@ -63,9 +69,10 @@ def validate_configurations(configurations):
         raise KeyError(f"Missing configuration parameters: {', '.join(missing_keys)}")
 
 
-def display_splash_screen(configs):
+def display_splash_screen(configs, log_path=None):
     """
     Displays a splash screen with configuration details using Rich.
+    Also writes a plain-text summary to the log file if one is active.
     """
     splash_text = f"""
     [bold blue]Config Runner: Automate the FLUXpype Workflow for Multiple Carrington Rotations[/bold blue]
@@ -90,12 +97,48 @@ def display_splash_screen(configs):
             border_style="bold green",
         )
     )
+    if log_path:
+        write_to_log(
+            f"FLUXpype Config Runner | Log: {log_path}\n"
+            f"Rotations: {configs['rotations']} | Fluxons: {configs['fluxon_count']} | "
+            f"Adapts: {configs['adapts']} | Methods: {configs['flow_method']}\n"
+        )
+
+
+def _check_pdl_available():
+    """Return (True, None) if PDL is loadable, else (False, error_message). Cached per process."""
+    if getattr(_check_pdl_available, "_ok", None) is True:
+        return True, None
+    try:
+        r = subprocess.run(
+            ["perl", "-e", "use PDL; use PDL::AutoLoader; print qq(ok);"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode == 0 and "ok" in (r.stdout or ""):
+            _check_pdl_available._ok = True
+            return True, None
+        err = (r.stderr or r.stdout or "").strip() or f"exit code {r.returncode}"
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        err = str(e)
+    msg = (
+        "PDL (Perl Data Language) is not available. The magnetogram2wind pipeline requires PDL.\n"
+        f"Reason: {err}\n\n"
+        "Install PDL with one of:\n"
+        "  • Conda (recommended if you use conda):  conda install -c conda-forge perl-pdl\n"
+        "  • System Perl:  cpanm PDL   or  cpan PDL\n"
+        "  • If cpanm fails on Module::Build:  cpanm --force Module::Build  then  cpanm PDL\n"
+        "  • Or use a Perl where PDL is already installed and set PERL5LIB if needed."
+    )
+    return False, msg
 
 
 @timeout_decorator.timeout(2000)
 def run_pdl_script(rotation, fluxon_count, adaptation, method):
     """
     Executes the specified PDL script with given parameters.
+    Streams all output (Perl and Python subprocesses) to console and log.
 
     Parameters
     ----------
@@ -112,21 +155,45 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
     ------
     FileNotFoundError
         If the PDL script path is invalid.
+    RuntimeError
+        If PDL is not installed.
     subprocess.CalledProcessError
         If the script execution fails.
     """
-    # Import configurations
-    from fluxpype.pipe_helper import configurations
+    from fluxpype.pipe_helper import configurations, get_flux_perl_lib
     configs = configurations(debug=False)
+
+    ok, pdl_msg = _check_pdl_available()
+    if not ok:
+        emit(pdl_msg, style="red")
+        raise RuntimeError("PDL is not available. Install PDL (see message above).")
 
     run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
 
     if not os.path.isfile(run_script_path):
-        logging.error(f"PDL script not found: {run_script_path}")
+        emit(f"PDL script not found: {run_script_path}", style="red")
         raise FileNotFoundError(f"PDL script not found: {run_script_path}")
 
-    if "PERL5LIB" not in os.environ:
-        logging.warning("PERL5LIB environment variable is not set. Execution may fail.")
+    env = os.environ.copy()
+    # Prefer Flux from current Perl's default @INC (e.g. conda site_perl) so C extension handshake matches.
+    # Only add fluxon-perl to PERL5LIB when Flux is not already loadable (avoids loading wrong .bundle from fluxon-perl).
+    try:
+        r = subprocess.run(
+            ["perl", "-e", "use Flux; print qq(ok);"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
+        )
+        flux_ok = r.returncode == 0 and "ok" in (r.stdout or "")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        flux_ok = False
+    if not flux_ok:
+        flux_perl_lib = get_flux_perl_lib(configs)
+        if flux_perl_lib:
+            env["PERL5LIB"] = flux_perl_lib + (os.pathsep + env.get("PERL5LIB", "")) if env.get("PERL5LIB") else flux_perl_lib
+        else:
+            emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
 
     command = [
         "perl",
@@ -137,14 +204,31 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         method,
     ]
 
-    try:
-        print("\n")
-        logging.info(f"Executing PDL script with parameters: {command}\n")
-        subprocess.run(command, check=True)
-        # logging.info("PDL script executed successfully.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error executing PDL script: {e}")
-        raise
+    emit(f"\nExecuting: {' '.join(command)}\n", style="dim")
+
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    out_lines = []
+    for line in proc.stdout:
+        out_lines.append(line)
+        emit_raw(line)
+    proc.wait()
+    if proc.returncode != 0:
+        emit(f"PDL script failed with exit code {proc.returncode}", style="red")
+        out_text = "".join(out_lines)
+        if "loadable library and perl binaries are mismatched" in out_text or "handshake key" in out_text:
+            emit(
+                "The Flux C extensions (e.g. Core.bundle) were built with a different Perl than the one running.\n"
+                "Rebuild fluxon-perl with your current Perl (e.g. conda's perl), or run using the same Perl that built fluxon-perl.",
+                style="yellow",
+            )
+        raise subprocess.CalledProcessError(proc.returncode, command)
 
 def view():
     # Import configurations
@@ -254,17 +338,18 @@ def open_path_linux(path):
 def run():
     """
     Executes the PDL script for all combinations of configurations.
+    Initializes a log file and tees all output (Python + Perl) to it.
     """
-    # Import configurations
     from fluxpype.pipe_helper import configurations
-
-    # pipe_helper = import_module("pipe_helper")
     configs = configurations(debug=False)
 
-    # Global counter for timeouts
+    batch_name = configs.get("batch_name", "run")
+    log_path = init_log(batch_name)
+    emit(f"Log file: {log_path}\n", style="dim")
+
     global timeout_count
     timeout_count = 0
-    display_splash_screen(configs)
+    display_splash_screen(configs, log_path=log_path)
     validate_configurations(configs)
 
     total_jobs = (
@@ -273,29 +358,34 @@ def run():
         * len(configs["adapts"])
         * len(configs["flow_method"])
     )
-    with tqdm(
-        total=total_jobs, unit="runs", colour="green", desc="Processing"
-    ) as progress_bar:
-        for adaptation in configs["adapts"]:
-            for rotation in configs["rotations"]:
-                for fluxon_count in configs["fluxon_count"]:
-                    for method in configs["flow_method"]:
-                        progress_bar.set_description(
-                            f"Rotation: {rotation}, Fluxon: {fluxon_count}, Method: {method}"
-                        )
-                        try:
-                            run_pdl_script(rotation, fluxon_count, adaptation, method)
-                        except timeout_decorator.TimeoutError:
-                            timeout_count += 1
-                            logging.warning(
-                                f"Timeout: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}"
+    try:
+        with tqdm(
+            total=total_jobs, unit="runs", colour="green", desc="Processing"
+        ) as progress_bar:
+            for adaptation in configs["adapts"]:
+                for rotation in configs["rotations"]:
+                    for fluxon_count in configs["fluxon_count"]:
+                        for method in configs["flow_method"]:
+                            progress_bar.set_description(
+                                f"Rotation: {rotation}, Fluxon: {fluxon_count}, Method: {method}"
                             )
-                        except Exception as e:
-                            logging.error(
-                                f"Error: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}: {e}"
-                            )
-                        progress_bar.update(1)
-    logging.info(f"Total timeouts: {timeout_count}")
+                            try:
+                                run_pdl_script(rotation, fluxon_count, adaptation, method)
+                            except timeout_decorator.TimeoutError:
+                                timeout_count += 1
+                                emit(
+                                    f"Timeout: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}",
+                                    style="yellow",
+                                )
+                            except Exception as e:
+                                emit(
+                                    f"Error: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}: {e}",
+                                    style="red",
+                                )
+                            progress_bar.update(1)
+        emit(f"Total timeouts: {timeout_count}", style="bold")
+    finally:
+        close_log()
 
 
 if __name__ == "__main__":
