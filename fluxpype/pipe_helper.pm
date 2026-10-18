@@ -222,7 +222,8 @@ sub configurations {
     my $clean_config = clean_config_file($config_path);
     my $cfg = Config::IniFiles->new(-file => $clean_config) or die "Failed to parse configuration file: $config_path";
 
-    $config_name = $cfg->val('DEFAULT', 'config_name') if $config_name eq 'DEFAULT';
+    # FLUXPYPE_CONFIG (set by flux-config-run --config) wins over the file's config_name
+    $config_name = $ENV{FLUXPYPE_CONFIG} || $cfg->val('DEFAULT', 'config_name') if $config_name eq 'DEFAULT';
     die "Configuration section '$config_name' not found in $config_filename"
       unless $cfg->SectionExists($config_name);
 
@@ -237,6 +238,10 @@ sub configurations {
     # print $the_config{base_dir};
     # print "\n";
 
+    # base_dir = auto (or empty): the folder holding this fluxpype checkout (see pipe_helper.py)
+    if (!$the_config{base_dir} || $the_config{base_dir} eq 'auto') {
+        $the_config{base_dir} = dirname(dirname(dirname(abs_path(__FILE__))));
+    }
     my $base_path = $the_config{base_dir} || '~';
     my $base_dir = expand_home_dir($base_path);
     $the_config{'base_dir'} = $base_dir;
@@ -251,6 +256,10 @@ sub configurations {
 
     $the_config{"run_script"} = catfile($the_config{"fl_mhdlib"}, $the_config{"run_script"});
 
+    for my $k (qw(rotations fluxon_count adapts flow_method)) {
+        die "$config_path: profile [$config_name] (or [DEFAULT]) must set '$k'\n"
+          unless defined $the_config{$k} && $the_config{$k} ne '';
+    }
     $the_config{"rotations"} = parse_list_or_range($the_config{"rotations"});
     $the_config{"fluxon_count"} = parse_list_or_range($the_config{"fluxon_count"});
     $the_config{"adapts"} = parse_list_or_range($the_config{"adapts"});

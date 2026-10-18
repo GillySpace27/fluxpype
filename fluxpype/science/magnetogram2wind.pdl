@@ -235,7 +235,7 @@ if (1-$wind_only){
     # print $mag_command . "\n\n\n";
 
 
-    system($mag_command) == 0 or ( die "Python script returned error $?", exit );
+    system($mag_command) == 0 or die "get_magnetograms.py failed (status $?)\n";
 
 #######################################################################################################
 ## Process the Magnetogram ## Find the Root Points ####################################################
@@ -266,7 +266,7 @@ if (1-$wind_only){
 
     # print $pfss_command;
     system($pfss_command) == 0
-      or ( die "Python script returned error $?", exit );
+      or die "get_pfss.py failed (status $?)\n";
 
     # print "3  " . $configs{'magpath'} . "\n\n";
 
@@ -317,10 +317,10 @@ if (1-$wind_only){
 
 # # Plot the field map
 my $fmap_command =
-"python $base_dir/fluxpype/fluxpype/plotting/plot_fieldmap.py --cr $CR --open $open_file"
+"python $FindBin::RealBin/../plotting/plot_fieldmap.py --cr $CR --open $open_file"
   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
 #   print $fmap_command;
-system($fmap_command) == 0 or ( die "Python script returned error $?", exit );
+system($fmap_command) == 0 or die "plot_fieldmap.py failed (status $?)\n";
 
 
 }  # End of the if (0) block
