@@ -1,56 +1,79 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "fluxpype"
 version = "0.2.0"
 description = "A Python wrapper and installer for the FLUX modeling framework"
-authors = ["Gilly <gilly@swri.org>"]
-license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/gillyspace27/fluxpype"
-repository = "https://github.com/gillyspace27/fluxpype"
-documentation = "https://github.com/gillyspace27/fluxpype#readme"
+license = { text = "MIT" }
+authors = [
+  { name = "Gilly", email = "gilly@swri.org" }
+]
 keywords = ["FLUX", "modeling", "data analysis"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+requires-python = ">=3.8"
+dependencies = [
+  "matplotlib>=3.4",
+  "numpy<2.0",
+  "sunpy>=4.0",
+  "pandas>=1.3",
+  "tqdm>=4.62",
+  "astropy<7.0",
+  "beautifulsoup4>=0.0.1",
+  "lxml>=4.6",
+  "zeep>=4.1",
+  "drms>=0.6",
+  "timeout-decorator>=0.5",
+  "rich>=10.13",
+  "pfsspy>=1.2.0",
+  "sunkit-magex>=1.0.0",
+  "PyQt5>=5.15.11",
+  "opencv-python>=4.10.0.84",
+]
 
-[tool.poetry.dependencies]
-python = "^3.8"
-matplotlib = "^3.4"
-numpy = "<2.0"
-sunpy = "^4.0"
-pandas = "^1.3"
-tqdm = "^4.62"
-astropy = "<7.0"
-bs4 = "^0.0.1"
-lxml = "^4.6"
-zeep = "^4.1"
-drms = "^0.6"
-timeout-decorator = "^0.5"
-rich = "^10.13"
-pfsspy = "^1.2.0"
-PyQt5 = "^5.15.11"
-opencv_python = "^4.10.0.84"
-
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 FLUXcore = ["pexpect", "PyQt5"]
 
-[tool.poetry.scripts]
+[project.scripts]
 flux-install = "fluxpype.unified_installer:main"
 flux-config-run = "fluxpype.config_runner:run"
 flux-config-view = "fluxpype.config_runner:view"
 flux-config-edit = "fluxpype.config_runner:open_config"
 flux-config-gallery = "fluxpype.config_runner:gallery"
 
+[project.urls]
+Homepage = "https://github.com/gillyspace27/fluxpype"
+Repository = "https://github.com/gillyspace27/fluxpype"
+Documentation = "https://github.com/gillyspace27/fluxpype#readme"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fluxpype*"]
+
+[tool.setuptools.package-data]
+fluxpype = ["config.ini"]
+
 [tool.pytest.ini_options]
-addopts = "--cov-report xml:coverage.xml --cov src --cov-fail-under 0 --cov-append -m 'not integration'"
+addopts = "--cov-report xml:coverage.xml --cov fluxpype --cov-fail-under 0 --cov-append -m 'not integration'"
 testpaths = ["tests"]
 markers = [
-    "integration: marks as integration test",
-    "spark: marks tests which need Spark",
-    "slow: marks tests as slow",
-    "unit: fast offline tests",
+  "integration: marks as integration test",
+  "spark: marks tests which need Spark",
+  "slow: marks tests as slow",
+  "unit: fast offline tests",
 ]
 
 [tool.black]

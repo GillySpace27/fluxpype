@@ -162,7 +162,8 @@ def get_pfss(configs):
     if need:
         # Trace the lines now
         fl_open, fl_closed, skip_num, timeout_num, flnum_open, flnum_closed  = trace_lines(
-                                    pfss_output, (f_lon, f_lat, f_sgn), open_path, closed_path, adapt)
+                                    pfss_output, (f_lon, f_lat, f_sgn), open_path, closed_path, adapt,
+                                    trace_serial=configs.get("trace_serial", 1))
 
     # # Record stats in the pfss_output file
     # shp = br_safe.data.shape

@@ -318,12 +318,21 @@ def get_flux_perl_lib(config):
 
     Looks for fluxon-perl under base_dir, or under fl_prefix, and finds the
     architecture-specific lib dir (e.g. darwin-2level) that contains Flux.pm.
+    Ignores config paths that are files (e.g. perl binary) or another user's home
+    (avoids FLUX/relaxation failures from wrong-user paths).
     """
+    my_home = os.path.expanduser("~")
     # Explicit config path (e.g. flux_perl_lib = ${base_dir}/../fluxon-perl/lib/perl5/darwin-2level)
     for key in ("flux_perl_lib", "fl_perl_lib"):
         path = config.get(key)
         if path:
             path = os.path.normpath(os.path.expanduser(str(path).strip()))
+            # Skip if this is a file (e.g. mistaken perl binary path) or another user's path
+            if os.path.isfile(path):
+                continue
+            if (path.startswith("/Users/") or path.startswith("/home/")) and not path.startswith(my_home):
+                # Path is under another user's home (e.g. /Users/cgilbert/... when we're gilly)
+                continue
             if os.path.isfile(os.path.join(path, "Flux.pm")):
                 return path
             if os.path.isdir(path):
