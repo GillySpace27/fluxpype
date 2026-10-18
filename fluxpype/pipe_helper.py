@@ -132,7 +132,12 @@ def configurations(
     config_obj.read_string(clean_content)
 
     # Determine the configuration section to use
-    config_name = config_name or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+    # FLUXPYPE_CONFIG (set by flux-config-run --config) wins over the file's config_name
+    config_name = (
+        config_name
+        or os.environ.get("FLUXPYPE_CONFIG")
+        or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+    )
     if config_name not in config_obj:
         available_sections = ", ".join(config_obj.sections())
         raise ValueError(
@@ -140,8 +145,16 @@ def configurations(
             f"Available sections: {available_sections}"
         )
 
+    # base_dir = auto (or empty): the folder that holds this fluxpype checkout,
+    # so a fresh clone works wherever it lives. Set before any ${base_dir} is interpolated.
+    if config_obj["DEFAULT"].get("base_dir", "").strip() in ("", "auto"):
+        config_obj["DEFAULT"]["base_dir"] = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+
     # Create the configuration dictionary
     the_config = dict(config_obj[config_name])
+    the_config["config_name"] = config_name  # the active profile, not the file default
 
     # Override with command-line arguments
     assimilate_args(the_config, args)
@@ -169,14 +182,18 @@ def configurations(
 
 
 def find_config_file(config_filename):
-    """Find the configuration file in the current directory or subdirectories."""
+    """Find the configuration file: as given (absolute or relative to cwd), else the one
+    shipped beside this module. The Perl side (find_config_file in pipe_helper.pm) also
+    reads the shipped one, so both halves of a run see the same file from any cwd."""
     config_path = os.path.expanduser(config_filename)
     if os.path.exists(config_path):
         return config_path
 
-    for root, _, files in os.walk(os.getcwd()):
-        if config_filename in files:
-            return os.path.join(root, config_filename)
+    # ponytail: was os.walk(os.getcwd()), which from ~ crawls the whole home dir
+    # and can pick up an unrelated config.ini
+    shipped = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.path.basename(config_filename))
+    if os.path.exists(shipped):
+        return shipped
 
     raise FileNotFoundError(f"Configuration file '{config_filename}' not found.")
 
@@ -1056,7 +1073,7 @@ import glob
 import sunpy.coordinates.frames as frames
 import astropy.units as u
 
-default_email = "chris.gilly@colorado.edu"
+default_email = ""  # JSOC needs the user's own registered address: JSOC_EMAIL or jsoc_email
 from pathlib import PosixPath
 
 # import subprocess
@@ -1121,10 +1138,12 @@ def get_magnetogram_file(
     """
 
     # Set the download account
-    try:
-        jsoc_email = email or os.environ["JSOC_EMAIL"]
-    except KeyError:
-        jsoc_email = default_email
+    jsoc_email = (
+        email
+        or os.environ.get("JSOC_EMAIL")
+        or configurations().get("jsoc_email", "").strip()
+        or default_email
+    )
 
     # Set the Carrington rotation number
     if cr is not None:
@@ -1162,6 +1181,12 @@ def get_magnetogram_file(
             small_path = reduce_mag_file(file, reduce, force=force_download)
             return file, small_path
     emit("\t\tFile not found...")
+    if not jsoc_email or "@" not in jsoc_email or jsoc_email.endswith("example.com"):
+        raise RuntimeError(
+            "Downloading from JSOC needs your own JSOC-registered email "
+            "(register at http://jsoc.stanford.edu/ajax/register_email.html). "
+            "Set JSOC_EMAIL or jsoc_email in config.ini."
+        )
     c = drms.Client()
     # Generate a search
     crot = a.jsoc.PrimeKey("CAR_ROT", str(CR))
@@ -1276,12 +1301,21 @@ def get_ADAPT_file(
         emit("\t\tNo file found!")
 
     emit("\tSearching FIDO for ADAPT Map...")
-    from fluxpype.fidoclients.ADAPTClient import ADAPTLngType
+    # fluxpype.fidoclients was removed in 3fa0209; use sunpy's ADAPT client (same NSO archive)
+    from sunpy.net.dataretriever.attrs.adapt import ADAPTLonType as ADAPTLngType
 
     LngType = "0"  # 0 is carrington, 1 is central meridian
     res = Fido.search(
         a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType)
     )
+    if res.file_num == 0:
+        # ponytail: known gap, sunpy 7.1's client found no files for current NSO names
+        # (e.g. adapt40311_044012_...fts.gz) on 2026-10-17; a direct NSO listing is the fix
+        raise RuntimeError(
+            f"No ADAPT map found for {get_date} to {get_date_end} via sunpy's ADAPT client. "
+            "Download it by hand from https://gong.nso.edu/adapt/maps/gong/ into "
+            f"{mag_dir}, or run with adapts = [0] (HMI)."
+        )
     emit("\tDownloading ADAPT map...")
     out = Fido.fetch(res, path=mag_dir)
     assert len(out) == 1, f"More than one file found! {out}"

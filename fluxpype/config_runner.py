@@ -19,6 +19,8 @@ Examples
 
 import subprocess
 import os
+import sys
+import argparse
 import logging
 from tqdm import tqdm
 from rich.panel import Panel
@@ -34,6 +36,9 @@ from fluxpype.console import (
 )
 
 os.nice(16)
+
+# Repo checkout holding the fluxpype package; children run from here so relative paths resolve.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Initialize Rich console and logger
 console = Console()
@@ -65,8 +70,15 @@ def validate_configurations(configurations):
         "n_jobs",
     ]
     missing_keys = [key for key in required_keys if key not in configurations]
+    # list-valued keys that parse to [] would silently schedule zero jobs
+    missing_keys += [
+        key for key in ("rotations", "fluxon_count", "adapts", "flow_method")
+        if key in configurations and not [v for v in configurations[key] if str(v).strip()]
+    ]
     if missing_keys:
-        raise KeyError(f"Missing configuration parameters: {', '.join(missing_keys)}")
+        raise KeyError(
+            f"Profile [{configurations.get('config_name', '?')}] must set: {', '.join(missing_keys)}"
+        )
 
 
 def display_splash_screen(configs, log_path=None):
@@ -168,13 +180,18 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         emit(pdl_msg, style="red")
         raise RuntimeError("PDL is not available. Install PDL (see message above).")
 
-    run_script_path = os.path.abspath(os.path.expanduser(configs["run_script"]))
+    run_script_path = os.path.expanduser(configs["run_script"])
+    if not os.path.isabs(run_script_path):
+        run_script_path = os.path.join(REPO_ROOT, run_script_path)
 
     if not os.path.isfile(run_script_path):
         emit(f"PDL script not found: {run_script_path}", style="red")
         raise FileNotFoundError(f"PDL script not found: {run_script_path}")
 
     env = os.environ.copy()
+    # The Perl stage calls bare `python`/`python3`; make those resolve to this interpreter
+    # (venv or conda bin dirs hold both names), so helpers see the same packages we do.
+    env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
     # Prefer Flux from current Perl's default @INC (e.g. conda site_perl) so C extension handshake matches.
     # Only add fluxon-perl to PERL5LIB when Flux is not already loadable (avoids loading wrong .bundle from fluxon-perl).
     try:
@@ -213,6 +230,7 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         text=True,
         bufsize=1,
         env=env,
+        cwd=REPO_ROOT,
     )
     out_lines = []
     for line in proc.stdout:
@@ -244,8 +262,8 @@ import os
 import subprocess
 import platform
 
-def open_config(path="fluxpype/config.ini"):
-    return open_path(path)
+def open_config(path=None):
+    return open_path(path or os.path.join(REPO_ROOT, "fluxpype", "config.ini"))
 
 
 def gallery():
@@ -253,7 +271,8 @@ def gallery():
     Opens the default directory containing the batches in the file explorer.
     """
     # Define the path to the batches directory
-    directory_path = "fluxpype/data/batches"
+    from fluxpype.pipe_helper import configurations
+    directory_path = os.path.join(configurations(debug=False)["data_dir"], "batches")
 
     # Ensure the directory exists before attempting to open it
     if not os.path.isdir(directory_path):
@@ -335,11 +354,23 @@ def open_path_linux(path):
     subprocess.call(["xdg-open", path])
 
 
-def run():
+def run(argv=None):
     """
     Executes the PDL script for all combinations of configurations.
     Initializes a log file and tees all output (Python + Perl) to it.
+
+    Exits nonzero if any job failed or timed out, so shells, batch scripts
+    and grid schedulers can tell a failed run from a good one.
     """
+    parser = argparse.ArgumentParser(prog="flux-config-run")
+    parser.add_argument(
+        "--config", help="config.ini profile to run (overrides config_name in the file)"
+    )
+    args, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    if args.config:
+        # every subprocess (Python and Perl) re-reads config.ini; this is how they agree
+        os.environ["FLUXPYPE_CONFIG"] = args.config
+
     from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
 
@@ -349,6 +380,7 @@ def run():
 
     global timeout_count
     timeout_count = 0
+    failures = []
     display_splash_screen(configs, log_path=log_path)
     validate_configurations(configs)
 
@@ -366,30 +398,30 @@ def run():
                 for rotation in configs["rotations"]:
                     for fluxon_count in configs["fluxon_count"]:
                         for method in configs["flow_method"]:
-                            progress_bar.set_description(
-                                f"Rotation: {rotation}, Fluxon: {fluxon_count}, Method: {method}"
-                            )
+                            job = f"Rotation {rotation}, Fluxon {fluxon_count}, Adapt {adaptation}, Method {method}"
+                            progress_bar.set_description(job)
                             try:
                                 run_pdl_script(rotation, fluxon_count, adaptation, method)
                             except timeout_decorator.TimeoutError:
                                 timeout_count += 1
-                                emit(
-                                    f"Timeout: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}",
-                                    style="yellow",
-                                )
+                                failures.append(f"{job}: timeout")
+                                emit(f"Timeout: {job}", style="yellow")
                             except Exception as e:
-                                emit(
-                                    f"Error: Rotation {rotation}, Fluxon {fluxon_count}, Method {method}: {e}",
-                                    style="red",
-                                )
+                                failures.append(f"{job}: {e}")
+                                emit(f"Error: {job}: {e}", style="red")
                             progress_bar.update(1)
         emit(f"Total timeouts: {timeout_count}", style="bold")
+        if failures:
+            emit(f"FAILED {len(failures)} of {total_jobs} jobs:", style="bold red")
+            for f in failures:
+                emit(f"  {f}", style="red")
+        else:
+            emit(f"All {total_jobs} jobs succeeded.", style="bold green")
     finally:
         close_log()
+    if failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    try:
-        run()
-    except Exception as e:
-        logging.critical(f"Critical failure: {e}")
+    run()
