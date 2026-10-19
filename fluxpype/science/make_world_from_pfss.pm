@@ -171,7 +171,8 @@ sub make_world_from_pfss {
         ## Define a blank world ###############################
         my @flines = ();
         my $world = ();
-        my $xform = !t_spherical() x t_scale([3.14159/180,3.14159/180,1]);
+        # Python pfss output is (lon, lat, r) in degrees; scale to radians for t_spherical
+        my $xform = !t_spherical() x t_scale([3.14159/180, 3.14159/180, 1]);
 
 
         ## Generate open fieldlines ####################################
@@ -291,7 +292,7 @@ sub make_world_from_pfss {
                 $open = $open->glue(1, $replicated_last_col)->squeeze;
                 if ($print_debug) {print "Extended open: $open\n";}
             }
-            my $print_debug = 1;
+            my $print_debug = 0;
 
             # Print radial values before sorting
             if ($print_debug) {print "Radial values before sorting: ", $open(2, :), "\n";}

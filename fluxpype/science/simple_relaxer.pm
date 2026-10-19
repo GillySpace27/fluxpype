@@ -134,6 +134,9 @@ sub simple_relaxer {
 "Looks like you're using the old calling convention for simple_relaxer.  Please delete the 'interactive' flag from your call.";
     }
 
+    # Flush stdout so progress is visible when run under subprocess (e.g. config_runner)
+    $| = 1;
+
     my $w       = shift;
     my $global  = shift || 0;
     my $n       = shift || 0;

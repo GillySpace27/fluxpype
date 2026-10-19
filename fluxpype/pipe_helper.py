@@ -94,6 +94,7 @@ import sunpy.io
 from sunpy.net import Fido, attrs as a
 import configparser
 
+from fluxpype.console import emit
 
 # CONFIGURATION MANAGEMENT #######################################################
 
@@ -131,7 +132,12 @@ def configurations(
     config_obj.read_string(clean_content)
 
     # Determine the configuration section to use
-    config_name = config_name or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+    # FLUXPYPE_CONFIG (set by flux-config-run --config) wins over the file's config_name
+    config_name = (
+        config_name
+        or os.environ.get("FLUXPYPE_CONFIG")
+        or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+    )
     if config_name not in config_obj:
         available_sections = ", ".join(config_obj.sections())
         raise ValueError(
@@ -139,8 +145,16 @@ def configurations(
             f"Available sections: {available_sections}"
         )
 
+    # base_dir = auto (or empty): the folder that holds this fluxpype checkout,
+    # so a fresh clone works wherever it lives. Set before any ${base_dir} is interpolated.
+    if config_obj["DEFAULT"].get("base_dir", "").strip() in ("", "auto"):
+        config_obj["DEFAULT"]["base_dir"] = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        )
+
     # Create the configuration dictionary
     the_config = dict(config_obj[config_name])
+    the_config["config_name"] = config_name  # the active profile, not the file default
 
     # Override with command-line arguments
     assimilate_args(the_config, args)
@@ -168,14 +182,18 @@ def configurations(
 
 
 def find_config_file(config_filename):
-    """Find the configuration file in the current directory or subdirectories."""
+    """Find the configuration file: as given (absolute or relative to cwd), else the one
+    shipped beside this module. The Perl side (find_config_file in pipe_helper.pm) also
+    reads the shipped one, so both halves of a run see the same file from any cwd."""
     config_path = os.path.expanduser(config_filename)
     if os.path.exists(config_path):
         return config_path
 
-    for root, _, files in os.walk(os.getcwd()):
-        if config_filename in files:
-            return os.path.join(root, config_filename)
+    # ponytail: was os.walk(os.getcwd()), which from ~ crawls the whole home dir
+    # and can pick up an unrelated config.ini
+    shipped = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.path.basename(config_filename))
+    if os.path.exists(shipped):
+        return shipped
 
     raise FileNotFoundError(f"Configuration file '{config_filename}' not found.")
 
@@ -312,11 +330,68 @@ def convert_value(value):
         return value
 
 
+def get_flux_perl_lib(config):
+    """Return the directory that contains Flux.pm for PERL5LIB, or None if not found.
+
+    Looks for fluxon-perl under base_dir, or under fl_prefix, and finds the
+    architecture-specific lib dir (e.g. darwin-2level) that contains Flux.pm.
+    Ignores config paths that are files (e.g. perl binary) or another user's home
+    (avoids FLUX/relaxation failures from wrong-user paths).
+    """
+    my_home = os.path.expanduser("~")
+    # Explicit config path (e.g. flux_perl_lib = ${base_dir}/../fluxon-perl/lib/perl5/darwin-2level)
+    for key in ("flux_perl_lib", "fl_perl_lib"):
+        path = config.get(key)
+        if path:
+            path = os.path.normpath(os.path.expanduser(str(path).strip()))
+            # Skip if this is a file (e.g. mistaken perl binary path) or another user's path
+            if os.path.isfile(path):
+                continue
+            if (path.startswith("/Users/") or path.startswith("/home/")) and not path.startswith(my_home):
+                # Path is under another user's home (e.g. /Users/cgilbert/... when we're gilly)
+                continue
+            if os.path.isfile(os.path.join(path, "Flux.pm")):
+                return path
+            if os.path.isdir(path):
+                for name in os.listdir(path):
+                    sub = os.path.join(path, name)
+                    if os.path.isfile(os.path.join(sub, "Flux.pm")):
+                        return sub
+    # Under base_dir or its parents: fluxon-perl/lib/perl5/<arch> (e.g. fluxons/fluxon-perl when cwd is fluxpype)
+    basedir = os.path.expanduser(config.get("base_dir", "").strip())
+    if basedir:
+        base_candidates = [basedir, os.path.dirname(basedir), os.path.dirname(os.path.dirname(basedir))]
+        for root in base_candidates:
+            if not root or root == os.path.dirname(root):
+                continue
+            prefix = os.path.join(root, "fluxon-perl", "lib", "perl5")
+            if os.path.isdir(prefix):
+                if os.path.isfile(os.path.join(prefix, "Flux.pm")):
+                    return prefix
+                for name in os.listdir(prefix):
+                    sub = os.path.join(prefix, name)
+                    if os.path.isfile(os.path.join(sub, "Flux.pm")):
+                        return sub
+    # Under fl_prefix
+    fl_prefix = os.path.expanduser(config.get("fl_prefix", "").strip())
+    if fl_prefix:
+        for prefix in (os.path.join(fl_prefix, "lib", "perl5"),
+                       os.path.join(fl_prefix, "lib", "perl5", "darwin-2level")):
+            if os.path.isdir(prefix) and os.path.isfile(os.path.join(prefix, "Flux.pm")):
+                return prefix
+            if os.path.isdir(prefix):
+                for name in os.listdir(prefix):
+                    sub = os.path.join(prefix, name)
+                    if os.path.isfile(os.path.join(sub, "Flux.pm")):
+                        return sub
+    return None
+
+
 def print_debug_info(config):
     """Print debug information for the configuration."""
-    print("\nDebug Configuration Values:")
+    emit("\nDebug Configuration Values:", style="dim")
     for key, value in sorted(config.items()):
-        print(f"{key}: {value}")
+        emit(f"  {key}: {value}", style="dim")
 
 
 # PATH MANAGEMENT ################################################################
@@ -411,16 +486,14 @@ def set_paths(do_plot=False):
         if os.path.exists(envpath) and os.access(envpath, os.R_OK):
             exec(open(envpath).read())
         else:
-            print(f"File does not exist or is not readable: {envpath}")
+            emit(f"File does not exist or is not readable: {envpath}", style="yellow")
     else:
-        print("Environment variable FL_PREFIX is not set.")
+        emit("Environment variable FL_PREFIX is not set.", style="yellow")
 
-    # Optionally print the lists of directories
     if do_plot:
-        print("\n\nsys.path has:")
+        emit("\nsys.path:", style="dim")
         for path in sys.path:
-            print(f" {path}")
-        print("--------------------------\n")
+            emit(f"  {path}", style="dim")
 
         # Add any additional paths you want to print here
         # For example, if you have a list similar to Python's sys.path
@@ -618,23 +691,14 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
     """
 
     small_file = PosixPath(str(mag_file).replace("_r1_", f"_r{reduction}_"))
-    # reduce the FITS image
-    print(f"\tReducing image size by a factor of {reduction}...", end="")
+    emit(f"\tReducing image size by a factor of {reduction}...", end="")
 
     if not os.path.exists(small_file) or force:
         small_file = reduce_fits_image(
             mag_file, small_file, target_resolution=None, reduction_amount=reduction
         )
-        # print("Success!\n")
     else:
-        print("Skipped! Reduced file already exists:")
-        # print("\t\t", shorten_path(str(small_file), 2))
-        ### WORKING HERE
-        print(
-            f"\t\tFound '{os.path.basename(small_file)}' in '\
-              {shorten_path(os.path.dirname(small_file))}'"
-        )
-        print("\n\t\t\t```````````````````````````````\n \n\n")
+        emit(f"Skipped! Reduced file already exists: {shorten_path(str(small_file))}")
 
     return small_file
 
@@ -659,7 +723,7 @@ def reduce_fits_image(
         Function to use for the reduction, defaults to np.nanmean.
     """
 
-    print(f"\n\tReducing {fits_path}...")
+    emit(f"\tReducing {shorten_path(fits_path)}...")
     # Open the FITS file and read the data
     with fits.open(fits_path, ignore_missing_simple=True) as hdul:
         hdul.verify("silentfix")
@@ -668,7 +732,6 @@ def reduce_fits_image(
             data = hdul[1].data
 
         current_resolution = max(data.shape)
-        print("\t\tOriginal Shape:  ", data.shape)
 
         # Calculate the reduction amount if target resolution is specified
         if target_resolution is not None:
@@ -684,12 +747,7 @@ def reduce_fits_image(
         small_image = block_reduce(data, reduction_amount, func)
         after_sum = np.sum(small_image)
         if not np.isclose(before_sum, after_sum):
-            print(
-                "\tREDUCTION WARNING: \n\tSum before:    ",
-                before_sum,
-                "\n\tSum after:     ",
-                after_sum,
-            )
+            emit(f"\tREDUCTION WARNING: Sum before: {before_sum}, Sum after: {after_sum}", style="yellow")
         try:
             date_check = hdul[0].header["DATE"]
             useheader = hdul[0].header
@@ -707,15 +765,10 @@ def reduce_fits_image(
             360 / (small_image.shape[0] * np.pi)
         )  # RADIANS
 
-        print("\t\tFinal Shape:     ", small_image.shape)
-
-        print("\tSaving  ", small_file)
+        emit(f"\t\tFinal shape: {small_image.shape}")
+        emit(f"\t\tSaving {shorten_path(str(small_file))}")
         fits.writeto(small_file, small_image, useheader, overwrite=True)
-
-        # plot_raw_magnetogram(fits_path, data, small_image)
-
-        print("    Reduction Complete!\n")
-    print("```````````````````````````\n")
+        emit("Reduction complete.")
 
     return small_file
 
@@ -910,7 +963,6 @@ def load_data(the_path):
     """
 
     data = []
-    print("\n", the_path, "\n")
     with open(the_path, "r", encoding="utf-8") as file:
         for line in file.readlines():
             data.append(parse_line(line))
@@ -971,7 +1023,7 @@ def add_fluxon_dirs_to_path(do_print=False):
     path_add(dirlist, do_print=do_print)
 
     if do_print:
-        print("Added fluxon directories to path.\n")
+        emit("Added fluxon directories to path.")
 
     return dirlist
 
@@ -982,7 +1034,7 @@ def path_add(
     for path in dirlist:
         sys.path.append(path)
         if do_print:
-            print(path)
+            emit(f"  {path}", style="dim")
 
 
 def list_directories(path):
@@ -1021,7 +1073,7 @@ import glob
 import sunpy.coordinates.frames as frames
 import astropy.units as u
 
-default_email = "chris.gilly@colorado.edu"
+default_email = ""  # JSOC needs the user's own registered address: JSOC_EMAIL or jsoc_email
 from pathlib import PosixPath
 
 # import subprocess
@@ -1086,10 +1138,12 @@ def get_magnetogram_file(
     """
 
     # Set the download account
-    try:
-        jsoc_email = email or os.environ["JSOC_EMAIL"]
-    except KeyError:
-        jsoc_email = default_email
+    jsoc_email = (
+        email
+        or os.environ.get("JSOC_EMAIL")
+        or configurations().get("jsoc_email", "").strip()
+        or default_email
+    )
 
     # Set the Carrington rotation number
     if cr is not None:
@@ -1102,36 +1156,37 @@ def get_magnetogram_file(
 
     mag_dir = make_mag_dir(datdir)
 
-    print(
-        "\n[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]"
-    )
-    print(f"[cyan](py) Getting Magnetogram for CR{CR}, from {date}...[/cyan]")
-    print(
-        "[cyan]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[/cyan]\n"
-    )
+    emit("\n[cyan]────────────────── Getting Magnetogram ──────────────────[/cyan]", style="cyan")
+    emit(f"\t(py) CR{CR}, from {date}", style="cyan")
 
     import pathlib
 
     hmi_object = pathlib.Path(mag_dir)
     file_list = list(hmi_object.iterdir())
-    print("\tSearching for file...")
+    emit("\tSearching for file...")
     found_file = False
     inst = "hmi"
     for file in file_list:
         file = str(file.expanduser())
         # print("\t\t\t", file)
         if str(CR) + "_r1_" in str(file) and inst in str(file).casefold():
-            print(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
+            emit(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
             found_file = True
             break
 
     if found_file:
         if force_download:
-            print("\tForcing redownload...")
+            emit("\tForcing redownload...")
         else:
             small_path = reduce_mag_file(file, reduce, force=force_download)
             return file, small_path
-    print("\t\tFile not found...")
+    emit("\t\tFile not found...")
+    if not jsoc_email or "@" not in jsoc_email or jsoc_email.endswith("example.com"):
+        raise RuntimeError(
+            "Downloading from JSOC needs your own JSOC-registered email "
+            "(register at http://jsoc.stanford.edu/ajax/register_email.html). "
+            "Set JSOC_EMAIL or jsoc_email in config.ini."
+        )
     c = drms.Client()
     # Generate a search
     crot = a.jsoc.PrimeKey("CAR_ROT", str(CR))
@@ -1143,11 +1198,11 @@ def get_magnetogram_file(
     big_path = os.path.join(mag_dir, f"CR{CR}_r1_hmi.fits")
     # hmi_path = hmidat+'/{file}.fits'
 
-    print("\tDownloading HMI from JSOC...")
+    emit("\tDownloading HMI from JSOC...")
     out = Fido.fetch(res, path=mag_dir)
     hmi_path_out = out[0]
     os.rename(hmi_path_out, big_path)
-    print(f"\n\tSaved to {big_path}\n")
+    emit(f"\tSaved to {shorten_path(big_path)}")
 
     small_path = reduce_mag_file(big_path, reduce, force=force_download)
     return big_path, small_path
@@ -1202,17 +1257,9 @@ def get_ADAPT_file(
     # Make the directory
     mag_dir = make_mag_dir(datdir)
 
-    print(
-        "\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-    )
-    print(
-        f"(py) Getting ADAPT Magnetogram(s) for CR{CR}, from {display_date} to {display_date_end}..."
-    )
-    print(
-        "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
-    )
-
-    print("\tChecking for file...")
+    emit("\n[cyan]────────────────── Getting ADAPT Magnetogram ──────────────────[/cyan]", style="cyan")
+    emit(f"\t(py) CR{CR}, from {display_date} to {display_date_end}", style="cyan")
+    emit("\tChecking for file...")
     found_file = False
 
     date_obs = [date, date + (1.9999999 * u.hour), date - (1.9999999 * u.hour)]
@@ -1232,10 +1279,10 @@ def get_ADAPT_file(
             break
             for ii, dt in enumerate(dates):
                 if dt in str(file):
-                    print(
+                    emit(
                         f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'"
                     )
-                    print("\t\tDate: ", date_obs[ii].strftime(tstring_display))
+                    emit(f"\t\tDate: {date_obs[ii].strftime(tstring_display)}")
                     found_file = True
                     break
             if found_file:
@@ -1243,31 +1290,37 @@ def get_ADAPT_file(
 
     if found_file:
         if force_download:
-            print("\tForcing redownload...")
+            emit("\tForcing redownload...")
         else:
-            print("\tSkipping Download!\n")
+            emit("\tSkipping Download!\n")
             # small_path = None # reduce_mag_file(file, reduce, force=force_download)
             # mean_path = format_ADAPT_file(file, reduce, force=force_download)
             the_path = format_ADAPT_file(file, method=method, force=force_download)
             return file, the_path
     else:
-        print("\t\tNo file found!")
+        emit("\t\tNo file found!")
 
-    print("\n\tSearching FIDO for ADAPT Map...\n")
-    from fluxpype.fidoclients.ADAPTClient import ADAPTLngType
+    emit("\tSearching FIDO for ADAPT Map...")
+    # fluxpype.fidoclients was removed in 3fa0209; use sunpy's ADAPT client (same NSO archive)
+    from sunpy.net.dataretriever.attrs.adapt import ADAPTLonType as ADAPTLngType
 
     LngType = "0"  # 0 is carrington, 1 is central meridian
-    print("VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV")
     res = Fido.search(
         a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType)
     )
-    print(res)
-    print("\tDownloading ADAPT map...\n")
+    if res.file_num == 0:
+        # ponytail: known gap, sunpy 7.1's client found no files for current NSO names
+        # (e.g. adapt40311_044012_...fts.gz) on 2026-10-17; a direct NSO listing is the fix
+        raise RuntimeError(
+            f"No ADAPT map found for {get_date} to {get_date_end} via sunpy's ADAPT client. "
+            "Download it by hand from https://gong.nso.edu/adapt/maps/gong/ into "
+            f"{mag_dir}, or run with adapts = [0] (HMI)."
+        )
+    emit("\tDownloading ADAPT map...")
     out = Fido.fetch(res, path=mag_dir)
     assert len(out) == 1, f"More than one file found! {out}"
     if len(out) == 1:
-        print("\tSuccess!")
-    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+        emit("\tSuccess!")
 
     file_all = str(out[0])
     # file_end = file_all.split('adapt')[1].split('.')
@@ -1275,7 +1328,7 @@ def get_ADAPT_file(
     big_path = os.path.join(mag_dir, f"CR{CR}_r1_adapt.fts.gz")
 
     os.rename(file_all, big_path)
-    print(f"\n\t\tSaved to {big_path}")
+    emit(f"\t\tSaved to {shorten_path(big_path)}")
 
     # mean_path = format_ADAPT_file(big_path, reduce, force=force_download)
     the_path = format_ADAPT_file(big_path, method=method, force=force_download)
@@ -1284,16 +1337,16 @@ def get_ADAPT_file(
 
 
 def expose_adapt_fits(adapt_fits):
-    return [
-        print(x, " : ", adapt_fits[0].header[x])
-        for x in adapt_fits[0].header
-        if not "KEYCOMMENTS" in x
-    ]
+    """Debug: dump ADAPT FITS header keys (excluding KEYCOMMENTS)."""
+    for x in adapt_fits[0].header:
+        if "KEYCOMMENTS" not in x:
+            emit(f"  {x}: {adapt_fits[0].header[x]}", style="dim")
 
 
 def print_adapt_maps(adapt_maps):
-    for map in adapt_maps:
-        print(map)
+    """Debug: print ADAPT map objects."""
+    for m in adapt_maps:
+        emit(str(m), style="dim")
 
 
 def plot_all_adapt(adapt_maps):
@@ -1321,8 +1374,6 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
     import sunpy.io
     import sunpy.map
 
-    print(filename)
-
     if method == "mean":
         out_file_name = str(filename).replace("_r1_", "_rmean_")
     else:
@@ -1332,13 +1383,10 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
     # print(out_file_name)
 
     if os.path.exists(out_file_name) and not force:
-        print("\tFile already formatted!")
-        print("\t\t", shorten_path(out_file_name), "\n")
-        print("\t\t\t```````````````````````````````\n\n")
-
+        emit(f"\tFile already formatted: {shorten_path(out_file_name)}")
         return out_file_name
 
-    print("\n\tFormatting ADAPT file...", end="")
+    emit("\tFormatting ADAPT file...", end="")
     adapt_fits = sunpy.io.read_file(filename)
     main_data = adapt_fits[0].data
     main_header = adapt_fits[0].header
@@ -1371,38 +1419,25 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
     elif isinstance(method, int):
         adapt_map = sunpy.map.Map((main_data[method], main_header))
         output_map = np.asarray(adapt_map.data)
-        print(output_map.shape)
     else:
         assert False, "Method not recognized!"
 
     useheader = fix_header_ADAPT(header2, output_map)
     fits.writeto(out_file_name, output_map, useheader, overwrite=True)
-
-    print("Success!")
-    print("\t\tSaved to", out_file_name, "\n")
-
+    emit(f"\tSaved to {shorten_path(out_file_name)}")
     return out_file_name
 
 
 def reduce_mag_file(mag_file, reduction=3, force=False):
     """Reduces the size of a magnetogram FITS file by a given factor."""
     small_file = PosixPath(str(mag_file).replace("_r1_", f"_r{reduction}_"))
-    # reduce the FITS image
-    print(f"\tReducing image size by a factor of {reduction}...", end="")
+    emit(f"\tReducing image size by a factor of {reduction}...", end="")
     if not os.path.exists(small_file) or force:
         small_file = reduce_fits_image(
             mag_file, small_file, target_resolution=None, reduction_amount=reduction
         )
-        # print("Success!\n")
     else:
-        print("Skipped! Reduced file already exists:")
-        # print("\t\t", shorten_path(str(small_file), 2))
-        ### WORKING HERE
-        print(
-            f"\t\tFound '{os.path.basename(small_file)}' in '{os.path.dirname(small_file)}'"
-        )
-        print("\n\t\t\t```````````````````````````````\n \n\n")
-
+        emit(f"Skipped! Reduced file already exists: {shorten_path(str(small_file))}")
     return small_file
 
 
@@ -1429,7 +1464,7 @@ def reduce_fits_image(
     :param func: numpy function, optional, function to use for the reduction
                               defaults to np.nanmean
     """
-    print(f"\n\tReducing {fits_path}...")
+    emit(f"\tReducing {shorten_path(fits_path)}...")
     # Open the FITS file and read the data
     with fits.open(fits_path, ignore_missing_simple=True) as hdul:
         hdul.verify("silentfix")
@@ -1438,7 +1473,6 @@ def reduce_fits_image(
             data = hdul[1].data
 
         current_resolution = max(data.shape)
-        print("\tOriginal Shape: ", data.shape)
 
         # Calculate the reduction amount if target resolution is specified
         if target_resolution is not None:
@@ -1454,12 +1488,7 @@ def reduce_fits_image(
         small_image = block_reduce(data, reduction_amount, func)
         after_sum = np.sum(small_image)
         if not np.isclose(before_sum, after_sum):
-            print(
-                "\tREDUCTION WARNING: \n\tSum before:    ",
-                before_sum,
-                "\n\tSum after:     ",
-                after_sum,
-            )
+            emit(f"\tREDUCTION WARNING: Sum before: {before_sum}, Sum after: {after_sum}", style="yellow")
 
         try:
             hdul[0].header["DATE"]
@@ -1470,7 +1499,7 @@ def reduce_fits_image(
         try:
             del useheader["BLANK"]
         except KeyError:
-            print("No BLANK keyword found!")
+            emit("\tNo BLANK keyword found.", style="dim")
 
         useheader = fix_header(useheader, small_image)
         # small_file = fits_path.replace('_r1_', f'_r{reduction_amount}_')
@@ -1484,16 +1513,10 @@ def reduce_fits_image(
         # useheader['CDELT1'] = 360 / small_image.shape[1]  ## DEGREES
         # useheader['CDELT2'] = np.deg2rad(360 / (small_image.shape[0] * np.pi)) #RADIANS
 
-        print("\tFinal Shape: ", small_image.shape)
-
-        print("\tSaving  ", small_file)
+        emit(f"\tFinal shape: {small_image.shape}")
+        emit(f"\tSaving {shorten_path(str(small_file))}")
         fits.writeto(small_file, small_image, useheader, overwrite=True)
-
-        # plot_raw_magnetogram(fits_path, data, small_image)
-
-        print("    Reduction Complete!\n")
-    print("```````````````````````````\n")
-
+        emit("Reduction complete.")
     return small_file
 
 
@@ -1608,14 +1631,12 @@ def load_fits_magnetogram(
     Header
         Magnetogram header object
     """
-    print(cr)
     configs = configs or configurations()
     if cr is None:
         cr = configs.get("cr", None)
     else:
         # TODO : This is a hack to get around the fact that the configs are not being updated
         configs["cr"] = cr
-    print(cr)
     assert cr is not None, "Must specify a Carrington rotation number!"
     update_magdir_paths(configs)
     fname = fname or configs["magpath"].format(cr)

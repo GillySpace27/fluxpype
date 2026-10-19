@@ -12,5 +12,6 @@ opencv-python
 pexpect
 rich
 pfsspy
+sunkit-magex
 PyQt5
 numpy
