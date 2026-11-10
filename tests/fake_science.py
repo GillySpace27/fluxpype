@@ -59,3 +59,15 @@ def install():
     """Idempotently put the fake finder at the end of sys.meta_path."""
     if not any(isinstance(f, _Finder) for f in sys.meta_path):
         sys.meta_path.append(_Finder())
+
+
+def uninstall():
+    """Remove the finder and every fake module (and anything imported on top of them)."""
+    sys.meta_path[:] = [f for f in sys.meta_path if not isinstance(f, _Finder)]
+    for name in list(sys.modules):
+        if name.split(".")[0] in FAKE_ROOTS or name == "fluxpype.pipe_helper":
+            del sys.modules[name]
+    import fluxpype
+
+    if hasattr(fluxpype, "pipe_helper"):
+        del fluxpype.pipe_helper

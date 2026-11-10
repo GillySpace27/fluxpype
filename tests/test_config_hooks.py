@@ -6,15 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from tests import fake_science
-
-fake_science.install()
-
 REPO = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture
-def ph(monkeypatch):
+def ph(monkeypatch, fake_science):
     monkeypatch.delenv("FLUXPYPE_CONFIG_FILE", raising=False)
     monkeypatch.delenv("FLUXPYPE_CONFIG", raising=False)
     from fluxpype import pipe_helper
