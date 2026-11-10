@@ -92,7 +92,7 @@ class Store:
             self._db.execute("BEGIN")
             try:
                 self._db.execute(
-                    "INSERT INTO jobs(id, profile, overrides_json, backend, status, created, snapshot_path, extra_json) "
+                    "INSERT INTO jobs(id, profile, overrides_json, backend, status, created, snapshot_path, extra_json) "  # noqa: E501
                     "VALUES(?,?,?,?,?,?,?,?)",
                     (
                         job["id"],
@@ -107,7 +107,7 @@ class Store:
                 )
                 for t in tasks:
                     self._db.execute(
-                        "INSERT INTO tasks(id, job_id, idx, cr, nflux, adapt, method, status, created, run_dir, lock_key, slots) "
+                        "INSERT INTO tasks(id, job_id, idx, cr, nflux, adapt, method, status, created, run_dir, lock_key, slots) "  # noqa: E501
                         "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             t["id"],

@@ -21,7 +21,7 @@ def ph(monkeypatch, fake_science):
 def test_import_fluxpype_is_cheap():
     code = (
         "import sys, fluxpype; "
-        "bad = [m for m in ('fluxpype.config_runner', 'fluxpype.pipe_helper', 'numpy', 'pandas', 'sunpy') if m in sys.modules]; "
+        "bad = [m for m in ('fluxpype.config_runner', 'fluxpype.pipe_helper', 'numpy', 'pandas', 'sunpy') if m in sys.modules]; "  # noqa: E501
         "print(bad)"
     )
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=REPO)

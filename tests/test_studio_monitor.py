@@ -57,7 +57,7 @@ def banner(title):
     return f"\n{BAR}\n{title}\n{BAR}\n"
 
 
-STEP = "\nstep {n}: time is now {t:10.4g} \n({v} vertices; stiffness={s:7.3g}%, fmax={fm:7.3g}, f_av={fa:7.3g}, fs_av={fs:7.3g}, n_av={na:7.3g} max_angle:  80.00, mean_angle:  31.00)\n"
+STEP = "\nstep {n}: time is now {t:10.4g} \n({v} vertices; stiffness={s:7.3g}%, fmax={fm:7.3g}, f_av={fa:7.3g}, fs_av={fs:7.3g}, n_av={na:7.3g} max_angle:  80.00, mean_angle:  31.00)\n"  # noqa: E501
 
 
 def full_log():

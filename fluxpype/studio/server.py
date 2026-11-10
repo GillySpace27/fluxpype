@@ -5,7 +5,6 @@ import hmac
 import json
 import math
 import os
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -20,7 +19,6 @@ from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
 from .monitor import STAGES, first_match_for_context
 from .scheduler import Scheduler, SchedulerError
-from .store import FINISHED
 
 COOKIE = "flux_studio"
 IMAGE_TYPES = {

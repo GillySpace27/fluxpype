@@ -181,11 +181,11 @@ class Fake:
             self.sleep(2.0)
             if self.scenario == "fail_in_pfss":
                 self.say(
-                    '\nTraceback (most recent call last):\n  File "get_pfss.py", line 262, in <module>\nValueError: not enough footpoints in open flux'
+                    '\nTraceback (most recent call last):\n  File "get_pfss.py", line 262, in <module>\nValueError: not enough footpoints in open flux'  # noqa: E501
                 )
                 self.say("get_pfss.py failed (status 256)")
                 self.end("pfss", status="failed", detail="get_pfss.py failed (status 256)", started=t)
-                return self.finish(1, f"PDL script failed with exit code 255")
+                return self.finish(1, "PDL script failed with exit code 255")
             self.say("\n\t\tNeed to trace? True: Done!")
             self.sleep(1.5)
             self.touch(f"pfss/pfss_cr{cr}_r{red}_{inst}.pkl", size=118_000_000)
@@ -294,7 +294,7 @@ class Fake:
             self.say("All 1 jobs succeeded.")
         else:
             self.say(
-                f"Error: Rotation {self.a.cr}, Fluxon {self.a.nflux}, Adapt {self.a.adapt}, Method {self.a.method}: {message}"
+                f"Error: Rotation {self.a.cr}, Fluxon {self.a.nflux}, Adapt {self.a.adapt}, Method {self.a.method}: {message}"  # noqa: E501
             )
             self.say("FAILED 1 of 1 jobs:")
         return code
@@ -334,7 +334,7 @@ class Fake:
                     self.say(
                         f"\nstep {step}: time is now {step * 0.1:10.4g} \n({verts} vertices; stiffness={stiff:7.3g}%, "
                         f"fmax={fmax:7.3g}, f_av={f_av:7.3g}, fs_av={fs_av:7.3g}, n_av={n_av:7.3g} "
-                        f"max_angle: {80 + self.rng.uniform(-6, 6):6.2f}, mean_angle: {31 + self.rng.uniform(-2, 2):6.2f})"
+                        f"max_angle: {80 + self.rng.uniform(-6, 6):6.2f}, mean_angle: {31 + self.rng.uniform(-2, 2):6.2f})"  # noqa: E501
                     )
                     self.event(
                         "relax.step",

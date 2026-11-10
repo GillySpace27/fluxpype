@@ -285,7 +285,7 @@ def test_cached_relax_scenario_reports_reuse(make_scheduler):
 def test_wind_only_profile_skips_the_first_seven_stages(make_scheduler, studio_config):
     studio_config.write_text(
         studio_config.read_text()
-        + "\n[t_wind]\nbatch_name = tb_wind\nrotations = [2400]\nfluxon_count = [100]\nadapts = [0]\nflow_method = [parker]\nwind_only = 1\n"
+        + "\n[t_wind]\nbatch_name = tb_wind\nrotations = [2400]\nfluxon_count = [100]\nadapts = [0]\nflow_method = [parker]\nwind_only = 1\n"  # noqa: E501
     )
     sched = make_scheduler()
     job = sched.create_job("t_wind", backend="fake", extra=FAST)

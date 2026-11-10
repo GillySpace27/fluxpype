@@ -32,7 +32,7 @@ def test_commented_out_lines_are_not_settings(shipped):
 
 def test_task_product_in_runner_order():
     eff = c.parse(
-        "[DEFAULT]\nrotations=[1, 2]\nfluxon_count=[10, 20]\nadapts=[0, 1]\nflow_method=[Parker, wsa]\nrun_script=x\n[p]\n"
+        "[DEFAULT]\nrotations=[1, 2]\nfluxon_count=[10, 20]\nadapts=[0, 1]\nflow_method=[Parker, wsa]\nrun_script=x\n[p]\n"  # noqa: E501
     ).effective("p")
     plan = c.expand_tasks(eff)
     assert len(plan.tasks) == 16 and plan.errors == []
@@ -84,7 +84,7 @@ def test_overrides_keep_comments_and_touch_only_their_lines(shipped):
     text = paths.shipped_config().read_text()
     out = c.apply_overrides(text, "quickstart", {"relax_threshold": "2.5", "concurrency": "2", "max_cycles": "9"})
     before, after = text.splitlines(), out.splitlines()
-    changed = [l for l in after if l not in before]
+    changed = [line for line in after if line not in before]
     # an existing profile line is rewritten in place; keys only in DEFAULT are appended to the profile
     assert sorted(changed) == ["concurrency = 2", "max_cycles = 9", "relax_threshold = 2.5"]
     assert len(after) == len(before) + 2
