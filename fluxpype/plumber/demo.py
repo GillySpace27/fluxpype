@@ -42,12 +42,15 @@ relax_concurrency = 4
 """
 
 
-def prepare_home() -> Path:
-    """Create the temp plumber home and return it (also exported as FLUX_PLUMBER_HOME)."""
-    home = Path(tempfile.mkdtemp(prefix="flux-plumb-demo-"))
+def prepare_home(home: Path = None) -> Path:
+    """Seed `home` (default: a new temp directory) as the demo plumber home; it is exported as FLUX_PLUMBER_HOME."""
+    if home is None:
+        home = Path(tempfile.mkdtemp(prefix="flux-plumb-demo-"))
+    home = Path(home)
+    home.mkdir(parents=True, exist_ok=True)
     os.environ["FLUX_PLUMBER_HOME"] = str(home)
     data = home / "data"
-    data.mkdir()
+    data.mkdir(exist_ok=True)
     text = paths.shipped_config().read_text(encoding="utf-8")
     text = config_io.set_value(text, "DEFAULT", "data_dir", str(data))
     text = config_io.set_value(text, "DEFAULT", "jsoc_email", "demo@example.com")

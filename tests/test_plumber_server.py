@@ -274,3 +274,53 @@ def test_spa_fallback_and_static_traversal(client):
     assert client.get("/..%2f..%2fetc%2fpasswd").status_code in (200, 404, 503)
     r = client.get("/..%2f..%2fetc%2fpasswd")
     assert "root:" not in r.text
+
+
+# ------------------------------------------------------------------ log grep
+
+
+def _log_task(client, lines):
+    job = client.post("/api/jobs", json={"profile": "t_one", "backend": "fake", "speed": 300}, headers=H).json()
+    done = wait_job(client, job["id"])
+    task = client.sched.store.get_task(done["tasks"][0]["id"])
+    with open(os.path.join(task["run_dir"], "run.log"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return task["id"]
+
+
+def test_log_grep_returns_numbered_windows(client):
+    lines = [f"line {i}" for i in range(1, 31)]
+    lines[9] = "the Needle is here"
+    lines[11] = "another NEEDLE"
+    lines[24] = "needle again"
+    tid = _log_task(client, lines)
+    r = client.get(f"/api/tasks/{tid}/log", params={"grep": "needle", "context": 1}, headers=H).json()
+    assert r["matches"] == 3 and not r["truncated"]
+    assert r["text"].split("\n") == [
+        "9-line 9",
+        "10:the Needle is here",
+        "11-line 11",
+        "12:another NEEDLE",
+        "13-line 13",
+        "--",
+        "24-line 24",
+        "25:needle again",
+        "26-line 26",
+    ]
+    # a regex is not interpreted, and no match is not an error
+    none = client.get(f"/api/tasks/{tid}/log", params={"grep": "n.edle"}, headers=H).json()
+    assert none["matches"] == 0 and none["text"] == ""
+    # default context is 3, and it is capped at 20
+    d = client.get(f"/api/tasks/{tid}/log", params={"grep": "needle again"}, headers=H).json()
+    assert d["lines"] == 7
+    big = client.get(f"/api/tasks/{tid}/log", params={"grep": "needle again", "context": 500}, headers=H).json()
+    assert big["context"] == 20
+
+
+def test_log_grep_is_capped_at_400_lines(client):
+    tid = _log_task(client, [f"hit {i}" for i in range(1000)])
+    r = client.get(f"/api/tasks/{tid}/log", params={"grep": "hit", "context": 0}, headers=H).json()
+    assert r["truncated"] and r["lines"] == 400 and len(r["text"].split("\n")) == 400
+    # without grep the log endpoint is unchanged
+    plain = client.get(f"/api/tasks/{tid}/log", headers=H).json()
+    assert "offset" in plain and "matches" not in plain

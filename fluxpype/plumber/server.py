@@ -5,6 +5,7 @@ import hmac
 import json
 import math
 import os
+from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -371,6 +372,65 @@ def create_app(
         except SchedulerError as e:
             fail(e, 404)
 
+    GREP_MAX_LINES = 400
+    GREP_LINE_CHARS = 2000
+
+    def grep_log(path: str, size: int, needle: str, context: int) -> Dict[str, Any]:
+        """Line windows around case-insensitive substring matches, as `N:line` (match) / `N-line` (context)."""
+        wanted, needle = needle, needle.lower()
+        before: deque = deque(maxlen=context)
+        out: List[str] = []
+        matches = 0
+        after_left = 0
+        last_emitted = 0
+        truncated = False
+
+        def emit(n: int, text: str, is_match: bool) -> bool:
+            nonlocal last_emitted
+            if len(out) >= GREP_MAX_LINES:
+                return False
+            if last_emitted and n > last_emitted + 1:
+                out.append("--")
+            out.append(f"{n}{':' if is_match else '-'}{text[:GREP_LINE_CHARS]}")
+            last_emitted = n
+            return True
+
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for n, line in enumerate(f, 1):
+                line = line.rstrip("\r\n")
+                if needle in line.lower():
+                    matches += 1
+                    ok = True
+                    while before and ok:
+                        bn, btext = before.popleft()
+                        if bn > last_emitted:
+                            ok = emit(bn, btext, False)
+                    before.clear()
+                    if ok:
+                        ok = emit(n, line, True)
+                    if not ok:
+                        truncated = True
+                        break
+                    after_left = context
+                elif after_left > 0:
+                    after_left -= 1
+                    if not emit(n, line, False):
+                        truncated = True
+                        break
+                else:
+                    before.append((n, line))
+        lines = [x for x in out if x != "--"]
+        return {
+            "file": os.path.basename(path),
+            "size": size,
+            "grep": wanted,
+            "context": context,
+            "matches": matches,
+            "lines": len(lines),
+            "truncated": truncated,
+            "text": "\n".join(out),
+        }
+
     def log_file(t) -> Optional[str]:
         for name in ("run.log", "stdout.log"):
             p = os.path.join(t["run_dir"], name)
@@ -379,8 +439,12 @@ def create_app(
         return None
 
     @app.get("/api/tasks/{task_id}/log")
-    def task_log(task_id: str, offset: int = -1, limit: int = 262144):
-        """Log text from byte `offset` (default: the last `limit` bytes). Returns the next offset."""
+    def task_log(task_id: str, offset: int = -1, limit: int = 262144, grep: Optional[str] = None, context: int = 3):
+        """Log text from byte `offset` (default: the last `limit` bytes). Returns the next offset.
+
+        With `grep` (a case-insensitive plain substring), returns matching lines with `context` lines around
+        each (0 to 20), numbered like `grep -n`, at most GREP_MAX_LINES lines in all.
+        """
         t = sched.store.get_task(task_id)
         if not t:
             raise HTTPException(404, "unknown task")
@@ -388,6 +452,8 @@ def create_app(
         if path is None:
             return reply({"offset": 0, "size": 0, "text": "", "file": None})
         size = os.path.getsize(path)
+        if grep:
+            return reply(grep_log(path, size, grep, min(max(context, 0), 20)))
         limit = min(max(limit, 1024), 2 * 1024 * 1024)
         start = max(size - limit, 0) if offset < 0 else min(offset, size)
         with open(path, "rb") as f:
