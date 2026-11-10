@@ -12,7 +12,7 @@ import type { Job, ProfileDetail, ProfileEntry } from "../lib/types";
 const CACHE_LABEL: Record<string, string> = { magnetogram: "Mag", footpoints: "Foot", pfss: "PFSS", world: "World", relaxed_world: "Relaxed" };
 
 /** The knobs worth changing per run, shown first in the run drawer. */
-const COMMON = ["rotations", "n_fluxons", "adapts", "methods", "max_cycles", "relax_threshold", "do_steps", "light", "wind"];
+const COMMON = ["rotations", "fluxon_count", "adapts", "flow_method", "max_cycles", "relax_threshold", "do_steps", "light", "do_wind_calc"];
 
 function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data: status } = useStatus();
@@ -273,7 +273,7 @@ export function ProfilesPage() {
               {p.errors.length > 0 ? <Badge tone="fail">error</Badge> : <Badge>{p.task_count} task{p.task_count === 1 ? "" : "s"}</Badge>}
             </div>
             <p className="mt-1 truncate text-xs text-muted">
-              {p.axes.rotations?.length ? `CR ${p.axes.rotations.slice(0, 3).join(", ")}${p.axes.rotations.length > 3 ? "..." : ""}` : "no rotations"} · {p.axes.n_fluxons?.join(", ") ?? "?"} fluxons
+              {p.axes.rotations?.length ? `CR ${p.axes.rotations.slice(0, 3).join(", ")}${p.axes.rotations.length > 3 ? "..." : ""}` : "no rotations"} · {p.axes.fluxon_count?.join(", ") ?? "?"} fluxons
             </p>
           </Card>
         </Link>

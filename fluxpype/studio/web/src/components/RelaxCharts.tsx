@@ -134,7 +134,7 @@ function Chart({ def, xs, height, onCursor }: { def: ChartDef; xs: number[]; hei
   return <div ref={host} className="w-full" style={{ height }} onMouseLeave={() => onCursor(null)} />;
 }
 
-export function RelaxCharts({ points, cycles, height = 210 }: { points: RelaxPoint[]; cycles: RelaxCycle[]; height?: number }) {
+export function RelaxCharts({ points, cycles, height = 210, idle }: { points: RelaxPoint[]; cycles: RelaxCycle[]; height?: number; idle?: { title: string; body: string } }) {
   const { theme } = useTheme();
   const [hover, setHover] = useState<number | null>(null);
   const pts = useMemo(() => points.filter((p) => p.step != null), [points]);
@@ -171,7 +171,7 @@ export function RelaxCharts({ points, cycles, height = 210 }: { points: RelaxPoi
   }, [pts, bounds, markers, theme]);
 
   if (pts.length < 2) {
-    return <EmptyState icon={<Activity className="h-5 w-5" />} title="Waiting for relaxation data" body="Charts appear as soon as the relaxation stage starts reporting steps." />;
+    return <EmptyState icon={<Activity className="h-5 w-5" />} title={idle?.title ?? "Waiting for relaxation data"} body={idle?.body ?? "Charts appear as soon as the relaxation stage starts reporting steps."} />;
   }
   const h = hover != null && hover < pts.length ? pts[hover] : pts[pts.length - 1];
   return (

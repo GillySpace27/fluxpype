@@ -105,7 +105,18 @@ function TaskView({ row }: { row: TaskRow }) {
           <section>
             <SectionTitle title="Relaxation" hint="Stiffness should fall toward the threshold; dotted lines mark cycles." />
             <Card className="p-4">
-              <RelaxCharts points={relax?.points ?? []} cycles={relax?.cycles ?? []} />
+              <RelaxCharts
+                points={relax?.points ?? []}
+                cycles={relax?.cycles ?? []}
+                idle={(() => {
+                  const rs = t.stages.find((s) => s.id === "relax")?.status;
+                  if (rs === "skipped") return { title: "Relaxation skipped", body: "This task did not run the relaxation stage." };
+                  if (rs === "ok") return { title: "No relaxation steps recorded", body: "The stage finished without reporting steps, usually because an existing relaxed world was reused from the cache." };
+                  if (rs === "failed") return { title: "Relaxation failed before reporting steps", body: "The Log tab shows where it stopped." };
+                  if (!["pending", "running"].includes(t.status)) return { title: "Relaxation did not run", body: "The task ended before reaching the relaxation stage." };
+                  return undefined;
+                })()}
+              />
             </Card>
           </section>
           <section>
