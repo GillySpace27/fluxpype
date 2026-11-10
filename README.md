@@ -67,11 +67,55 @@ A local web GUI for running and watching the pipeline: choose a profile, overrid
 pip install -e ".[plumber]"
 flux-plumb              # opens http://localhost:8765 (a one-time token URL is printed)
 flux-plumb --demo       # simulated pipeline, no FLUX/PDL needed
+flux-plumb --stop       # stop the Plumber for this state directory (running jobs keep running)
 ```
+
+Only one Plumber runs per state directory (a lock file enforces it); a second `flux-plumb` prints where the first is and exits with status 3. `--headless` runs without a browser or stdout output and logs to `<home>/server.log`.
 
 Plumber binds to 127.0.0.1 only. On a remote machine use an SSH tunnel (`ssh -L 8765:localhost:8765 host`). It never writes `config.ini`; per-run overrides are applied to a snapshot copy. The terminal behavior of `flux-config-run` is unchanged unless the Plumber environment variables are set. See `docs/gui/PLAN.md` and `docs/gui/EVENTS.md`.
 
 Frontend sources live in `fluxpype/plumber/web` (React, TypeScript, Vite, Tailwind). The built bundle in `dist/` is committed, so users do not need Node. To rebuild: `cd fluxpype/plumber/web && npm ci && npm run build`.
+
+### MCP server
+
+`flux-plumb-mcp` lets an AI assistant (Claude Code, Claude Desktop, any MCP client) look at and drive Plumber: submit jobs, wait for stages, read logs and relaxation curves, look at plots. It is a client of Plumber's local API, speaks MCP over stdio, and finds (or, if none is running, starts) the Plumber for your state directory. Tools, safety notes and the autostart lifetime are in [docs/mcp/TOOLS.md](docs/mcp/TOOLS.md).
+
+Install the extra into the same environment you use for Plumber:
+
+```bash
+cd ~/vscode/fluxons-plumber/fluxpype
+.venv-plumber/bin/pip install -e ".[mcp]"
+```
+
+Claude Code:
+
+```bash
+cd ~/vscode/fluxons-plumber/fluxpype
+claude mcp add fluxpype -- "$PWD/.venv-plumber/bin/python" -m fluxpype.plumber.mcp_server
+```
+
+Claude Desktop (`claude_desktop_config.json`; use the absolute path of the venv's Python):
+
+```json
+{
+  "mcpServers": {
+    "fluxpype": {
+      "command": "/home/you/vscode/fluxons-plumber/fluxpype/.venv-plumber/bin/python",
+      "args": ["-m", "fluxpype.plumber.mcp_server"],
+      "cwd": "/home/you/vscode/fluxons-plumber/fluxpype"
+    }
+  }
+}
+```
+
+A Plumber started this way keeps running after the assistant exits, because its jobs must. Stop it with:
+
+```bash
+cd ~/vscode/fluxons-plumber/fluxpype
+.venv-plumber/bin/flux-plumb --stop
+```
+
+Running jobs are detached and keep going; the next Plumber picks them up. Options: `--home PATH`, `--url` with `--token-file` for an already running local Plumber, `--no-autostart`, and `--demo` (needs `--home`) for a simulated pipeline.
 
 ![Overview](docs/gui/screenshots/overview.png)
 
