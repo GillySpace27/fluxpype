@@ -1,13 +1,12 @@
 """Job presets (user presets beside config.ini), the active backend, the sandbox and health checks."""
 
 import os
-import time
 
 import pytest
 
 from fluxpype.plumber.backends.fake import FakeBackend
 from fluxpype.plumber.backends.local import LocalBackend
-from fluxpype.plumber.presets import PresetError, PresetStore
+from fluxpype.plumber.presets import PresetError
 
 
 @pytest.fixture
