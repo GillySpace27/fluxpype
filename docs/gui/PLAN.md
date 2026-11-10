@@ -170,3 +170,13 @@ Run `pytest -m "not integration"` for studio and events tests at the end; report
 | I7 cluster assumptions | Recorded for the SSH/Slurm follow-up. |
 | Over-scoping | Mostly adopted; kept the cache table + trash and the profile cache-hit preview. |
 | Testability | Adopted: perl shim, cross-language event test, honest fixtures, package-data. |
+
+## Implementation notes
+
+Deviations and caveats recorded after implementation.
+
+- The real pipeline (PDL and Flux) was not available in the build environment. Everything that touches it is covered by the Perl shim, the fake science modules and demo mode, not by a real run.
+- `flux-studio` reports its version as `dev` when the package is not installed with metadata.
+- The run drawer exposes only settings the profile marks editable; the first group shown is a fixed list of common knobs, the rest sit behind "Show more".
+- SSH and Slurm backends appear in Settings as "coming next" and are not implemented.
+- Cache table renders at most 200 rows at a time (with "show more"); the API returns up to 20000 records.
