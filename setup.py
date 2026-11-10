@@ -35,6 +35,8 @@ setup(
         "matplotlib",
         "numpy<2.0",
         "sunpy",
+        "sunkit-image",  # fluxlight.py: RHEF on column density
+        "joblib",  # thomson_scattering_flux.py
         "pandas",
         "tqdm",
         "astropy<7.0",
