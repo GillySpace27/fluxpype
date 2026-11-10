@@ -41,7 +41,7 @@ from fluxpype.console import (
     write_to_log,
 )
 
-# Capabilities advertised by `flux-config-run --capabilities` (the studio probes this
+# Capabilities advertised by `flux-config-run --capabilities` (the plumber probes this
 # before submitting, so an older install cannot silently run a whole profile).
 FEATURES = ["only", "events", "config_file", "log_file", "task_timeout"]
 
@@ -320,7 +320,7 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
 
     emit(f"\nExecuting: {' '.join(command)}\n", style="dim")
 
-    # Own session so a timeout (or a cancel from the studio) can kill Perl and every
+    # Own session so a timeout (or a cancel from the plumber) can kill Perl and every
     # forked Flux daughter together.
     proc = subprocess.Popen(
         command,

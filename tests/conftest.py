@@ -36,7 +36,7 @@ def unit_test_mocks(monkeypatch: None):
 
 
 # ---------------------------------------------------------------------------
-# FLUX Studio fixtures
+# Fluxpype Plumber fixtures
 
 
 TEST_PROFILES = """
@@ -79,17 +79,17 @@ light = 1
 
 
 @pytest.fixture
-def studio_home(tmp_path, monkeypatch):
-    home = tmp_path / "studio-home"
+def plumber_home(tmp_path, monkeypatch):
+    home = tmp_path / "plumber-home"
     home.mkdir()
-    monkeypatch.setenv("FLUX_STUDIO_HOME", str(home))
+    monkeypatch.setenv("FLUX_PLUMBER_HOME", str(home))
     return home
 
 
 @pytest.fixture
-def studio_config(tmp_path, studio_home):
+def plumber_config(tmp_path, plumber_home):
     """A config.ini (shipped profiles plus test ones) whose data_dir lives in tmp_path."""
-    from fluxpype.studio import config_io, paths
+    from fluxpype.plumber import config_io, paths
 
     text = paths.shipped_config().read_text(encoding="utf-8")
     data = tmp_path / "data"
@@ -101,22 +101,22 @@ def studio_config(tmp_path, studio_home):
 
 
 @pytest.fixture
-def make_scheduler(studio_home, studio_config):
+def make_scheduler(plumber_home, plumber_config):
     """Factory for schedulers over one persistent store (call twice to simulate a server restart)."""
-    from fluxpype.studio import paths
-    from fluxpype.studio.backends.fake import FakeBackend
-    from fluxpype.studio.scheduler import Scheduler
-    from fluxpype.studio.store import Store
+    from fluxpype.plumber import paths
+    from fluxpype.plumber.backends.fake import FakeBackend
+    from fluxpype.plumber.scheduler import Scheduler
+    from fluxpype.plumber.store import Store
 
     made = []
 
     def make(**kw):
-        store = Store(paths.db_path(studio_home))
+        store = Store(paths.db_path(plumber_home))
         sched = Scheduler(
             store,
             kw.pop("backends", {"fake": FakeBackend()}),
-            studio_config,
-            home=studio_home,
+            plumber_config,
+            home=plumber_home,
             cpu_budget=kw.pop("cpu_budget", 64),
             **kw,
         )

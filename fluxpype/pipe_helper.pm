@@ -303,7 +303,7 @@ sub find_project_root {
 }
 
 sub find_config_file {
-    # FLUXPYPE_CONFIG_FILE (a per-job snapshot made by flux-studio) wins when set
+    # FLUXPYPE_CONFIG_FILE (a per-job snapshot made by flux-plumb) wins when set
     if (defined $ENV{FLUXPYPE_CONFIG_FILE} && length $ENV{FLUXPYPE_CONFIG_FILE}) {
         my $override = expand_home_dir($ENV{FLUXPYPE_CONFIG_FILE});
         return $override if -e $override;

@@ -1,0 +1,258 @@
+export type StageStatus = "pending" | "running" | "ok" | "failed" | "skipped";
+export type Source = "event" | "log" | "file" | "none";
+export type TaskStatus = "pending" | "running" | "ok" | "failed" | "timeout" | "cancelled" | "crashed";
+export type JobStatus = "pending" | "running" | "ok" | "failed" | "cancelled" | "partial";
+
+export interface Stage {
+  id: string;
+  label: string;
+  status: StageStatus;
+  source: Source;
+  started: number | null;
+  ended: number | null;
+  elapsed_s: number | null;
+  detail: string | null;
+  verified: boolean | null;
+}
+
+export interface RelaxPoint {
+  step: number;
+  stiffness: number | null;
+  fmax: number | null;
+  f_av: number | null;
+  fs_av: number | null;
+  n_av: number | null;
+  vertices: number | null;
+  t: number | null;
+  s: "event" | "log";
+}
+
+export interface RelaxCycle {
+  cycle: number;
+  threshold?: number | null;
+  stiffness?: number | null;
+  cum_time_s?: number | null;
+  steps?: number | null;
+  nc_curve?: number | null;
+  nc_proxi?: number | null;
+  broken?: number | null;
+  t?: number | null;
+  s: "event" | "log";
+}
+
+export interface Artifact {
+  path: string;
+  kind: string;
+  t: number | null;
+  source: Source;
+}
+
+export interface TaskState {
+  id: string;
+  job_id: string;
+  profile: string;
+  idx: number;
+  cr: string;
+  nflux: string;
+  adapt: string;
+  method: string;
+  status: TaskStatus;
+  started: number | null;
+  ended: number | null;
+  elapsed_s: number | null;
+  exit_code: number | null;
+  slots: number;
+  attempt: number;
+  mode: "events" | "degraded" | "log" | "none";
+  degraded: boolean;
+  degraded_reason: string | null;
+  current_stage: string | null;
+  stages: Stage[];
+  relax: {
+    n_points: number;
+    latest: RelaxPoint | null;
+    cycle: RelaxCycle | null;
+    cycles: number;
+    threshold: number | null;
+    steps_per_s: number | null;
+    source: Source;
+  };
+  metrics: { name: string; value: number | string | null; unit: string | null; source: Source }[];
+  warnings: string[];
+  artifacts: Artifact[];
+  run: { start: Record<string, unknown> | null; end: { status: string; exit_code: number; elapsed_s: number } | null; log_done: boolean };
+  sources: {
+    events: { present: boolean; lines: number; bad_lines: number; last_change: number | null; age_s: number | null };
+    log: { present: boolean; lines: number; bytes: number; last_change: number | null; age_s: number | null };
+    files: { checked: boolean; ok: string[]; missing: string[] };
+    process: { alive: boolean | null };
+  };
+  outcome: string | null;
+  observed_at: number;
+  spark?: number[];
+}
+
+export interface TaskRow {
+  id: string;
+  job_id: string;
+  idx: number;
+  cr: string;
+  nflux: string;
+  adapt: string;
+  method: string;
+  status: TaskStatus;
+  exit_code: number | null;
+  created: number;
+  started: number | null;
+  ended: number | null;
+  slots: number;
+  attempt: number;
+  profile?: string;
+}
+
+export interface Job {
+  id: string;
+  profile: string;
+  overrides: Record<string, string>;
+  backend: string;
+  status: JobStatus;
+  created: number;
+  started: number | null;
+  ended: number | null;
+  extra: Record<string, string>;
+  tasks: TaskRow[];
+  counts: Record<string, number>;
+  states?: Record<string, TaskState>;
+}
+
+export interface QueueState {
+  paused: boolean;
+  max_parallel: number;
+  cpu_budget: number;
+  running: number;
+  pending: number;
+  slots_used: number;
+  default_backend: string;
+  backends: Record<string, { kind: string; slots: number; shared_fs: boolean; description: string }>;
+  pending_tasks?: TaskRow[];
+}
+
+export interface RecentTask extends TaskRow {
+  profile: string;
+  thumb: string | null;
+  stages_ok: number;
+  stages: { id: string; status: StageStatus; source: Source }[];
+  failure: string | null;
+}
+
+export interface Overview {
+  queue: QueueState;
+  running: TaskState[];
+  pending: TaskRow[];
+  recent: RecentTask[];
+}
+
+export interface StatusInfo {
+  version: string;
+  demo: boolean;
+  plumber_home: string;
+  config_path: string;
+  data_dir: string;
+  backends: { name: string; kind: string; slots: number; shared_fs: boolean; description: string; active: boolean }[];
+  default_backend: string;
+  scenarios: string[];
+  stages: { id: string; label: string }[];
+  forbidden_keys: string[];
+}
+
+export interface ProfileSummary {
+  name: string;
+  batch_name: string;
+  task_count: number;
+  axes: Record<string, string[]>;
+  errors: string[];
+  warnings: string[];
+  own_keys: number;
+  is_default_profile: boolean;
+}
+
+export interface ProfileEntry {
+  key: string;
+  value: string;
+  resolved: string | null;
+  source: "DEFAULT" | "profile";
+  overrides_default: boolean;
+  comment: string | null;
+  editable: boolean;
+}
+
+export interface ProfileDetail {
+  name: string;
+  entries: ProfileEntry[];
+  tasks: {
+    cr: string;
+    nflux: string;
+    adapt: string;
+    method: string;
+    inst: string;
+    cache: { magnetogram: boolean; footpoints: boolean; pfss: boolean; world: boolean; relaxed_world: boolean };
+  }[];
+  task_count: number;
+  truncated: boolean;
+  errors: string[];
+  warnings: string[];
+  axes: Record<string, string[]>;
+  data_dir: string;
+  slots: number;
+}
+
+export interface CacheRecord {
+  id: string;
+  path: string;
+  name: string;
+  size: number;
+  mtime: number;
+  kind: string;
+  cr?: string;
+  batch?: string;
+  n?: string;
+  inst?: string;
+  reduce?: string;
+  sel?: string;
+  steps?: string;
+}
+
+export interface CacheData {
+  data_dir: string;
+  exists: boolean;
+  total_count: number;
+  total_size: number;
+  tiles: { kind: string; count: number; size: number }[];
+  scanned_at: number;
+  trash: { count: number; size: number };
+  records: CacheRecord[];
+  truncated: boolean;
+}
+
+export interface TrashItem {
+  id: string;
+  folder: string;
+  path: string;
+  size: number;
+  mtime: number;
+  kind: string;
+}
+
+export interface RelaxSeries {
+  n: number;
+  points: RelaxPoint[];
+  cycles: RelaxCycle[];
+}
+
+export interface LogChunk {
+  offset: number;
+  start?: number;
+  size: number;
+  text: string;
+  file: string | null;
+}

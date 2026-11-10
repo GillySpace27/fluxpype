@@ -59,19 +59,19 @@ The pipe can be invoked in four ways.
 >\>\>\> run()
 
 
-## FLUX Studio
+## Fluxpype Plumber
 
 A local web GUI for running and watching the pipeline: choose a profile, override settings for one run, queue tasks, follow stages and relaxation live, browse plots and logs, and clean up cached files.
 
 ```bash
-pip install -e ".[studio]"
-flux-studio              # opens http://localhost:8765 (a one-time token URL is printed)
-flux-studio --demo       # simulated pipeline, no FLUX/PDL needed
+pip install -e ".[plumber]"
+flux-plumb              # opens http://localhost:8765 (a one-time token URL is printed)
+flux-plumb --demo       # simulated pipeline, no FLUX/PDL needed
 ```
 
-Studio binds to 127.0.0.1 only. On a remote machine use an SSH tunnel (`ssh -L 8765:localhost:8765 host`). It never writes `config.ini`; per-run overrides are applied to a snapshot copy. The terminal behavior of `flux-config-run` is unchanged unless the Studio environment variables are set. See `docs/gui/PLAN.md` and `docs/gui/EVENTS.md`.
+Plumber binds to 127.0.0.1 only. On a remote machine use an SSH tunnel (`ssh -L 8765:localhost:8765 host`). It never writes `config.ini`; per-run overrides are applied to a snapshot copy. The terminal behavior of `flux-config-run` is unchanged unless the Plumber environment variables are set. See `docs/gui/PLAN.md` and `docs/gui/EVENTS.md`.
 
-Frontend sources live in `fluxpype/studio/web` (React, TypeScript, Vite, Tailwind). The built bundle in `dist/` is committed, so users do not need Node. To rebuild: `cd fluxpype/studio/web && npm ci && npm run build`.
+Frontend sources live in `fluxpype/plumber/web` (React, TypeScript, Vite, Tailwind). The built bundle in `dist/` is committed, so users do not need Node. To rebuild: `cd fluxpype/plumber/web && npm ci && npm run build`.
 
 ![Overview](docs/gui/screenshots/overview.png)
 

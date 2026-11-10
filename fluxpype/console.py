@@ -43,7 +43,7 @@ def init_log(batch_name: str = "run") -> Path:
     if _log_file is not None:
         return Path(_log_file.name)
 
-    # FLUXPYPE_LOG_FILE (set by flux-studio) names the log explicitly; append, never clobber
+    # FLUXPYPE_LOG_FILE (set by flux-plumb) names the log explicitly; append, never clobber
     override = os.environ.get("FLUXPYPE_LOG_FILE")
     if override:
         log_path = Path(override).expanduser()

@@ -1,6 +1,6 @@
 # FLUXpype progress events (schema v1)
 
-FLUXpype can describe what it is doing as a stream of JSON Lines. FLUX Studio
+FLUXpype can describe what it is doing as a stream of JSON Lines. Fluxpype Plumber
 reads that stream to draw live progress. Nothing changes for terminal runs:
 **when `FLUXPYPE_EVENTS` is unset, every emitter is a no-op.**
 
@@ -66,7 +66,7 @@ In pipeline order: `magnetogram`, `footpoints`, `pfss`, `world`, `relax`,
 * `fluxlight` is reported `skipped` (detail `light=0`) unless `light` is set.
 * When relaxation finds an existing relaxed world, `relax` ends `ok` with detail
   `reused relaxed world`. Other stages that find cached output are not
-  distinguished from fresh work in v1; the studio's file probes show what exists.
+  distinguished from fresh work in v1; the plumber's file probes show what exists.
 
 ## Where the instrumentation lives
 
@@ -78,9 +78,9 @@ In pipeline order: `magnetogram`, `footpoints`, `pfss`, `world`, `relax`,
 | `relax.step` | `science/simple_relaxer.pm` (inside the existing print block) |
 | `artifact` | `science/fluxlight.py` (after each `savefig`) |
 
-## How the studio degrades without events
+## How the plumber degrades without events
 
-The studio never trusts a single source. For each task it combines:
+The plumber never trusts a single source. For each task it combines:
 
 1. **events** from `FLUXPYPE_EVENTS` (primary),
 2. **log parsing** of `FLUXPYPE_LOG_FILE` (ANSI stripped) for the existing banners,

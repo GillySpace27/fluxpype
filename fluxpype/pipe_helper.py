@@ -186,7 +186,7 @@ def find_config_file(config_filename):
     shipped beside this module. The Perl side (find_config_file in pipe_helper.pm) also
     reads the shipped one, so both halves of a run see the same file from any cwd.
 
-    FLUXPYPE_CONFIG_FILE, when set, wins over everything (the studio uses it to freeze a
+    FLUXPYPE_CONFIG_FILE, when set, wins over everything (the plumber uses it to freeze a
     per-job snapshot); if it is set but missing that is an error, not a silent fallback."""
     override = os.environ.get("FLUXPYPE_CONFIG_FILE")
     if override:

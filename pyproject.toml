@@ -44,7 +44,7 @@ dependencies = [
 
 [project.optional-dependencies]
 FLUXcore = ["pexpect", "PyQt5"]
-studio = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+plumber = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
 
 [project.scripts]
 flux-doctor = "fluxpype.doctor:main"
@@ -52,7 +52,7 @@ flux-config-run = "fluxpype.config_runner:run"
 flux-config-view = "fluxpype.config_runner:view"
 flux-config-edit = "fluxpype.config_runner:open_config"
 flux-config-gallery = "fluxpype.config_runner:gallery"
-flux-studio = "fluxpype.studio.cli:main"
+flux-plumb = "fluxpype.plumber.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/gillyspace27/fluxpype"
@@ -64,7 +64,7 @@ where = ["."]
 include = ["fluxpype*"]
 
 [tool.setuptools.package-data]
-fluxpype = ["config.ini", "studio/web/dist/**/*", "events.pm"]
+fluxpype = ["config.ini", "plumber/web/dist/**/*", "events.pm"]
 
 [tool.pytest.ini_options]
 addopts = "--cov-report xml:coverage.xml --cov fluxpype --cov-fail-under 0 --cov-append -m 'not integration'"

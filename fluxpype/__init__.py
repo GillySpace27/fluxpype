@@ -1,7 +1,7 @@
 """FLUXpype: Python wrapper and automation for the FLUX modeling framework.
 
 The heavy science modules are imported lazily, so ``import fluxpype`` stays cheap
-(the studio and the event helpers rely on that).
+(the plumber and the event helpers rely on that).
 """
 
 import importlib

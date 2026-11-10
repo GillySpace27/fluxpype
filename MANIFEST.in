@@ -3,4 +3,4 @@ include scripts
 exclude *data*
 include fluxpype/config.ini
 include fluxpype/events.pm
-recursive-include fluxpype/studio/web/dist *
+recursive-include fluxpype/plumber/web/dist *

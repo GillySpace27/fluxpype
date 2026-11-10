@@ -1,5 +1,7 @@
-# FLUX Studio: scope for a modern GUI over fluxpype
+# Fluxpype Plumber: scope for a modern GUI over fluxpype
 
+
+Renamed 2026-11-10 from "FLUX Studio" (`flux-studio`) to "Fluxpype Plumber" (`flux-plumb`) to avoid clashing with HelioFITS Studio and with LLNL's Flux Framework scheduler.
 Status: scope draft 1 (2026-11-10). Base: `origin/main` at `0b635d2`.
 
 ## 1. What Gilly asked for
@@ -12,7 +14,7 @@ Status: scope draft 1 (2026-11-10). Base: `origin/main` at `0b635d2`.
 - Structured progress events added to fluxpype, with terminal runs behaving exactly as today, plus a fallback that reads logs and output files. The fallback verifies the happy path, provides redundancy, and degrades in a structured way when events are missing.
 - Lands on GillySpace27/fluxpype as a PR. Never on lowderchris/fluxon-mhd.
 
-Working name: **FLUX Studio** (`flux-studio` command). Rename freely.
+Working name: **Fluxpype Plumber** (`flux-plumb` command). Rename freely.
 
 ## 2. How a run works today (verified by reading the code at `0b635d2`)
 
@@ -61,7 +63,7 @@ These are the main constraints. Each one is verified in the code.
 ```
  Browser (React + TS, prebuilt, served by FastAPI)
    |  REST (CRUD: profiles, jobs, cache, artifacts)   WebSocket (live events, log tail)
- FastAPI app: fluxpype/studio/server
+ FastAPI app: fluxpype/plumber/server
    |-- ProfileService    read/validate/diff/save config.ini (comment-preserving), snapshots
    |-- JobService        queue, priorities, dependencies, cancel/retry, history (SQLite)
    |-- Backends          LocalBackend | SSHBackend | SlurmBackend   (one interface)
@@ -74,9 +76,9 @@ These are the main constraints. Each one is verified in the code.
 
 ### 4.1 Process model
 
-- `flux-studio` launches the server (uvicorn) on `127.0.0.1:8765` and opens the browser. `--host`/`--port` options exist for cluster head nodes, which are reached over an SSH tunnel. There is no auth beyond a random token printed at launch (Jupyter style) and passed as a cookie/query parameter. That is enough for localhost and tunnels.
+- `flux-plumb` launches the server (uvicorn) on `127.0.0.1:8765` and opens the browser. `--host`/`--port` options exist for cluster head nodes, which are reached over an SSH tunnel. There is no auth beyond a random token printed at launch (Jupyter style) and passed as a cookie/query parameter. That is enough for localhost and tunnels.
 - The server is a supervisor, not the executor. Jobs run as **detached** processes (`start_new_session=True`), each writing its own run directory. So restarting or closing the GUI never kills a running FLUX job, and the server re-attaches on startup by reading run directories and PIDs. This matters because jobs run for hours.
-- State lives in SQLite (`~/.fluxpype/studio/studio.db`). Run directories live under `~/.fluxpype/studio/runs/<job_id>/` and hold `config.snapshot.ini`, `job.json`, `events.jsonl`, `stdout.log`, `exit_code`, and `pid`.
+- State lives in SQLite (`~/.fluxpype/plumber/plumber.db`). Run directories live under `~/.fluxpype/plumber/runs/<job_id>/` and hold `config.snapshot.ini`, `job.json`, `events.jsonl`, `stdout.log`, `exit_code`, and `pid`.
 
 ### 4.2 Job model
 
@@ -132,7 +134,7 @@ class Backend(Protocol):
 - **SSHBackend**: runs the same command on a remote host that already has fluxpype installed (it checks with `flux-doctor` over SSH first). Tails `events.jsonl` through the SSH channel and pulls artifacts with rsync/sftp. Uses the system `ssh` binary and `~/.ssh/config`, so ProxyJump, keys and ControlMaster all work, and there is no paramiko dependency.
 - **SlurmBackend**: an SSH (or local) transport plus `sbatch` with a generated script (`--cpus-per-task` = slots, time limit = timeout), `squeue`/`sacct` for status, and `scancel` for cancel. Events go to a shared-filesystem path and are tailed over SSH.
 - **PBS/SGE**: same shape as Slurm. Left out of v1 but the interface allows it. Once Gilly learns what the NWRA cluster runs, adding it is a template plus a status parser.
-- Clusters are defined in `~/.fluxpype/studio/clusters.toml` and edited in the GUI: name, kind, host, remote fluxpype path, Python executable, scratch/data dir, and default partition/account.
+- Clusters are defined in `~/.fluxpype/plumber/clusters.toml` and edited in the GUI: name, kind, host, remote fluxpype path, Python executable, scratch/data dir, and default partition/account.
 
 ### 4.6 Cache manager
 
@@ -143,7 +145,7 @@ class Backend(Protocol):
 
 ### 4.7 Frontend
 
-- Stack: React 18 + TypeScript + Vite, Tailwind with shadcn/ui-style components (Radix primitives), TanStack Query for REST and a single WebSocket for live updates, uPlot for fast streaming time series, and lucide icons. The build output is committed under `fluxpype/studio/web/dist/` and shipped as package data, so users need no Node toolchain. Node is only needed to *develop* the frontend.
+- Stack: React 18 + TypeScript + Vite, Tailwind with shadcn/ui-style components (Radix primitives), TanStack Query for REST and a single WebSocket for live updates, uPlot for fast streaming time series, and lucide icons. The build output is committed under `fluxpype/plumber/web/dist/` and shipped as package data, so users need no Node toolchain. Node is only needed to *develop* the frontend.
 - Look: a dark-first scientific-dashboard aesthetic, with a light theme toggle.
 - Screens:
   1. **Overview**: queue strip, running tasks with stage pipeline chips (9 stages, colored by state and source), machine load (CPU, memory, disk), recent results gallery.

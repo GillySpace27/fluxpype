@@ -155,11 +155,12 @@ fluxpype/data/
 src/science/_Inline/*
 !zephyr_2007_2013.sav
 
-# FLUX Studio frontend: sources and the prebuilt bundle are tracked, the toolchain is not.
+# Fluxpype Plumber frontend: sources and the prebuilt bundle are tracked, the toolchain is not.
 # (the *.json, dist/ and *.png rules above would otherwise swallow them)
-fluxpype/studio/web/node_modules/
-!fluxpype/studio/web/*.json
-!fluxpype/studio/web/dist/
-!fluxpype/studio/web/dist/**
+fluxpype/plumber/web/node_modules/
+!fluxpype/plumber/web/*.json
+!fluxpype/plumber/web/dist/
+!fluxpype/plumber/web/dist/**
+!fluxpype/plumber/web/src/lib/
 !docs/gui/screenshots/
 !docs/gui/screenshots/*.png
