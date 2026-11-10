@@ -5,6 +5,7 @@ import hmac
 import json
 import math
 import os
+import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,8 @@ from pydantic import BaseModel, Field
 from . import config_io, paths
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
+from .health import Health
+from .presets import PresetError
 from .monitor import STAGES, first_match_for_context
 from .scheduler import Scheduler, SchedulerError
 
@@ -64,6 +67,33 @@ class QueueIn(BaseModel):
     paused: Optional[bool] = None
     max_parallel: Optional[int] = None
     cpu_budget: Optional[int] = None
+
+
+class BackendIn(BaseModel):
+    name: str
+
+
+class PresetIn(BaseModel):
+    name: str
+    base: Optional[str] = None
+    values: Dict[str, str] = Field(default_factory=dict)
+
+
+class PresetSaveIn(BaseModel):
+    values: Dict[str, str] = Field(default_factory=dict)
+    remove: List[str] = Field(default_factory=list)
+
+
+class RenameIn(BaseModel):
+    name: str
+
+
+class HiddenIn(BaseModel):
+    hidden: bool
+
+
+class ImportIn(BaseModel):
+    text: str
 
 
 class TrashIn(BaseModel):
@@ -224,8 +254,11 @@ def create_app(
         return with_cookie(await call_next(request))
 
     # ------------------------------------------------------------------ helpers
-    def cache_for(profile: Optional[str] = None) -> Cache:
-        data_dir = sched.data_dir(profile)
+    health = Health(sched, version)
+    preset_cache: Dict[str, Any] = {}
+
+    def cache_for(profile: Optional[str] = None, backend: Optional[str] = None) -> Cache:
+        data_dir = sched.data_dir(profile, backend)
         if data_dir not in caches:
             caches[data_dir] = Cache(data_dir)
         return caches[data_dir]
@@ -251,32 +284,31 @@ def create_app(
                 "config_path": sched.config_path,
                 "data_dir": sched.data_dir(),
                 "backends": [
-                    {"name": n, **b.capabilities().__dict__, "active": True} for n, b in sched.backends.items()
-                ]
-                + [
-                    {
-                        "name": "ssh",
-                        "kind": "ssh",
-                        "slots": 0,
-                        "shared_fs": False,
-                        "description": "Remote host over SSH",
-                        "active": False,
-                    },
-                    {
-                        "name": "slurm",
-                        "kind": "slurm",
-                        "slots": 0,
-                        "shared_fs": True,
-                        "description": "Slurm cluster",
-                        "active": False,
-                    },
+                    {"name": n, **b.capabilities().__dict__, "active": n == sched.active_backend}
+                    for n, b in sched.backends.items()
                 ],
                 "default_backend": sched.default_backend,
+                "active_backend": sched.active_backend,
+                "sandboxed": sched.is_sandboxed(),
                 "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
                 "stages": [{"id": s, "label": l} for s, l in STAGES],
                 "forbidden_keys": sorted(config_io.FORBIDDEN_KEYS),
             }
         )
+
+    @app.get("/api/health")
+    def health_(refresh: bool = False):
+        return reply(health.report(refresh))
+
+    @app.put("/api/backend")
+    def set_backend(body: BackendIn):
+        try:
+            state = sched.set_active_backend(body.name)
+        except SchedulerError as e:
+            fail(e)
+        preset_cache.clear()
+        hub.publish("backend_changed", {"active_backend": sched.active_backend})
+        return reply({"active_backend": sched.active_backend, "queue": state})
 
     @app.get("/api/agent-prompt")
     def agent_prompt_():
@@ -284,9 +316,29 @@ def create_app(
 
         return reply(agent_prompt.build(home=Path(sched.home), demo=demo))
 
+    def preset_cache_summary(cf, name: str, plan) -> Dict[str, Any]:
+        """How many of the preset's tasks already have each cached product (first 60 tasks), on the active backend."""
+        key = f"{sched.active_backend}|{name}|{hash(tuple(plan.tasks[:60]))}"
+        hit = preset_cache.get(key)
+        if hit and time.time() - hit[0] < 20:
+            return hit[1]
+        sample = plan.tasks[:60]
+        counts = {k: 0 for k in ("magnetogram", "footpoints", "pfss", "world", "relaxed_world")}
+        for adapt, cr, nflux, _method in sample:
+            ctx = sched.probe_context_for(name, cr, nflux, adapt, parsed=cf)
+            if not ctx:
+                continue
+            for k, v in first_match_for_context(ctx).items():
+                counts[k] += 1 if v else 0
+        out = {"tasks": len(sample), "of": len(plan.tasks), "counts": counts}
+        preset_cache[key] = (time.time(), out)
+        return out
+
     @app.get("/api/profiles")
-    def profiles():
+    def profiles(cache: bool = True):
         cf = sched.parsed()
+        hidden = set(sched.presets.hidden())
+        builtin = set(sched.presets.builtin_names())
         rows = []
         for name in cf.profiles:
             eff = cf.effective(name)
@@ -301,11 +353,71 @@ def create_app(
                     "errors": plan.errors,
                     "warnings": plan.warnings,
                     "own_keys": len(own),
+                    "origin": "builtin" if name in builtin else "user",
+                    "hidden": name in hidden,
+                    "cache": preset_cache_summary(cf, name, plan) if cache and not plan.errors else None,
                     "is_default_profile": cf.defaults.get("config_name") is not None
                     and cf.defaults["config_name"].value == name,
                 }
             )
-        return reply({"profiles": rows})
+        return reply({"profiles": rows, "deleted": list(sched.presets.trashed_sections())})
+
+    def preset_changed():
+        preset_cache.clear()
+        hub.publish("presets_changed", {})
+
+    def preset_call(fn, *a, **kw):
+        try:
+            out = fn(*a, **kw)
+        except PresetError as e:
+            fail(e)
+        preset_changed()
+        return out
+
+    @app.post("/api/profiles")
+    def preset_create(body: PresetIn):
+        name = preset_call(sched.presets.create, body.name, body.base, body.values)
+        return reply({"name": name}, 201)
+
+    @app.patch("/api/profiles/{name}")
+    def preset_save(name: str, body: PresetSaveIn):
+        preset_call(sched.presets.save, name, body.values, body.remove)
+        return reply({"name": name})
+
+    @app.post("/api/profiles/{name}/rename")
+    def preset_rename(name: str, body: RenameIn):
+        return reply({"name": preset_call(sched.presets.rename, name, body.name)})
+
+    @app.post("/api/profiles/{name}/hidden")
+    def preset_hide(name: str, body: HiddenIn):
+        return reply({"hidden": preset_call(sched.presets.set_hidden, name, body.hidden)})
+
+    @app.delete("/api/profiles/{name}")
+    def preset_delete(name: str):
+        preset_call(sched.presets.delete, name)
+        return reply({"deleted": name})
+
+    @app.post("/api/profiles-deleted/{name}/restore")
+    def preset_restore(name: str):
+        return reply({"name": preset_call(sched.presets.restore_deleted, name)})
+
+    @app.get("/api/profiles-export")
+    def preset_export(names: str):
+        wanted = [n for n in names.split(",") if n]
+        try:
+            text = sched.presets.export(wanted)
+        except PresetError as e:
+            fail(e)
+        fname = (wanted[0] if len(wanted) == 1 else "presets") + ".ini"
+        return Response(
+            text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
+    @app.post("/api/profiles-import")
+    def preset_import(body: ImportIn):
+        return reply({"added": preset_call(sched.presets.import_text, body.text)}, 201)
 
     @app.get("/api/profiles/{name}")
     def profile(name: str):
@@ -329,10 +441,10 @@ def create_app(
                     "editable": key not in config_io.FORBIDDEN_KEYS,
                 }
             )
-        data_dir = config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+        data_dir = sched.data_dir(name)
         tasks = []
         for adapt, cr, nflux, method in plan.tasks[:200]:
-            ctx = sched.probe_context_for(name, cr, nflux, adapt)
+            ctx = sched.probe_context_for(name, cr, nflux, adapt, parsed=cf)
             tasks.append(
                 {
                     "cr": cr,
@@ -355,15 +467,20 @@ def create_app(
                 "axes": plan.axes,
                 "data_dir": data_dir,
                 "slots": sched._slots(eff),
+                "origin": sched.presets.origin(name),
+                "hidden": name in set(sched.presets.hidden()),
+                "batch_name": config_io.resolve(eff, "batch_name"),
+                "backend": sched.active_backend,
+                "sandboxed": sched.is_sandboxed(),
             }
         )
 
     @app.post("/api/jobs")
     def create_job(body: JobIn):
         extra: Dict[str, str] = {}
-        backend = body.backend or sched.default_backend
+        backend = body.backend or sched.active_backend
         if body.scenario is not None or body.speed is not None:
-            if backend != "fake":
+            if not sched.is_sandboxed(backend):
                 raise HTTPException(400, "scenario and speed only apply to the fake backend")
             if body.scenario is not None:
                 if body.scenario not in SCENARIOS:
@@ -633,9 +750,8 @@ def create_app(
         if ext not in IMAGE_TYPES:
             raise HTTPException(415, "only images are served")
         real = os.path.realpath(os.path.expanduser(path))
-        roots = [os.path.realpath(sched.data_dir()), os.path.realpath(str(paths.runs_dir(sched.home)))]
-        for prof in sched.parsed().profiles:
-            roots.append(os.path.realpath(sched.data_dir(prof)))
+        roots = [os.path.realpath(d) for d in sched.all_data_dirs()]
+        roots.append(os.path.realpath(str(paths.runs_dir(sched.home))))
         if not any(real == r or real.startswith(r + os.sep) for r in set(roots)):
             raise HTTPException(403, "path is outside the data and run directories")
         if f"{os.sep}{'.flux_trash'}{os.sep}" in real:

@@ -44,12 +44,16 @@ class Scheduler:
         cpu_budget: int = None,
         stale_after: float = 120.0,
         on_change: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        presets=None,
     ):
         self.store = store
         self.backends = backends
         self.config_path = str(config_path)
         self.home = home or paths.plumber_home()
         self.default_backend = default_backend or next(iter(backends))
+        from .presets import PresetStore
+
+        self.presets = presets or PresetStore(self.home, self.config_path, store)
         self.stale_after = stale_after
         self.on_change = on_change or (lambda kind, payload: None)
         self.lock = threading.RLock()
@@ -64,19 +68,58 @@ class Scheduler:
             self.store.set_setting("max_parallel", 1)
         if self.store.get_setting("paused") is None:
             self.store.set_setting("paused", False)
+        if default_backend or self.store.get_setting("active_backend") not in self.backends:
+            self.store.set_setting("active_backend", self.default_backend)
 
     # ------------------------------------------------------------------ config
     def config_text(self) -> str:
-        with open(os.path.expanduser(self.config_path), "r", encoding="utf-8") as f:
-            return f.read()
+        """config.ini plus the user's presets: what previews read and what job snapshots are made from."""
+        return self.presets.combined_text()
 
     def parsed(self) -> config_io.ConfigFile:
         return config_io.parse(self.config_text())
 
-    def data_dir(self, profile: str = None) -> str:
+    # ------------------------------------------------------------------ backends
+    @property
+    def active_backend(self) -> str:
+        name = self.store.get_setting("active_backend")
+        return name if name in self.backends else self.default_backend
+
+    def set_active_backend(self, name: str) -> Dict[str, Any]:
+        if name not in self.backends:
+            raise SchedulerError(f"unknown backend {name!r}")
+        self.store.set_setting("active_backend", name)
+        state = self.queue_state()
+        self.on_change("queue_state", state)
+        return state
+
+    def is_sandboxed(self, backend: str = None) -> bool:
+        """Simulated backends never write to the real data directory."""
+        b = self.backends.get(backend or self.active_backend)
+        return bool(b is not None and getattr(b, "kind", "") == "fake")
+
+    def sandbox_dir(self) -> str:
+        path = os.path.join(str(self.home), "sandbox", "data")
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    def data_dir(self, profile: str = None, backend: str = None) -> str:
+        if self.is_sandboxed(backend):
+            return self.sandbox_dir()
         cf = self.parsed()
         eff = cf.effective(profile) if profile and profile in cf.sections else dict(cf.defaults)
         return config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+
+    def all_data_dirs(self) -> List[str]:
+        dirs = {self.sandbox_dir()}
+        try:
+            cf = self.parsed()
+            dirs.add(config_io.resolved_path(dict(cf.defaults), "data_dir", str(paths.checkout_root())))
+            for prof in cf.profiles:
+                dirs.add(config_io.resolved_path(cf.effective(prof), "data_dir", str(paths.checkout_root())))
+        except Exception:  # noqa: BLE001 - a broken config must not hide the sandbox
+            pass
+        return sorted(dirs)
 
     # ------------------------------------------------------------------ settings
     def queue_state(self) -> Dict[str, Any]:
@@ -90,6 +133,7 @@ class Scheduler:
             "slots_used": sum(t["slots"] for t in self.store.tasks_with_status("running")),
             "backends": {n: b.capabilities().__dict__ for n, b in self.backends.items()},
             "default_backend": self.default_backend,
+            "active_backend": self.active_backend,
         }
 
     def set_queue(self, paused=None, max_parallel=None, cpu_budget=None) -> Dict[str, Any]:
@@ -124,7 +168,7 @@ class Scheduler:
         extra: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Snapshot the config, expand the profile into tasks and queue them."""
-        backend = backend or self.default_backend
+        backend = backend or self.active_backend
         if backend not in self.backends:
             raise SchedulerError(f"unknown backend {backend!r}")
         missing = [
@@ -146,6 +190,11 @@ class Scheduler:
             snapshot = config_io.make_snapshot(text, profile, overrides or {}, str(paths.checkout_root()))
         except config_io.ConfigError as e:
             raise SchedulerError(str(e)) from e
+        if self.is_sandboxed(backend):  # simulated runs write into the sandbox, never the real data_dir
+            sandbox = self.sandbox_dir()
+            snapshot = config_io.set_value(snapshot, "DEFAULT", "data_dir", sandbox)
+            if "data_dir" in config_io.parse(snapshot).sections.get(profile, {}):
+                snapshot = config_io.set_value(snapshot, profile, "data_dir", sandbox)
         eff = config_io.parse(snapshot).effective(profile)
         plan = config_io.expand_tasks(eff)
         if plan.errors:
@@ -467,14 +516,20 @@ class Scheduler:
             adapt_select=config_io.resolve(eff, "adapt_select") or "2",
         )
 
-    def probe_context_for(self, profile: str, cr: str, nflux: str, adapt: str) -> Optional[ProbeContext]:
-        """Probe context for a task of `profile` as the shipped config defines it (profile preview)."""
+    def probe_context_for(
+        self, profile: str, cr: str, nflux: str, adapt: str, backend: str = None, parsed=None
+    ) -> Optional[ProbeContext]:
+        """Probe context for a task of `profile` as the config defines it (preset preview)."""
         try:
-            eff = self.parsed().effective(profile)
+            eff = (parsed or self.parsed()).effective(profile)
         except Exception:
             return None
         return ProbeContext(
-            data_dir=config_io.resolved_path(eff, "data_dir", str(paths.checkout_root())),
+            data_dir=(
+                self.sandbox_dir()
+                if self.is_sandboxed(backend)
+                else config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+            ),
             batch=config_io.resolve(eff, "batch_name"),
             cr=cr,
             nflux=nflux,

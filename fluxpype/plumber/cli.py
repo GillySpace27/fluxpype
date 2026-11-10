@@ -271,7 +271,7 @@ def main(argv=None) -> int:
         if args.home:
             demo.prepare_home(home)  # only after the lock: this rewrites config.ini
         config_path = home / "config.ini"
-        backends = {"fake": FakeBackend()}
+        backends = {"fake": FakeBackend()}  # --demo: a throwaway home that only simulates
     else:
         from . import macapp
 
@@ -281,7 +281,8 @@ def main(argv=None) -> int:
             if not os.access(job_python, os.X_OK):
                 print(f"--python {job_python} is not an executable file", file=sys.stderr)
                 return 2
-        backends = {"local": LocalBackend(python=job_python)}
+        # every Plumber can also simulate runs: pick "Simulated" as the backend in the UI (sandboxed data)
+        backends = {"local": LocalBackend(python=job_python), "fake": FakeBackend()}
 
     if args.port is None:
         args.port = DEMO_PORT if args.demo else REAL_PORT
