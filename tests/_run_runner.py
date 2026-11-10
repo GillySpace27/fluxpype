@@ -1,4 +1,5 @@
 """Entry point used by the runner tests: real config_runner, fake science stack."""
+
 import os
 import sys
 

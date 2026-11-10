@@ -37,12 +37,19 @@ def test_task_product_in_runner_order():
     plan = c.expand_tasks(eff)
     assert len(plan.tasks) == 16 and plan.errors == []
     # adapts outermost, then rotations, then fluxon_count, then methods (config_runner.run loop order)
-    assert plan.tasks[:4] == [("0", "1", "10", "parker"), ("0", "1", "10", "wsa"), ("0", "1", "20", "parker"), ("0", "1", "20", "wsa")]
+    assert plan.tasks[:4] == [
+        ("0", "1", "10", "parker"),
+        ("0", "1", "10", "wsa"),
+        ("0", "1", "20", "parker"),
+        ("0", "1", "20", "wsa"),
+    ]
     assert plan.tasks[8][0] == "1"
 
 
 def test_ranges_and_single_values():
-    eff = c.parse("[DEFAULT]\nrotations=(2100, 2110, 5)\nfluxon_count=7\nadapts=[0]\nflow_method=parker\nrun_script=x\n[p]\n").effective("p")
+    eff = c.parse(
+        "[DEFAULT]\nrotations=(2100, 2110, 5)\nfluxon_count=7\nadapts=[0]\nflow_method=parker\nrun_script=x\n[p]\n"
+    ).effective("p")
     plan = c.expand_tasks(eff)
     assert plan.axes["rotations"] == ["2100", "2105"]
     assert plan.axes["fluxon_count"] == ["7"] and plan.axes["flow_method"] == ["parker"]
@@ -59,7 +66,9 @@ def test_matches_pipe_helper_semantics(fake_science):
 
 
 def test_trailing_comma_is_flagged_and_dropped():
-    eff = c.parse("[DEFAULT]\nrotations=[1]\nfluxon_count=[10]\nadapts=[0]\nflow_method=[parker,]\nrun_script=x\n[p]\n").effective("p")
+    eff = c.parse(
+        "[DEFAULT]\nrotations=[1]\nfluxon_count=[10]\nadapts=[0]\nflow_method=[parker,]\nrun_script=x\n[p]\n"
+    ).effective("p")
     plan = c.expand_tasks(eff)
     assert plan.axes["flow_method"] == ["parker"]
     assert any("flow_method" in w and "empty item" in w for w in plan.warnings)
@@ -126,7 +135,9 @@ def test_rejected_overrides(key, value):
         c.apply_overrides(text, "quickstart", {key: value})
 
 
-@pytest.mark.parametrize("value", ["[2200, 2201]", "(2100, 2110, 5)", "0.25", "parker", "[0.3, 0.1]", "1e3", "-1", "my batch.v2"])
+@pytest.mark.parametrize(
+    "value", ["[2200, 2201]", "(2100, 2110, 5)", "0.25", "parker", "[0.3, 0.1]", "1e3", "-1", "my batch.v2"]
+)
 def test_accepted_override_values(value):
     text = "[DEFAULT]\nk = 1\nbatch_name = b\nrun_script = s\n[p]\n"
     key = "batch_name" if value == "my batch.v2" else "k"

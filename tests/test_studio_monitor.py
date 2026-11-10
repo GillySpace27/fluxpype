@@ -102,8 +102,33 @@ def test_events_only(run):
 def test_relax_events_feed_the_series(run):
     lines = [ev("stage.start", 10, stage="relax")]
     for i in range(5):
-        lines.append(ev("relax.step", 11 + i, step=i * 20, stiffness=100 / (i + 1), fmax=0.1, f_av=0.01, fs_av=0.02, n_av=7, vertices=4000))
-    lines.append(ev("relax.cycle", 17, cycle=0, threshold=1.65, stiffness=20.0, cum_time_s=7, steps=0, nc_curve=3, nc_proxi=1, broken=0))
+        lines.append(
+            ev(
+                "relax.step",
+                11 + i,
+                step=i * 20,
+                stiffness=100 / (i + 1),
+                fmax=0.1,
+                f_av=0.01,
+                fs_av=0.02,
+                n_av=7,
+                vertices=4000,
+            )
+        )
+    lines.append(
+        ev(
+            "relax.cycle",
+            17,
+            cycle=0,
+            threshold=1.65,
+            stiffness=20.0,
+            cum_time_s=7,
+            steps=0,
+            nc_curve=3,
+            nc_proxi=1,
+            broken=0,
+        )
+    )
     run.events(*lines)
     mon = run.mon()
     s = mon.refresh(now=20, alive=True)
@@ -144,7 +169,11 @@ def test_log_only_finished_task(run):
 
 
 def test_log_only_running_task(run):
-    run.log("THE CR IS 2225\n" + banner("(pdl) Tracing Magnetogram to get 100 Footpoints") + banner("(py) Running PFSS Code to Trace Footpoints into the Corona"))
+    run.log(
+        "THE CR IS 2225\n"
+        + banner("(pdl) Tracing Magnetogram to get 100 Footpoints")
+        + banner("(py) Running PFSS Code to Trace Footpoints into the Corona")
+    )
     s = run.mon().refresh(now=5, alive=True, started=0)
     assert stage(s, "magnetogram")["status"] == "ok" and stage(s, "footpoints")["status"] == "ok"
     assert stage(s, "pfss")["status"] == "running" and s["current_stage"] == "pfss"
@@ -152,7 +181,11 @@ def test_log_only_running_task(run):
 
 
 def test_log_with_wind_only_skips_the_early_stages(run):
-    run.log("THE CR IS 2225\n" + banner("(pdl) Calculating Coronal Plasma Parameters for CR2225") + banner("(py) Plotting Solar Wind Maps for CR2225"))
+    run.log(
+        "THE CR IS 2225\n"
+        + banner("(pdl) Calculating Coronal Plasma Parameters for CR2225")
+        + banner("(py) Plotting Solar Wind Maps for CR2225")
+    )
     s = run.mon().refresh(now=5, outcome="ok", started=0)
     # the magnetogram marker prints before the wind banner, but the stages between never ran
     assert stage(s, "footpoints")["status"] != "running"
@@ -161,7 +194,10 @@ def test_log_with_wind_only_skips_the_early_stages(run):
 
 def test_ansi_and_carriage_returns_are_handled(run):
     run.log("\x1b[96m" + banner("(pdl) Relax the Initial World State from PFSS") + "\x1b[0m")
-    run.log("\rProcessing:  50%|#####     |\r" + STEP.format(n=40, t=4.1, v=10, s=5, fm=1, fa=1, fs=1, na=1).replace("\n", "\r\n"))
+    run.log(
+        "\rProcessing:  50%|#####     |\r"
+        + STEP.format(n=40, t=4.1, v=10, s=5, fm=1, fa=1, fs=1, na=1).replace("\n", "\r\n")
+    )
     s = run.mon().refresh(now=5, alive=True)
     assert stage(s, "relax")["status"] == "running" and s["relax"]["latest"]["step"] == 40
 
@@ -173,15 +209,22 @@ def test_nan_stiffness_in_the_log_does_not_crash(run):
 
 
 def test_events_win_over_the_log_and_cached_hints_are_kept(run):
-    run.events(ev("stage.start", 1, stage="relax"), ev("stage.end", 5, stage="relax", status="ok", elapsed_s=4, detail="reused relaxed world"))
-    run.log(banner("(pdl) Relax the Initial World State from PFSS") + "\n\tSkipped relaxation! Already have relaxed file.\n")
+    run.events(
+        ev("stage.start", 1, stage="relax"),
+        ev("stage.end", 5, stage="relax", status="ok", elapsed_s=4, detail="reused relaxed world"),
+    )
+    run.log(
+        banner("(pdl) Relax the Initial World State from PFSS") + "\n\tSkipped relaxation! Already have relaxed file.\n"
+    )
     s = run.mon().refresh(now=10, alive=True)
     st = stage(s, "relax")
     assert st["source"] == "event" and st["status"] == "ok" and st["detail"] == "reused relaxed world"
 
 
 def test_event_ok_stage_is_verified_against_files(run):
-    run.events(ev("stage.start", 1, stage="pfss"), ev("stage.end", 2, stage="pfss", status="ok", elapsed_s=1, detail=None))
+    run.events(
+        ev("stage.start", 1, stage="pfss"), ev("stage.end", 2, stage="pfss", status="ok", elapsed_s=1, detail=None)
+    )
     s = run.mon().refresh(now=3, alive=True, started=0)
     assert stage(s, "pfss")["verified"] is False  # events say ok but there is no pickle on disk
     run.touch("pfss/pfss_cr2225_r4_hmi.pkl")
@@ -191,7 +234,11 @@ def test_event_ok_stage_is_verified_against_files(run):
 
 
 def test_files_fill_in_for_a_stage_nobody_reported(run):
-    run.events(ev("stage.start", 1, stage="magnetogram"), ev("stage.end", 2, stage="magnetogram", status="ok", elapsed_s=1, detail=None), ev("stage.start", 3, stage="world"))
+    run.events(
+        ev("stage.start", 1, stage="magnetogram"),
+        ev("stage.end", 2, stage="magnetogram", status="ok", elapsed_s=1, detail=None),
+        ev("stage.start", 3, stage="world"),
+    )
     run.touch("batches/b/data/cr2225/floc/floc_cr2225_r4_f100_hmi.dat")
     s = run.mon().refresh(now=5, alive=True, started=0)
     fp = stage(s, "footpoints")
@@ -210,8 +257,14 @@ def test_old_output_on_disk_is_reported_as_already_there(run):
 
 
 def test_stale_events_degrade_and_recover(run):
-    run.events(ev("stage.start", 1, stage="relax"), ev("relax.step", 2, step=0, stiffness=90.0, fmax=1, f_av=1, fs_av=1, n_av=1, vertices=5))
-    run.log(banner("(pdl) Relax the Initial World State from PFSS") + STEP.format(n=0, t=0, v=5, s=90, fm=1, fa=1, fs=1, na=1))
+    run.events(
+        ev("stage.start", 1, stage="relax"),
+        ev("relax.step", 2, step=0, stiffness=90.0, fmax=1, f_av=1, fs_av=1, n_av=1, vertices=5),
+    )
+    run.log(
+        banner("(pdl) Relax the Initial World State from PFSS")
+        + STEP.format(n=0, t=0, v=5, s=90, fm=1, fa=1, fs=1, na=1)
+    )
     mon = run.mon(stale_after=30, min_stale=5)
     s = mon.refresh(now=100, alive=True)
     assert not s["degraded"]
@@ -240,7 +293,10 @@ def test_quiet_events_with_a_quiet_log_are_not_degraded(run):
 
 
 def test_stale_threshold_follows_the_observed_print_interval(run):
-    lines = [ev("relax.step", 10 + 2 * i, step=i, stiffness=50, fmax=1, f_av=1, fs_av=1, n_av=1, vertices=1) for i in range(8)]
+    lines = [
+        ev("relax.step", 10 + 2 * i, step=i, stiffness=50, fmax=1, f_av=1, fs_av=1, n_av=1, vertices=1)
+        for i in range(8)
+    ]
     run.events(*lines)
     mon = run.mon(stale_after=120, min_stale=5)
     mon.refresh(now=100, alive=True)
@@ -255,7 +311,11 @@ def test_crash_closes_the_running_stage(run):
 
 
 def test_failure_banner_in_the_log_marks_the_stage(run):
-    run.log("THE CR IS 2225\n" + banner("(py) Running PFSS Code to Trace Footpoints into the Corona") + "get_pfss.py failed (status 256)\n")
+    run.log(
+        "THE CR IS 2225\n"
+        + banner("(py) Running PFSS Code to Trace Footpoints into the Corona")
+        + "get_pfss.py failed (status 256)\n"
+    )
     s = run.mon().refresh(now=5, outcome="failed", started=0)
     st = stage(s, "pfss")
     assert st["status"] == "failed" and "get_pfss.py failed" in st["detail"]
@@ -263,7 +323,9 @@ def test_failure_banner_in_the_log_marks_the_stage(run):
 
 
 def test_successful_task_leaves_no_pending_chips(run):
-    run.events(ev("stage.start", 1, stage="wind"), ev("stage.end", 2, stage="wind", status="ok", elapsed_s=1, detail=None))
+    run.events(
+        ev("stage.start", 1, stage="wind"), ev("stage.end", 2, stage="wind", status="ok", elapsed_s=1, detail=None)
+    )
     s = run.mon().refresh(now=5, outcome="ok", started=0)
     assert all(st["status"] != "pending" for st in s["stages"])
 

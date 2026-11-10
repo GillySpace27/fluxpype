@@ -16,8 +16,29 @@ def store(tmp_path):
 
 def add(store, jid="j1", n=3):
     store.add_job(
-        {"id": jid, "profile": "p", "overrides": {"a": "1"}, "backend": "fake", "created": time.time(), "snapshot_path": "/x", "extra": {"speed": "2"}},
-        [{"id": f"{jid}-{i}", "idx": i, "cr": "1", "nflux": "2", "adapt": "0", "method": "m", "run_dir": f"/r/{i}", "lock_key": "k1\nk2", "slots": 3} for i in range(1, n + 1)],
+        {
+            "id": jid,
+            "profile": "p",
+            "overrides": {"a": "1"},
+            "backend": "fake",
+            "created": time.time(),
+            "snapshot_path": "/x",
+            "extra": {"speed": "2"},
+        },
+        [
+            {
+                "id": f"{jid}-{i}",
+                "idx": i,
+                "cr": "1",
+                "nflux": "2",
+                "adapt": "0",
+                "method": "m",
+                "run_dir": f"/r/{i}",
+                "lock_key": "k1\nk2",
+                "slots": 3,
+            }
+            for i in range(1, n + 1)
+        ],
     )
 
 

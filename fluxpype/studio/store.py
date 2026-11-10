@@ -81,7 +81,10 @@ class Store:
         return json.loads(row["value"]) if row else default
 
     def set_setting(self, key: str, value) -> None:
-        self._exec("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, json.dumps(value)))
+        self._exec(
+            "INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, json.dumps(value)),
+        )
 
     # -- jobs
     def add_job(self, job: Dict[str, Any], tasks: List[Dict[str, Any]]) -> None:
@@ -159,9 +162,7 @@ class Store:
 
     def tasks_with_status(self, *statuses: str) -> List[Dict[str, Any]]:
         marks = ",".join("?" for _ in statuses)
-        return self._all(
-            f"SELECT * FROM tasks WHERE status IN ({marks}) ORDER BY created, job_id, idx", statuses
-        )
+        return self._all(f"SELECT * FROM tasks WHERE status IN ({marks}) ORDER BY created, job_id, idx", statuses)
 
     def recent_finished(self, limit: int = 20) -> List[Dict[str, Any]]:
         marks = ",".join("?" for _ in FINISHED)

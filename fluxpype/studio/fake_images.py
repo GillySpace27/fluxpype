@@ -74,7 +74,15 @@ def world(rng, small):
 def fieldmap(rng, small):
     w, h = (96, 48) if small else (480, 240)
     cv = Canvas(w, h)
-    blobs = [(rng.uniform(0, w), rng.uniform(0.15 * h, 0.85 * h), rng.uniform(0.02, 0.07) * w, rng.choice((-1, 1)) * rng.uniform(0.5, 1)) for _ in range(16)]
+    blobs = [
+        (
+            rng.uniform(0, w),
+            rng.uniform(0.15 * h, 0.85 * h),
+            rng.uniform(0.02, 0.07) * w,
+            rng.choice((-1, 1)) * rng.uniform(0.5, 1),
+        )
+        for _ in range(16)
+    ]
     for y in range(h):
         for x in range(w):
             v = 0.0
@@ -130,7 +138,7 @@ def light(rng, small):
             if r < 0.27:
                 cv.add(x, y, (0, 0, 0))
             else:
-                cv.add(x, y, (int(255 * v), int(215 * v * v ** 0.15), int(170 * v ** 1.4)))
+                cv.add(x, y, (int(255 * v), int(215 * v * v**0.15), int(170 * v**1.4)))
     return cv.png()
 
 

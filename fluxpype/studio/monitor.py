@@ -70,7 +70,16 @@ LOG_FAILURES = [
 ]
 RE_STEP = re.compile(r"^step (\d+): time is now")
 RE_STEP_STATS = re.compile(
-    r"\((\d+) vertices; stiffness=\s*" + _NUM + r"%, fmax=\s*" + _NUM + r", f_av=\s*" + _NUM + r", fs_av=\s*" + _NUM + r", n_av=\s*" + _NUM
+    r"\((\d+) vertices; stiffness=\s*"
+    + _NUM
+    + r"%, fmax=\s*"
+    + _NUM
+    + r", f_av=\s*"
+    + _NUM
+    + r", fs_av=\s*"
+    + _NUM
+    + r", n_av=\s*"
+    + _NUM
 )
 RE_CYCLE = re.compile(r"Cycle (\d+), Cumulative relaxation time: " + _NUM + r" seconds, (\d+) steps")
 RE_FIXES = re.compile(r"Cycle (\d+) :: Curvature changed (\d+) vertices, proximity changed (\d+) vertices")
@@ -164,7 +173,9 @@ class _Tail:
 
 
 class TaskMonitor:
-    def __init__(self, run_dir: str, probe: Optional[ProbeContext] = None, stale_after: float = 120.0, min_stale: float = 10.0):
+    def __init__(
+        self, run_dir: str, probe: Optional[ProbeContext] = None, stale_after: float = 120.0, min_stale: float = 10.0
+    ):
         self.run_dir = run_dir
         self.probe = probe
         self.stale_after = stale_after
@@ -227,7 +238,9 @@ class TaskMonitor:
                 self.ev_stage.setdefault(e.get("stage"), {}).update(start=e.get("t"), status="running", end=None)
             elif kind == "stage.end":
                 st = self.ev_stage.setdefault(e.get("stage"), {})
-                st.update(end=e.get("t"), status=e.get("status", "ok"), elapsed=e.get("elapsed_s"), detail=e.get("detail"))
+                st.update(
+                    end=e.get("t"), status=e.get("status", "ok"), elapsed=e.get("elapsed_s"), detail=e.get("detail")
+                )
                 if e.get("status") == "skipped" and st.get("start") is None:
                     st["start"] = None
             elif kind == "relax.step":
@@ -291,7 +304,9 @@ class TaskMonitor:
                 self.lg_failures.append({"stage": stage, "message": m.group(0).strip(), "t": now})
         m = RE_CYCLE.search(line)
         if m:
-            self.lg_cycles.append({"cycle": int(m.group(1)), "cum_time_s": float(m.group(2)), "steps": int(m.group(3)), "t": now})
+            self.lg_cycles.append(
+                {"cycle": int(m.group(1)), "cum_time_s": float(m.group(2)), "steps": int(m.group(3)), "t": now}
+            )
         m = RE_FIXES.search(line)
         if m:
             c = int(m.group(1))
@@ -346,7 +361,10 @@ class TaskMonitor:
     # ------------------------------------------------------------------ relax
     def relax_points(self) -> List[Dict[str, Any]]:
         pts = [
-            {**{k: e.get(k) for k in ("step", "stiffness", "fmax", "f_av", "fs_av", "n_av", "vertices", "t")}, "s": "event"}
+            {
+                **{k: e.get(k) for k in ("step", "stiffness", "fmax", "f_av", "fs_av", "n_av", "vertices", "t")},
+                "s": "event",
+            }
             for e in self.ev_steps
         ]
         last = max((p["step"] for p in pts if p["step"] is not None), default=-1)
@@ -354,7 +372,26 @@ class TaskMonitor:
         return pts
 
     def relax_cycles(self) -> List[Dict[str, Any]]:
-        cyc = [{**{k: e.get(k) for k in ("cycle", "threshold", "stiffness", "cum_time_s", "steps", "nc_curve", "nc_proxi", "broken", "t")}, "s": "event"} for e in self.ev_cycles]
+        cyc = [
+            {
+                **{
+                    k: e.get(k)
+                    for k in (
+                        "cycle",
+                        "threshold",
+                        "stiffness",
+                        "cum_time_s",
+                        "steps",
+                        "nc_curve",
+                        "nc_proxi",
+                        "broken",
+                        "t",
+                    )
+                },
+                "s": "event",
+            }
+            for e in self.ev_cycles
+        ]
         have = {c["cycle"] for c in cyc}
         cyc += [{**c, "s": "log"} for c in self.lg_cycles if c["cycle"] not in have]
         return cyc
@@ -398,11 +435,15 @@ class TaskMonitor:
         if has_events and not finished and self.ev_run_end is None:
             thr = self._stale_threshold()
             quiet = now - (self.ev_last_change or now)
-            log_moved = self.lg_last_change is not None and (self.ev_last_change is None or self.lg_last_change > self.ev_last_change)
+            log_moved = self.lg_last_change is not None and (
+                self.ev_last_change is None or self.lg_last_change > self.ev_last_change
+            )
             if quiet > thr and log_moved and alive is not False:
                 degraded = True
                 reason = f"no events for {int(quiet)} s while the log is still advancing"
-        mode = "events" if has_events and not degraded else "degraded" if degraded else "log" if self.lg_lines else "none"
+        mode = (
+            "events" if has_events and not degraded else "degraded" if degraded else "log" if self.lg_lines else "none"
+        )
 
         probes = self._probe_stages(now, force=finished) if probe else {}
         stages = self._resolve_stages(mode, finished, outcome, probes, started)
@@ -426,7 +467,8 @@ class TaskMonitor:
         warnings = [f"{e.get('level', 'warn')}: {e.get('message')}" for e in self.ev_logs][-10:]
         warnings += [f.get("message") for f in self.lg_failures][-5:]
         artifacts = [
-            {"path": a.get("path"), "kind": a.get("kind", "image"), "t": a.get("t"), "source": "event"} for a in self.ev_artifacts
+            {"path": a.get("path"), "kind": a.get("kind", "image"), "t": a.get("t"), "source": "event"}
+            for a in self.ev_artifacts
         ]
         seen = {a["path"] for a in artifacts}
         artifacts += [a for a in self._images(now, started) if a["path"] not in seen]
@@ -443,7 +485,9 @@ class TaskMonitor:
                 "latest": latest,
                 "cycle": cycles[-1] if cycles else None,
                 "cycles": len(cycles),
-                "threshold": (cycles[-1].get("threshold") if cycles and cycles[-1].get("threshold") else self.lg_target),
+                "threshold": (
+                    cycles[-1].get("threshold") if cycles and cycles[-1].get("threshold") else self.lg_target
+                ),
                 "steps_per_s": steps_per_s,
                 "source": relax_src,
             },
@@ -523,7 +567,12 @@ class TaskMonitor:
             pr = probes.get(row["id"])
             if row["status"] == "pending" and pr and pr.get("ok") and (finished or i < furthest):
                 fresh = started is None or pr["mtime"] >= started - 2
-                row.update(status="ok" if fresh else "skipped", source="file", ended=pr["mtime"], detail=None if fresh else "output already on disk")
+                row.update(
+                    status="ok" if fresh else "skipped",
+                    source="file",
+                    ended=pr["mtime"],
+                    detail=None if fresh else "output already on disk",
+                )
             if row["source"] == "event" and row["status"] == "ok" and pr is not None:
                 row["verified"] = bool(pr.get("ok"))
         # close out running stages and unexplained gaps once the task is over
@@ -533,7 +582,15 @@ class TaskMonitor:
                     row["status"] = "ok" if outcome == "ok" else "failed"
                     if outcome != "ok":
                         named = next((f["message"] for f in self.lg_failures if f["stage"] == row["id"]), None)
-                        row["detail"] = row["detail"] or named or {"timeout": "task timed out", "cancelled": "cancelled", "crashed": "process vanished"}.get(outcome, "task failed")
+                        row["detail"] = (
+                            row["detail"]
+                            or named
+                            or {
+                                "timeout": "task timed out",
+                                "cancelled": "cancelled",
+                                "crashed": "process vanished",
+                            }.get(outcome, "task failed")
+                        )
                 elif row["status"] == "pending" and outcome == "ok":
                     row.update(status="skipped", detail="no evidence it ran")
         # failure text from the log goes on the stage it names

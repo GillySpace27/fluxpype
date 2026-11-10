@@ -31,7 +31,10 @@ KINDS = [
 _RULES = [
     ("magnetogram", re.compile(r"^CR(?P<cr>\d+)_(?:r(?P<reduce>\d+)_hmi|rf(?P<sel>\d+)_adapt)\.fits$")),
     ("pfss_pickle", re.compile(r"^pfss_cr(?P<cr>\d+)_r(?P<reduce>\d+)_(?P<inst>\w+)\.pkl$")),
-    ("footpoints", re.compile(r"^floc_cr(?P<cr>\d+)_(?:r(?P<reduce>\d+)|rf(?P<sel>\d+))_f(?P<n>\d+)_(?P<inst>\w+)\.dat$")),
+    (
+        "footpoints",
+        re.compile(r"^floc_cr(?P<cr>\d+)_(?:r(?P<reduce>\d+)|rf(?P<sel>\d+))_f(?P<n>\d+)_(?P<inst>\w+)\.dat$"),
+    ),
     ("relaxed_world", re.compile(r"^cr(?P<cr>\d+)_f(?P<n>\d+)_(?P<inst>\w+?)_relaxed_s(?P<steps>\d+)\.flux$")),
     ("world", re.compile(r"^cr(?P<cr>\d+)_f(?P<n>\d+)_(?P<inst>\w+)\.flux$")),
     ("fluxlight", re.compile(r"^cr(?P<cr>\d+)_fluxlight_.*\.png$")),
@@ -123,7 +126,14 @@ class Cache:
                     except OSError:
                         continue
                     rel = os.path.relpath(full, root).replace(os.sep, "/")
-                    rec = {"id": rel, "path": rel, "name": fn, "size": st.st_size, "mtime": st.st_mtime, **classify(rel)}
+                    rec = {
+                        "id": rel,
+                        "path": rel,
+                        "name": fn,
+                        "size": st.st_size,
+                        "mtime": st.st_mtime,
+                        **classify(rel),
+                    }
                     records.append(rec)
                     if len(records) >= max_files:
                         break
@@ -255,7 +265,11 @@ class Cache:
     def empty_trash(self) -> Dict[str, Any]:
         root = self._trash_root()
         removed, size = 0, 0
-        if os.path.isdir(root) and not os.path.islink(root) and os.path.realpath(root).startswith(os.path.realpath(self.data_dir) + os.sep):
+        if (
+            os.path.isdir(root)
+            and not os.path.islink(root)
+            and os.path.realpath(root).startswith(os.path.realpath(self.data_dir) + os.sep)
+        ):
             for entry in os.listdir(root):
                 full = os.path.join(root, entry)
                 for dirpath, _, filenames in os.walk(full):

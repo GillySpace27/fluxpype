@@ -23,7 +23,13 @@ from .scheduler import Scheduler, SchedulerError
 from .store import FINISHED
 
 COOKIE = "flux_studio"
-IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 WEB_DIR = Path(__file__).resolve().parent / "web" / "dist"
 
 
@@ -151,7 +157,9 @@ def create_app(
             return resp
         if path.startswith("/api/"):
             if not authed(request.cookies, request.headers):
-                return JSONResponse({"detail": "missing or wrong token; open the URL printed by flux-studio"}, status_code=401)
+                return JSONResponse(
+                    {"detail": "missing or wrong token; open the URL printed by flux-studio"}, status_code=401
+                )
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
         return await call_next(request)
@@ -187,8 +195,22 @@ def create_app(
                     {"name": n, **b.capabilities().__dict__, "active": True} for n, b in sched.backends.items()
                 ]
                 + [
-                    {"name": "ssh", "kind": "ssh", "slots": 0, "shared_fs": False, "description": "Remote host over SSH", "active": False},
-                    {"name": "slurm", "kind": "slurm", "slots": 0, "shared_fs": True, "description": "Slurm cluster", "active": False},
+                    {
+                        "name": "ssh",
+                        "kind": "ssh",
+                        "slots": 0,
+                        "shared_fs": False,
+                        "description": "Remote host over SSH",
+                        "active": False,
+                    },
+                    {
+                        "name": "slurm",
+                        "kind": "slurm",
+                        "slots": 0,
+                        "shared_fs": True,
+                        "description": "Slurm cluster",
+                        "active": False,
+                    },
                 ],
                 "default_backend": sched.default_backend,
                 "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
@@ -214,7 +236,8 @@ def create_app(
                     "errors": plan.errors,
                     "warnings": plan.warnings,
                     "own_keys": len(own),
-                    "is_default_profile": cf.defaults.get("config_name") is not None and cf.defaults["config_name"].value == name,
+                    "is_default_profile": cf.defaults.get("config_name") is not None
+                    and cf.defaults["config_name"].value == name,
                 }
             )
         return reply({"profiles": rows})
@@ -377,7 +400,15 @@ def create_app(
             cut = data.index(b"\n") + 1
             start, data = start + cut, data[cut:]
         end = start + len(data)
-        return reply({"offset": end, "start": start, "size": size, "text": data.decode("utf-8", "replace"), "file": os.path.basename(path)})
+        return reply(
+            {
+                "offset": end,
+                "start": start,
+                "size": size,
+                "text": data.decode("utf-8", "replace"),
+                "file": os.path.basename(path),
+            }
+        )
 
     @app.get("/api/queue")
     def queue():
@@ -417,8 +448,13 @@ def create_app(
                     "profile": job["profile"],
                     "thumb": arts[-1]["path"] if arts else None,
                     "stages_ok": ok_stages,
-                    "stages": [{"id": s["id"], "status": s["status"], "source": s["source"]} for s in state.get("stages", [])],
-                    "failure": next((s["detail"] for s in state.get("stages", []) if s["status"] == "failed" and s.get("detail")), None),
+                    "stages": [
+                        {"id": s["id"], "status": s["status"], "source": s["source"]} for s in state.get("stages", [])
+                    ],
+                    "failure": next(
+                        (s["detail"] for s in state.get("stages", []) if s["status"] == "failed" and s.get("detail")),
+                        None,
+                    ),
                 }
             )
         return reply({"queue": sched.queue_state(), "running": running, "pending": pending, "recent": recent})
@@ -525,7 +561,15 @@ def create_app(
                     cut = data.rfind(b"\n") + 1
                     if cut:
                         log_offsets[t["id"]] = pos + cut
-                        hub.publish("log_append", {"task_id": t["id"], "start": pos, "offset": pos + cut, "text": data[:cut].decode("utf-8", "replace")})
+                        hub.publish(
+                            "log_append",
+                            {
+                                "task_id": t["id"],
+                                "start": pos,
+                                "offset": pos + cut,
+                                "text": data[:cut].decode("utf-8", "replace"),
+                            },
+                        )
                 else:
                     log_offsets.setdefault(t["id"], pos)
 

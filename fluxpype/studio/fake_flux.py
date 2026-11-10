@@ -109,7 +109,13 @@ class Fake:
         self.event("stage.start", stage=name)
 
     def end(self, name, status="ok", detail=None, started=None):
-        self.event("stage.end", stage=name, status=status, elapsed_s=round(time.time() - (started or self.t0), 2), detail=detail)
+        self.event(
+            "stage.end",
+            stage=name,
+            status=status,
+            elapsed_s=round(time.time() - (started or self.t0), 2),
+            detail=detail,
+        )
         self.open_stage = None
 
     # -- the run
@@ -158,7 +164,9 @@ class Fake:
             self.say("Success!\n\n\t\tWriting Result...Success! File saved to:")
             red = self.reduce
             floc = (
-                f"floc_cr{cr}_r{red}_f{n}_hmi.dat" if inst == "hmi" else f"floc_cr{cr}_rf{self.adapt_sel}_f{n}_adapt.dat"
+                f"floc_cr{cr}_r{red}_f{n}_hmi.dat"
+                if inst == "hmi"
+                else f"floc_cr{cr}_rf{self.adapt_sel}_f{n}_adapt.dat"
             )
             self.touch(f"batches/{self.batch}/data/cr{cr}/floc/{floc}", size=n_actual * 96)
             self.say(f"\n\t\t\t {floc}\n\n\t\t\t```````````````````````````````\n")
@@ -172,7 +180,9 @@ class Fake:
             self.say("\n\tTracing Open and Closed Fluxons...", end="")
             self.sleep(2.0)
             if self.scenario == "fail_in_pfss":
-                self.say("\nTraceback (most recent call last):\n  File \"get_pfss.py\", line 262, in <module>\nValueError: not enough footpoints in open flux")
+                self.say(
+                    '\nTraceback (most recent call last):\n  File "get_pfss.py", line 262, in <module>\nValueError: not enough footpoints in open flux'
+                )
                 self.say("get_pfss.py failed (status 256)")
                 self.end("pfss", status="failed", detail="get_pfss.py failed (status 256)", started=t)
                 return self.finish(1, f"PDL script failed with exit code 255")
@@ -261,7 +271,9 @@ class Fake:
             t = time.time()
             self.stage("fluxlight")
             self.sleep(3.5)
-            path = self.image(f"batches/{self.batch}/data/cr{cr}/light/cr{cr}_fluxlight_light_{a.method}_1.png", "light")
+            path = self.image(
+                f"batches/{self.batch}/data/cr{cr}/light/cr{cr}_fluxlight_light_{a.method}_1.png", "light"
+            )
             self.event("artifact", path=path, kind="image")
             self.end("fluxlight", started=t)
         else:
@@ -281,7 +293,9 @@ class Fake:
         if code == 0:
             self.say("All 1 jobs succeeded.")
         else:
-            self.say(f"Error: Rotation {self.a.cr}, Fluxon {self.a.nflux}, Adapt {self.a.adapt}, Method {self.a.method}: {message}")
+            self.say(
+                f"Error: Rotation {self.a.cr}, Fluxon {self.a.nflux}, Adapt {self.a.adapt}, Method {self.a.method}: {message}"
+            )
             self.say("FAILED 1 of 1 jobs:")
         return code
 
@@ -306,7 +320,11 @@ class Fake:
                 self.say("\tComputing initial fast neighbor search...")
             while step < end_step:
                 if step % print_n == 0:
-                    stiff = 100.0 * math.exp(-step / tau) * (1 + bump) + 1.1 + self.rng.uniform(-0.04, 0.04) * (1 + stiff / 40)
+                    stiff = (
+                        100.0 * math.exp(-step / tau) * (1 + bump)
+                        + 1.1
+                        + self.rng.uniform(-0.04, 0.04) * (1 + stiff / 40)
+                    )
                     stiff = max(stiff, 0.2)
                     verts = int(verts0 * (1 + 0.045 * cycle))
                     fs_av = 2.4e-2 * (1 + 0.1 * math.sin(step / 70))
@@ -332,13 +350,17 @@ class Fake:
                 step += print_n if print_n > 1 else 1
             threshold *= 1.1
             cum = time.time() - started
-            self.say(f"\tCycle {cycle}, Cumulative relaxation time: {cum * self.speed:.2f} seconds, {cycle * do_steps} steps")
+            self.say(
+                f"\tCycle {cycle}, Cumulative relaxation time: {cum * self.speed:.2f} seconds, {cycle * do_steps} steps"
+            )
             nc_curve = nc_proxi = 0
             if cycle <= self.stop_fix:
                 nc_curve = int(verts0 * self.rng.uniform(0.04, 0.09))
                 nc_proxi = int(verts0 * self.rng.uniform(0.0, 0.02))
                 self.say("\nFixing vertex separation....")
-                self.say(f"\nCycle {cycle} :: Curvature changed {nc_curve} vertices, proximity changed {nc_proxi} vertices")
+                self.say(
+                    f"\nCycle {cycle} :: Curvature changed {nc_curve} vertices, proximity changed {nc_proxi} vertices"
+                )
                 bump = 0.35
             else:
                 self.say(f"\nCycle {cycle} :: Skipping fix of vertex separation.")

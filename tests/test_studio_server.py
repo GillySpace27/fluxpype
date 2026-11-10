@@ -106,7 +106,11 @@ def test_profile_detail_shows_sources_and_cache_hits(client):
     assert "auto" not in by_key["fl_mhdlib"]["resolved"]  # base_dir = auto is shown as the real folder
     assert by_key["data_dir"]["resolved"] is None  # no placeholder to resolve in the test config
     assert p["task_count"] == 1 and p["tasks"][0]["cache"] == {
-        "magnetogram": False, "footpoints": False, "pfss": False, "world": False, "relaxed_world": False,
+        "magnetogram": False,
+        "footpoints": False,
+        "pfss": False,
+        "world": False,
+        "relaxed_world": False,
     }
     assert client.get("/api/profiles/missing", headers=H).status_code == 404
 
@@ -121,7 +125,9 @@ def test_unknown_things_are_404(client):
 
 
 def test_job_lifecycle(client):
-    r = client.post("/api/jobs", json={"profile": "t_one", "backend": "fake", "scenario": "ok", "speed": 300}, headers=H)
+    r = client.post(
+        "/api/jobs", json={"profile": "t_one", "backend": "fake", "scenario": "ok", "speed": 300}, headers=H
+    )
     assert r.status_code == 201, r.text
     job = r.json()
     done = wait_job(client, job["id"])
@@ -221,7 +227,10 @@ def test_artifact_serves_only_images_inside_the_data_dir(client, tmp_path):
     assert client.get("/api/artifacts", params={"path": svg}, headers=H).status_code == 415  # scripts could ride in SVG
     assert client.get("/api/artifacts", params={"path": str(outside)}, headers=H).status_code == 403
     assert client.get("/api/artifacts", params={"path": os.path.join(data, "link.png")}, headers=H).status_code == 403
-    assert client.get("/api/artifacts", params={"path": os.path.join(data, "..", "outside.png")}, headers=H).status_code == 403
+    assert (
+        client.get("/api/artifacts", params={"path": os.path.join(data, "..", "outside.png")}, headers=H).status_code
+        == 403
+    )
 
 
 # ------------------------------------------------------------------ cache
@@ -240,7 +249,9 @@ def test_cache_endpoints(client):
     assert r.status_code == 200 and r.json()["size"] == 100
     trash = client.get("/api/cache/trash", headers=H).json()
     assert trash["count"] == 1
-    assert client.post("/api/cache/trash/restore", json={"ids": [trash["items"][0]["id"]]}, headers=H).status_code == 200
+    assert (
+        client.post("/api/cache/trash/restore", json={"ids": [trash["items"][0]["id"]]}, headers=H).status_code == 200
+    )
     assert os.path.exists(os.path.join(data, "pfss/pfss_cr2225_r4_hmi.pkl"))
     client.post("/api/cache/trash", json={"paths": ["pfss/pfss_cr2225_r4_hmi.pkl"]}, headers=H)
     assert client.delete("/api/cache/trash", headers=H).json()["removed"] == 1

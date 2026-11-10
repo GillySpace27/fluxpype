@@ -127,10 +127,16 @@ class Scheduler:
         backend = backend or self.default_backend
         if backend not in self.backends:
             raise SchedulerError(f"unknown backend {backend!r}")
-        missing = [f for f in ("only", "events", "config_file", "log_file", "task_timeout") if f not in self._features_for(backend)]
+        missing = [
+            f
+            for f in ("only", "events", "config_file", "log_file", "task_timeout")
+            if f not in self._features_for(backend)
+        ]
         if missing:
             raise SchedulerError(
-                "the fluxpype install behind this backend is too old (missing: " + ", ".join(missing) + "); update fluxpype"
+                "the fluxpype install behind this backend is too old (missing: "
+                + ", ".join(missing)
+                + "); update fluxpype"
             )
         text = self.config_text()
         cf = config_io.parse(text)
@@ -213,7 +219,22 @@ class Scheduler:
 
     @staticmethod
     def task_row_view(t: Dict[str, Any]) -> Dict[str, Any]:
-        keep = ("id", "job_id", "idx", "cr", "nflux", "adapt", "method", "status", "exit_code", "created", "started", "ended", "slots", "attempt")
+        keep = (
+            "id",
+            "job_id",
+            "idx",
+            "cr",
+            "nflux",
+            "adapt",
+            "method",
+            "status",
+            "exit_code",
+            "created",
+            "started",
+            "ended",
+            "slots",
+            "attempt",
+        )
         return {k: t[k] for k in keep}
 
     def cancel_job(self, job_id: str) -> None:
@@ -328,7 +349,15 @@ class Scheduler:
             else:  # lost
                 status, code = ("cancelled" if st.cancelled else "crashed"), st.exit_code
             ended = st.ended or now
-            self.store.update_task(t["id"], status=status, exit_code=code, ended=ended, pid=st.pid, pid_start=st.pid_start, started=t["started"] or st.started)
+            self.store.update_task(
+                t["id"],
+                status=status,
+                exit_code=code,
+                ended=ended,
+                pid=st.pid,
+                pid_start=st.pid_start,
+                started=t["started"] or st.started,
+            )
             self._cancel_at.pop(t["id"], None)
             final = self.task_state(t["id"], force_status=status)
             self.store.update_task(t["id"], summary_json=json.dumps(final))
@@ -459,7 +488,11 @@ class Scheduler:
         mon = self._monitors.get(t["id"])
         if mon is None:
             if len(self._monitors) > 40:
-                for tid in [k for k, v in self._monitors.items() if self.store.get_task(k) and self.store.get_task(k)["status"] in FINISHED][:20]:
+                for tid in [
+                    k
+                    for k, v in self._monitors.items()
+                    if self.store.get_task(k) and self.store.get_task(k)["status"] in FINISHED
+                ][:20]:
                     self._monitors.pop(tid, None)
             mon = TaskMonitor(t["run_dir"], self.probe_context(t), stale_after=self.stale_after)
             self._monitors[t["id"]] = mon
@@ -513,5 +546,7 @@ class Scheduler:
         if not t:
             raise SchedulerError("no such task")
         mon = self.monitor_for(t)
-        mon.refresh(probe=False, alive=None, outcome=t["status"] if t["status"] in FINISHED else None, started=t["started"])
+        mon.refresh(
+            probe=False, alive=None, outcome=t["status"] if t["status"] in FINISHED else None, started=t["started"]
+        )
         return mon.relax_series(after)

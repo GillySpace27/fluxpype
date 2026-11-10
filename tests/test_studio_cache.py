@@ -36,9 +36,15 @@ def test_classification():
         "magnetograms/CR2225_r4_hmi.fits": ("magnetogram", {"cr": "2225", "reduce": "4", "inst": "hmi"}),
         "magnetograms/CR2225_rf2_adapt.fits": ("magnetogram", {"cr": "2225", "sel": "2", "inst": "adapt"}),
         "pfss/pfss_cr2225_r4_hmi.pkl": ("pfss_pickle", {"cr": "2225", "inst": "hmi"}),
-        "batches/b/data/cr2225/floc/floc_cr2225_r4_f100_hmi.dat": ("footpoints", {"cr": "2225", "n": "100", "batch": "b"}),
+        "batches/b/data/cr2225/floc/floc_cr2225_r4_f100_hmi.dat": (
+            "footpoints",
+            {"cr": "2225", "n": "100", "batch": "b"},
+        ),
         "batches/b/data/cr2225/world/cr2225_f100_adapt.flux": ("world", {"n": "100", "inst": "adapt"}),
-        "batches/b/data/cr2225/world/cr2225_f100_adapt_relaxed_s900.flux": ("relaxed_world", {"steps": "900", "inst": "adapt"}),
+        "batches/b/data/cr2225/world/cr2225_f100_adapt_relaxed_s900.flux": (
+            "relaxed_world",
+            {"steps": "900", "inst": "adapt"},
+        ),
         "batches/b/data/cr2225/wind/x.dat": ("wind", {"batch": "b", "cr": "2225"}),
         "batches/b/data/cr2225/wind/x.png": ("plots", {}),
         "batches/b/data/cr2225/light/cr2225_fluxlight_a.png": ("fluxlight", {"cr": "2225"}),
@@ -93,7 +99,9 @@ def test_trash_roundtrip(tmp_path):
     assert c.list_trash() == []
 
 
-@pytest.mark.parametrize("bad", ["../outside.txt", "a/../../outside.txt", "/etc/passwd", "", ".flux_trash/x", "pfss/../../outside.txt"])
+@pytest.mark.parametrize(
+    "bad", ["../outside.txt", "a/../../outside.txt", "/etc/passwd", "", ".flux_trash/x", "pfss/../../outside.txt"]
+)
 def test_trash_refuses_paths_outside_data_dir(tmp_path, bad):
     data = make(tmp_path)
     (tmp_path / "outside.txt").write_text("keep")

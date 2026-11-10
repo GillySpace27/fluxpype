@@ -179,7 +179,9 @@ def test_cancel_a_running_task(make_scheduler):
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)  # the whole process group is gone
     state = sched.task_state(tid)
-    assert any(s["status"] == "failed" and s["detail"] for s in state["stages"])  # the open stage is closed, not left "running"
+    assert any(
+        s["status"] == "failed" and s["detail"] for s in state["stages"]
+    )  # the open stage is closed, not left "running"
 
 
 def test_cancel_pending_tasks_and_whole_job(make_scheduler):

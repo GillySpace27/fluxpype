@@ -21,7 +21,11 @@ def _version() -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="flux-studio", description="FLUX Studio: a web GUI for the fluxpype pipeline")
-    p.add_argument("--host", default="127.0.0.1", help="interface to bind (default 127.0.0.1; use an SSH tunnel for remote machines)")
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="interface to bind (default 127.0.0.1; use an SSH tunnel for remote machines)",
+    )
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.add_argument("--demo", action="store_true", help="simulate runs with a fake pipeline (no FLUX needed)")

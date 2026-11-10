@@ -13,8 +13,17 @@ from fluxpype.studio.backends.local import LocalBackend
 
 def spec(tmp_path, **kw):
     return TaskSpec(
-        task_id="j1-01", job_id="j1", run_dir=str(tmp_path / "r"), snapshot_path=str(tmp_path / "snap.ini"),
-        profile="quickstart", cr="2225", nflux="100", adapt="0", method="parker", timeout_s=77, **kw,
+        task_id="j1-01",
+        job_id="j1",
+        run_dir=str(tmp_path / "r"),
+        snapshot_path=str(tmp_path / "snap.ini"),
+        profile="quickstart",
+        cr="2225",
+        nflux="100",
+        adapt="0",
+        method="parker",
+        timeout_s=77,
+        **kw,
     )
 
 

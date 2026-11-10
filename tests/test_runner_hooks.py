@@ -144,7 +144,13 @@ def test_env_vars_reach_the_pipeline(env):
     r = run_runner(env, "--only", "2225,100,0,parker")
     assert r.returncode == 0, r.stdout + r.stderr
     seen = json.loads(Path(env["FAKE_PERL_DUMP"]).read_text())
-    for key in ("FLUXPYPE_CONFIG_FILE", "FLUXPYPE_EVENTS", "FLUXPYPE_TASK_ID", "FLUXPYPE_LOG_FILE", "FLUXPYPE_TASK_TIMEOUT"):
+    for key in (
+        "FLUXPYPE_CONFIG_FILE",
+        "FLUXPYPE_EVENTS",
+        "FLUXPYPE_TASK_ID",
+        "FLUXPYPE_LOG_FILE",
+        "FLUXPYPE_TASK_TIMEOUT",
+    ):
         assert seen[key] == env[key]
 
 
