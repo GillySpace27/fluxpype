@@ -60,7 +60,7 @@ def running(plumber_home, plumber_config):
 
 def test_server_json_token_and_headless_log(running, plumber_home):
     proc, info = running()
-    assert set(info) == {"host", "port", "pid", "pid_start", "version", "home", "started", "demo"}
+    assert set(info) == {"host", "port", "pid", "pid_start", "version", "home", "started", "demo", "url"}
     assert info["pid"] == proc.pid and info["home"] == str(plumber_home) and info["demo"] is False
     assert info["host"] == "127.0.0.1" and isinstance(info["port"], int) and info["pid_start"]
     for name in ("server.json", "token"):
@@ -140,3 +140,76 @@ def test_python_flag_rejects_a_missing_interpreter(plumber_home, plumber_config,
     rc = cli.main(["--home", str(plumber_home), "--config", str(plumber_config), "--python", str(tmp_path / "nope")])
     assert rc == 2
     assert not (plumber_home / "server.json").exists()
+
+
+# ------------------------------------------------------------------ fixed address, stable token, launchd agent
+
+
+def test_token_survives_a_restart_unless_rotated(tmp_path):
+    first = cli.load_or_create_token(tmp_path)
+    cli.write_atomic(tmp_path / "token", first)
+    assert cli.load_or_create_token(tmp_path) == first
+    assert cli.load_or_create_token(tmp_path, rotate=True) != first
+    os.chmod(tmp_path / "token", 0o644)  # readable by others: not trusted, replaced
+    assert cli.load_or_create_token(tmp_path) != first
+
+
+def test_restart_keeps_the_token_and_records_the_app_url(running, plumber_home):
+    proc, info = running()
+    token = (plumber_home / "token").read_text().strip()
+    assert info["url"] == f"http://plumber.localhost:{info['port']}"
+    proc.terminate()
+    proc.communicate(timeout=20)
+    _, info2 = running()
+    assert (plumber_home / "token").read_text().strip() == token
+    assert info2["pid"] != info["pid"]
+
+
+def test_cookie_names_differ_per_home(tmp_path):
+    a, b = cli.cookie_name_for(tmp_path / "a"), cli.cookie_name_for(tmp_path / "b")
+    assert a != b and a.startswith("flux_plumber_") and a == cli.cookie_name_for(tmp_path / "a")
+
+
+def test_app_hosts_and_default_ports():
+    assert cli.app_host(False) == "plumber.localhost" and cli.app_host(True) == "demo.plumber.localhost"
+    assert (cli.REAL_PORT, cli.DEMO_PORT) == (8765, 8775)
+
+
+def test_open_without_a_running_plumber_fails_cleanly(plumber_home, capsys):
+    assert cli.main(["--open", "--home", str(plumber_home)]) == 1
+    assert "no Plumber is running" in capsys.readouterr().err
+
+
+def test_launchd_plist_runs_headless_with_the_job_python(tmp_path):
+    import plistlib
+
+    from fluxpype.plumber import macapp
+
+    argv = macapp.agent_argv("/venv/bin/python", tmp_path, 8765, "/flux/.venv/bin/python", None)
+    assert argv[1:4] == ["-m", "fluxpype.plumber.cli", "--headless"]
+    assert argv[-2:] == ["--python", "/flux/.venv/bin/python"]
+    plist = plistlib.loads(macapp.build_plist(argv, {"PATH": "/fluxenv/bin:/usr/bin"}, "/repo", tmp_path))
+    assert plist["Label"] == macapp.LABEL and plist["ProgramArguments"] == argv
+    assert plist["KeepAlive"] == {"SuccessfulExit": False} and plist["RunAtLoad"] is True
+    assert plist["EnvironmentVariables"]["PATH"].startswith("/fluxenv/bin")
+
+
+def test_installed_python_is_the_default_for_hand_starts(tmp_path):
+    from fluxpype.plumber import macapp
+
+    assert macapp.installed_python(tmp_path) is None
+    (tmp_path / "install.json").write_text(json.dumps({"python": sys.executable}))
+    assert macapp.installed_python(tmp_path) == sys.executable
+    (tmp_path / "install.json").write_text(json.dumps({"python": str(tmp_path / "gone")}))
+    assert macapp.installed_python(tmp_path) is None
+
+
+def test_status_reports_not_running_and_not_installed(plumber_home, capsys):
+    assert cli.main(["--status", "--home", str(plumber_home)]) == 0
+    out = capsys.readouterr().out
+    assert "not running" in out and "not installed" in out
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="exercises the non-macOS refusal")
+def test_install_refuses_off_macos(plumber_home):
+    assert cli.main(["--install", "--home", str(plumber_home)]) == 2

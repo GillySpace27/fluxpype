@@ -9,7 +9,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -22,6 +22,10 @@ from .monitor import STAGES, first_match_for_context
 from .scheduler import Scheduler, SchedulerError
 
 COOKIE = "flux_plumber"
+COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+APP_DOMAIN = "plumber.localhost"  # *.localhost always resolves to loopback (RFC 6761)
+PUBLIC_FILES = {"/manifest.webmanifest", "/sw.js", "/login", "/favicon.ico"}
+PUBLIC_PREFIXES = ("/assets/", "/icons/")
 IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -92,6 +96,37 @@ class Hub:
                 q.put_nowait(message)
 
 
+def login_html(error: str, token_file: str, demo: bool) -> str:
+    """A small sign-in page for a browser that has no (or a stale) token cookie."""
+    from html import escape
+
+    err = f'<p class="err">{escape(error)}</p>' if error else ""
+    title = "Plumber (demo)" if demo else "Plumber"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in: {title}</title>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#0b0d12">
+<style>
+:root{{color-scheme:dark light;--bg:#0b0d12;--card:#141821;--ink:#e8ebf2;
+--muted:#9aa3b5;--line:#262c3a;--accent:#ff9f43}}
+@media (prefers-color-scheme: light){{:root{{--bg:#f6f7fb;--card:#fff;--ink:#141821;--muted:#5b6475;--line:#dde1ea}}}}
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);
+font:14px/1.5 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;padding:16px}}
+.card{{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px}}
+h1{{font-size:18px;margin:0 0 4px}}p{{color:var(--muted);margin:0 0 16px}}
+.err{{color:#ff6b6b}}
+code{{white-space:nowrap;font:12px ui-monospace,Menlo,monospace;background:var(--bg);padding:2px 6px;border-radius:6px}}
+input{{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+background:var(--bg);color:var(--ink);font:13px ui-monospace,Menlo,monospace;margin-bottom:12px}}
+button{{width:100%;padding:10px;border:0;border-radius:10px;background:var(--accent);color:#1b1206;font-weight:600;cursor:pointer}}
+</style></head><body><form class="card" method="post" action="/login">
+<h1>Sign in to {title}</h1>
+<p>This browser has no valid token for this Plumber. Paste the token from
+<code>{escape(token_file)}</code>, or run <code>flux-plumb --open</code> to sign in automatically.</p>{err}
+<input name="token" type="password" placeholder="Token" autocomplete="current-password" autofocus required>
+<button type="submit">Sign in</button></form></body></html>"""
+
+
 def host_of(value: str) -> str:
     """Hostname part of a Host header or Origin value (no port, brackets kept off IPv6)."""
     if "://" in value:
@@ -109,6 +144,9 @@ def create_app(
     tick_interval: float = 0.5,
     version: str = "dev",
     run_loop: bool = True,
+    cookie_name: str = COOKIE,
+    token_hint: str = "the URL printed by flux-plumb",
+    token_file: str = "~/.fluxpype/plumber/token",
 ) -> FastAPI:
     hub = Hub()
 
@@ -132,8 +170,20 @@ def create_app(
     sched.on_change = hub.publish
 
     def authed(cookies, headers) -> bool:
-        given = cookies.get(COOKIE) or headers.get("x-flux-token") or ""
+        given = cookies.get(cookie_name) or headers.get("x-flux-token") or ""
         return hmac.compare_digest(given.encode(), token.encode())
+
+    def host_allowed(host: str) -> bool:
+        return host in allowed or host == APP_DOMAIN or host.endswith("." + APP_DOMAIN)
+
+    def with_cookie(resp: Response) -> Response:
+        resp.set_cookie(cookie_name, token, httponly=True, samesite="strict", path="/", max_age=COOKIE_MAX_AGE)
+        return resp
+
+    def login_page(error: str = "", status: int = 401) -> HTMLResponse:
+        return HTMLResponse(
+            login_html(error, token_file, demo), status_code=status, headers={"Cache-Control": "no-store"}
+        )
 
     def origin_ok(headers) -> bool:
         origin = headers.get("origin")
@@ -144,24 +194,34 @@ def create_app(
     @app.middleware("http")
     async def guard(request: Request, call_next):
         host = host_of(request.headers.get("host", "")).lower()
-        if host not in allowed:
+        if not host_allowed(host):
             return Response("Host not allowed", status_code=403)
         path = request.url.path
         supplied = request.query_params.get("token")
         if supplied is not None and not path.startswith("/api/"):
             if not hmac.compare_digest(supplied.encode(), token.encode()):
-                return Response("Bad token", status_code=403)
-            resp = RedirectResponse(path or "/", status_code=303)
-            resp.set_cookie(COOKIE, token, httponly=True, samesite="strict", path="/", max_age=60 * 60 * 24 * 30)
-            return resp
+                return login_page("That token is not this Plumber's current token.", 403)
+            return with_cookie(RedirectResponse(path or "/", status_code=303))
+        if path == "/login" and request.method == "POST":
+            if not origin_ok(request.headers):
+                return Response("cross-origin request refused", status_code=403)
+            form = parse_qs((await request.body()).decode("utf-8", "replace"))
+            given = (form.get("token") or [""])[0].strip()
+            if not hmac.compare_digest(given.encode(), token.encode()):
+                return login_page("That token is not this Plumber's current token.", 403)
+            return with_cookie(RedirectResponse("/", status_code=303))
         if path.startswith("/api/"):
             if not authed(request.cookies, request.headers):
-                return JSONResponse(
-                    {"detail": "missing or wrong token; open the URL printed by flux-plumb"}, status_code=401
-                )
+                return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-        return await call_next(request)
+            return await call_next(request)
+        if path in PUBLIC_FILES or path.startswith(PUBLIC_PREFIXES):
+            return await call_next(request)
+        if not authed(request.cookies, request.headers):
+            return login_page()
+        # a page load by a signed-in browser: slide the cookie's 30-day window forward
+        return with_cookie(await call_next(request))
 
     # ------------------------------------------------------------------ helpers
     def cache_for(profile: Optional[str] = None) -> Cache:
@@ -588,7 +648,7 @@ def create_app(
     @app.websocket("/api/ws")
     async def ws(sock: WebSocket):
         host = host_of(sock.headers.get("host", "")).lower()
-        if host not in allowed or not authed(sock.cookies, sock.headers) or not origin_ok(sock.headers):
+        if not host_allowed(host) or not authed(sock.cookies, sock.headers) or not origin_ok(sock.headers):
             await sock.close(code=4401)
             return
         await sock.accept()
@@ -655,6 +715,31 @@ def create_app(
             await asyncio.sleep(tick_interval)
 
     # ------------------------------------------------------------------ frontend
+    @app.get("/login")
+    def login_get():
+        return login_page(status=200)
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        name = "Plumber (demo)" if demo else "Plumber"
+        body = {
+            "name": f"Fluxpype {name}",
+            "short_name": name,
+            "description": "Queue, watch and inspect fluxpype runs",
+            "id": "/",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#0b0d12",
+            "theme_color": "#0b0d12",
+            "icons": [
+                {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ],
+        }
+        return JSONResponse(body, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
+
     @app.get("/{full_path:path}")
     def spa(full_path: str):
         if full_path.startswith("api/"):

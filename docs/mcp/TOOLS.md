@@ -60,7 +60,7 @@ Not provided: moving files to the cache trash, restoring or emptying it, deletin
 By default the server uses `--home` (default `~/.fluxpype/plumber`, or `$FLUX_PLUMBER_HOME`) and connects lazily on the first tool call:
 
 1. It reads `<home>/server.json` and `<home>/token`, checks that the recorded process is alive, and asks `/api/status` to confirm the Plumber's home matches.
-2. If there is no valid `server.json` and nothing holds `<home>/plumber.lock`, it starts a detached headless Plumber on a free port (output goes to `<home>/server.log`) and waits up to 15 s for it to publish `server.json`.
+2. If there is no valid `server.json` and nothing holds `<home>/plumber.lock`, it starts a detached headless Plumber on its usual port (8765, or 8775 for the demo) when that is free, otherwise on a free port, (output goes to `<home>/server.log`) and waits up to 15 s for it to publish `server.json`.
 3. If the lock is held but there is no usable `server.json`, it reports an error and never starts a second Plumber. Run `flux-plumb --stop` or read `<home>/server.log`.
 
 `--no-autostart` turns step 2 off, and it is always off with `--url`. If Plumber is restarted while the assistant is connected, the next call looks it up again.

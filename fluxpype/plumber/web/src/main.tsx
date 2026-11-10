@@ -27,3 +27,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </ThemeProvider>
   </React.StrictMode>,
 );
+
+// Only purpose: show "Plumber is not running" instead of a browser error when the server is down
+// (useful from a Dock icon). Needs a secure context; localhost and *.localhost qualify.
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+}

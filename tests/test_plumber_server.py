@@ -269,10 +269,10 @@ def test_cache_refuses_traversal(client, tmp_path):
 
 
 def test_spa_fallback_and_static_traversal(client):
-    r = client.get("/jobs/abc")
+    r = client.get("/jobs/abc", headers=H)
     assert r.status_code in (200, 503)  # index.html (or the build-missing page before the frontend exists)
-    assert client.get("/..%2f..%2fetc%2fpasswd").status_code in (200, 404, 503)
-    r = client.get("/..%2f..%2fetc%2fpasswd")
+    assert client.get("/..%2f..%2fetc%2fpasswd", headers=H).status_code in (200, 404, 503)
+    r = client.get("/..%2f..%2fetc%2fpasswd", headers=H)
     assert "root:" not in r.text
 
 
@@ -324,3 +324,56 @@ def test_log_grep_is_capped_at_400_lines(client):
     # without grep the log endpoint is unchanged
     plain = client.get(f"/api/tasks/{tid}/log", headers=H).json()
     assert "offset" in plain and "matches" not in plain
+
+
+# ------------------------------------------------------------------ sign-in, address, installable app
+
+
+def test_pages_without_a_token_get_the_sign_in_page(client):
+    r = client.get("/jobs")
+    assert r.status_code == 401 and "Sign in" in r.text and 'action="/login"' in r.text
+    assert client.get("/login").status_code == 200
+
+
+def test_login_form_sets_the_cookie(client):
+    bad = client.post("/login", data={"token": "nope"}, follow_redirects=False)
+    assert bad.status_code == 403 and "not this Plumber" in bad.text
+    ok = client.post("/login", data={"token": TOKEN}, follow_redirects=False)
+    assert ok.status_code == 303 and "flux_plumber=" in ok.headers["set-cookie"]
+    assert client.get("/api/status").status_code == 200
+
+
+def test_login_form_refuses_cross_origin_posts(client):
+    r = client.post("/login", data={"token": TOKEN}, headers={"Origin": "http://evil.example"}, follow_redirects=False)
+    assert r.status_code == 403
+
+
+def test_signed_in_page_loads_refresh_the_cookie(client):
+    client.cookies.set("flux_plumber", TOKEN)
+    r = client.get("/jobs")
+    assert r.status_code in (200, 503) and "Max-Age=2592000" in r.headers.get("set-cookie", "")
+
+
+def test_plumber_localhost_names_are_allowed_and_others_are_not(client):
+    for host in ("plumber.localhost:8765", "demo.plumber.localhost:8775"):
+        assert client.get("/api/status", headers={**H, "Host": host}).status_code == 200
+    for host in ("evil.example", "plumber.localhost.evil.example", "xplumber.localhost"):
+        assert client.get("/api/status", headers={**H, "Host": host}).status_code == 403
+
+
+def test_manifest_and_icons_are_public(client):
+    m = client.get("/manifest.webmanifest")
+    assert m.status_code == 200 and m.headers["content-type"].startswith("application/manifest+json")
+    body = m.json()
+    assert body["display"] == "standalone" and body["short_name"] == "Plumber (demo)"
+    assert {i["sizes"] for i in body["icons"]} == {"192x192", "512x512"}
+
+
+def test_custom_cookie_name_keeps_instances_apart(make_scheduler):
+    app = create_app(make_scheduler(), TOKEN, demo=False, run_loop=False, cookie_name="flux_plumber_abc")
+    with TestClient(app, base_url="http://localhost") as c:
+        r = c.get(f"/?token={TOKEN}", follow_redirects=False)
+        assert "flux_plumber_abc=" in r.headers["set-cookie"]
+        c.cookies.set("flux_plumber", TOKEN)  # another instance's cookie does not count here
+        c.cookies.delete("flux_plumber_abc")
+        assert c.get("/api/status").status_code == 401

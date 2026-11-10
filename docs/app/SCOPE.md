@@ -1,6 +1,6 @@
 # Plumber: own address and Dock icon (scope)
 
-Status: scope draft 1 (2026-11-10). Builds on Fluxpype Plumber (PR #47).
+Status: A0, A1, A2 and A4 implemented on PR #47 (2026-11-10); A3 (launcher .app) not built. Checked on Gilly's Mac (macOS 26.6.1): `plumber.localhost` resolves to 127.0.0.1 and ::1 system-wide, including Safari; an unprivileged bind to port 80 is refused, so the port stays in the address.
 
 ## 1. Goal
 

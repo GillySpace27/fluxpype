@@ -65,14 +65,32 @@ A local web GUI for running and watching the pipeline: choose a profile, overrid
 
 ```bash
 pip install -e ".[plumber]"
-flux-plumb              # opens http://localhost:8765 (a one-time token URL is printed)
-flux-plumb --demo       # simulated pipeline, no FLUX/PDL needed
+flux-plumb              # opens http://plumber.localhost:8765 (signed in via a token URL)
+flux-plumb --demo       # simulated pipeline at http://demo.plumber.localhost:8775, no FLUX/PDL needed
+flux-plumb --open       # open the running Plumber in the browser, signed in
+flux-plumb --status     # address, process and login-item state
 flux-plumb --stop       # stop the Plumber for this state directory (running jobs keep running)
 ```
 
+Real FLUX jobs need the environment with the science stack and FLUX's Perl. If Plumber lives in its own venv, point jobs at the FLUX one with `--python` (or `$FLUX_PLUMBER_PYTHON`), and start Plumber from a shell where `perl -MPDL -e1` works.
+
+The access token is kept in `<home>/token` (mode 0600) and survives restarts, so bookmarks stay signed in. `--rotate-token` makes a new one. A browser without the token gets a sign-in page. Each state directory uses its own cookie, so the demo and a real Plumber can be open side by side.
+
+### Run Plumber like an app (macOS)
+
+`--install` makes Plumber start at login and keeps it running at `http://plumber.localhost:8765` (a launchd agent). Run it once from a shell where FLUX works, because launchd does not read shell profiles: it records that shell's `PATH` and `PERL5LIB` for the jobs.
+
+```bash
+cd ~/vscode/fluxons-plumber/fluxpype
+.venv-plumber/bin/python -m fluxpype.plumber.cli --install --python ~/vscode/fluxons/.venv/bin/python
+.venv-plumber/bin/python -m fluxpype.plumber.cli --open
+```
+
+Then add the Dock icon from the browser: in Safari, **File > Add to Dock**; in Chrome, the install icon at the right end of the address bar. The icon is just the browser's link to the running server, so there is nothing extra to update. If Plumber is down, the window says so and retries every 10 s. `--uninstall` removes the login item; `--status` shows the agent, the address and the interpreter and Perl the jobs use.
+
 Only one Plumber runs per state directory (a lock file enforces it); a second `flux-plumb` prints where the first is and exits with status 3. `--headless` runs without a browser or stdout output and logs to `<home>/server.log`.
 
-Plumber binds to 127.0.0.1 only. On a remote machine use an SSH tunnel (`ssh -L 8765:localhost:8765 host`). It never writes `config.ini`; per-run overrides are applied to a snapshot copy. The terminal behavior of `flux-config-run` is unchanged unless the Plumber environment variables are set. See `docs/gui/PLAN.md` and `docs/gui/EVENTS.md`.
+Plumber binds to 127.0.0.1 only. On a remote machine use an SSH tunnel (`ssh -L 8765:localhost:8765 host`, then open `http://plumber.localhost:8765`). It never writes `config.ini`; per-run overrides are applied to a snapshot copy. The terminal behavior of `flux-config-run` is unchanged unless the Plumber environment variables are set. See `docs/gui/PLAN.md` and `docs/gui/EVENTS.md`.
 
 Frontend sources live in `fluxpype/plumber/web` (React, TypeScript, Vite, Tailwind). The built bundle in `dist/` is committed, so users do not need Node. To rebuild: `cd fluxpype/plumber/web && npm ci && npm run build`.
 

@@ -144,6 +144,11 @@ class PlumberClient:
         return self.request("PATCH", path, body=body).json()
 
 
+def port_free(port: int) -> bool:
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", port)) != 0
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -192,7 +197,8 @@ def _log_tail(home: Path, lines: int = 8) -> str:
 def start_plumber(home: Path, demo: bool) -> Tuple[str, str]:
     """Launch a detached headless Plumber for `home` and wait for it to publish a usable server.json."""
     argv = [sys.executable, "-m", "fluxpype.plumber.cli", "--headless", "--home", str(home)]
-    argv += ["--port", str(free_port())] + (["--demo"] if demo else [])
+    preferred = 8775 if demo else 8765  # the fixed address bookmarks and the Dock app use, when it is free
+    argv += ["--port", str(preferred if port_free(preferred) else free_port())] + (["--demo"] if demo else [])
     with open(home / "server.log", "ab") as log:
         proc = subprocess.Popen(
             argv,
