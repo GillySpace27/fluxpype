@@ -126,3 +126,91 @@ def test_perl_forked_children_do_not_write(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     assert [x["type"] for x in read(path)] == ["parent"]
+
+
+STAGES = [
+    "magnetogram",
+    "footpoints",
+    "pfss",
+    "world",
+    "relax",
+    "world_plots",
+    "fieldmap",
+    "wind",
+    "wind_plots",
+    "fluxlight",
+]
+
+
+@needs_perl
+def test_perl_stage_helpers_time_and_report(tmp_path):
+    path = tmp_path / "e.jsonl"
+    r = perl_emit(
+        'stage_start("a"); stage_detail("a", "reused relaxed world"); stage_end("a"); '
+        'stage_skipped("wind_only", "b", "c");',
+        {"FLUXPYPE_EVENTS": str(path)},
+    )
+    assert r.returncode == 0, r.stderr
+    recs = read(path)
+    assert [(x["type"], x["stage"]) for x in recs] == [
+        ("stage.start", "a"),
+        ("stage.end", "a"),
+        ("stage.end", "b"),
+        ("stage.end", "c"),
+    ]
+    assert recs[1]["status"] == "ok" and recs[1]["detail"] == "reused relaxed world"
+    assert isinstance(recs[1]["elapsed_s"], (int, float))
+    assert [x["status"] for x in recs[2:]] == ["skipped", "skipped"]
+
+
+@needs_perl
+def test_perl_open_stage_is_closed_as_failed_when_the_process_dies(tmp_path):
+    path = tmp_path / "e.jsonl"
+    r = perl_emit('stage_start("pfss"); die "boom\\n";', {"FLUXPYPE_EVENTS": str(path)})
+    assert r.returncode != 0 and "boom" in r.stderr  # exit status preserved
+    last = read(path)[-1]
+    assert (last["type"], last["stage"], last["status"]) == ("stage.end", "pfss", "failed")
+
+
+@needs_perl
+def test_perl_blessed_numbers_are_flattened(tmp_path):
+    path = tmp_path / "e.jsonl"
+    code = (
+        'package Num; use overload q("") => sub { ${$_[0]} }, fallback => 1; package main; '
+        'my $x = 2.5; emit_event("relax.step", {stiffness => bless(\\$x, "Num")});'
+    )
+    r = perl_emit(code, {"FLUXPYPE_EVENTS": str(path)})
+    assert r.returncode == 0, r.stderr
+    assert read(path)[0]["stiffness"] == 2.5
+
+
+@needs_perl
+def test_soft_load_falls_back_to_stubs_when_module_is_missing():
+    line = (
+        "BEGIN { eval { require fluxpype::events; fluxpype::events->import; 1 } or eval "
+        "'sub emit_event {} sub stage_start {} sub stage_end {} sub stage_skipped {} sub stage_detail {} 1'; } "
+        'stage_start("a"); stage_end("a"); emit_event("x"); print "alive";'
+    )
+    r = subprocess.run([PERL, "-I", "/nonexistent", "-e", line], capture_output=True, text=True)
+    assert (r.returncode, r.stdout) == (0, "alive"), r.stderr
+
+
+def test_pipeline_instrumentation_is_balanced():
+    """Static check on magnetogram2wind.pdl: every stage id is started once and ended once,
+    wind_only skips exactly the first seven, and each edit is guarded by the soft-load line."""
+    import re
+
+    text = (REPO / "fluxpype" / "science" / "magnetogram2wind.pdl").read_text()
+    starts = re.findall(r'stage_start\("(\w+)"\)', text)
+    ends = re.findall(r'stage_end\("(\w+)"\)', text)
+    assert starts == [s for s in STAGES]
+    assert ends == [s for s in STAGES]
+    skipped = re.search(r'stage_skipped\("wind_only", qw\(([^)]*)\)\) if \$wind_only', text).group(1).split()
+    assert skipped == STAGES[:7]
+    assert "require fluxpype::events" in text
+
+
+def test_instrumented_modules_use_the_soft_load_line():
+    for name in ("relax_pfss_world.pm", "simple_relaxer.pm"):
+        text = (REPO / "fluxpype" / "science" / name).read_text()
+        assert "require fluxpype::events" in text, name
