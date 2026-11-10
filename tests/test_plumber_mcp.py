@@ -233,3 +233,186 @@ def test_unreachable_plumber_is_a_clear_tool_error(tmp_path):
     client = PlumberClient(base_url="http://127.0.0.1:1", token="x", timeout=2)
     err, msg = Rig.call(type("R", (), {"server": build_server(client)})(), "status")
     assert err and "cannot reach Plumber" in msg
+
+
+# ------------------------------------------------------------------ write tools
+
+
+def wait_status(rig, job_id, wanted=("ok", "failed", "cancelled", "partial"), timeout=60):
+    end = time.time() + timeout
+    while time.time() < end:
+        view = rig.tc.get(f"/api/jobs/{job_id}", headers=H).json()
+        if view["status"] in wanted:
+            return view
+        time.sleep(0.1)
+    raise AssertionError("job did not reach the wanted status")
+
+
+def test_submit_job_stringifies_overrides_and_runs(rig):
+    job = rig.ok(
+        "submit_job",
+        profile="t_one",
+        overrides={"concurrency": 3, "relax_threshold": 0.5},
+        backend="fake",
+        scenario="ok",
+        speed=300,
+    )
+    assert job["profile"] == "t_one" and job["overrides"] == {"concurrency": "3", "relax_threshold": "0.5"}
+    assert wait_status(rig, job["id"])["status"] == "ok"
+    sub = rig.ok("submit_job", profile="t_two", tasks=[[2225, 100, 0, "wsa"]], backend="fake", speed=300)
+    assert [(t["cr"], t["nflux"], t["adapt"], t["method"]) for t in sub["tasks"]] == [("2225", "100", "0", "wsa")]
+    wait_status(rig, sub["id"])
+
+
+def test_submit_job_lists_become_config_lists(rig):
+    sched_calls = []
+    real = rig.sched.create_job
+
+    def spy(profile, overrides=None, *a, **kw):
+        sched_calls.append(overrides)
+        return real(profile, overrides, *a, **kw)
+
+    rig.sched.create_job = spy
+    job = rig.ok("submit_job", profile="t_one", overrides={"rotations": [2225, 2226]}, backend="fake", speed=300)
+    assert sched_calls == [{"rotations": "[2225, 2226]"}] and len(job["tasks"]) == 2
+    wait_status(rig, job["id"])
+
+
+def test_submit_job_surfaces_the_servers_rejection(rig):
+    err, msg = rig.call("submit_job", profile="t_one", overrides={"run_script": "x"})
+    assert err and "run_script" in msg
+    err, msg = rig.call("submit_job", profile="nope")
+    assert err and msg
+    err, msg = rig.call("submit_job", profile="t_one", scenario="bogus", backend="fake")
+    assert err and "unknown scenario" in msg
+    err, msg = rig.call("submit_job", profile="t_one", tasks=[[1, 2, 3]])
+    assert err and "[cr, nflux, adapt, method]" in msg
+    err, msg = rig.call("submit_job", profile="t_one", overrides={"k": {"nested": 1}})
+    assert err and "validation" in msg
+    assert rig.sched.store.list_jobs() == []
+
+
+def test_cancel_by_job_and_by_task_with_queue_paused(rig):
+    q = rig.ok("set_queue", paused=True)
+    assert q["paused"] is True
+    first = rig.ok("submit_job", profile="t_one", backend="fake", speed=300)
+    second = rig.ok("submit_job", profile="t_one", backend="fake", speed=300)
+    assert rig.ok("status")["pending"] and first["status"] in ("pending", "queued")
+    cancelled = rig.ok("cancel", job_id=first["id"])
+    assert cancelled["status"] == "cancelled"
+    task = rig.ok("cancel", task_id=second["tasks"][0]["id"])
+    assert task["status"] == "cancelled" and task["id"] == second["tasks"][0]["id"]
+    for args in ({}, {"job_id": first["id"], "task_id": "x"}):
+        err, msg = rig.call("cancel", **args)
+        assert err and "exactly one" in msg
+    err, msg = rig.call("cancel", job_id="nope")
+    assert err and "unknown job" in msg
+
+
+def test_retry_failed(rig):
+    view = rig.run_job(scenario="fail_in_pfss")
+    assert view["status"] == "failed"
+    retried = rig.ok("retry_failed", job_id=view["id"])
+    assert retried["id"] == view["id"]
+    wait_status(rig, view["id"])
+    ok_job = rig.run_job()
+    err, msg = rig.call("retry_failed", job_id=ok_job["id"])
+    assert err and msg
+
+
+def test_set_queue(rig):
+    out = rig.ok("set_queue", max_parallel=3, cpu_budget=12, paused=False)
+    assert (out["max_parallel"], out["cpu_budget"], out["paused"]) == (3, 12, False)
+    assert rig.ok("status")["queue"]["max_parallel"] == 3
+    err, msg = rig.call("set_queue")
+    assert err and "at least one" in msg
+    err, msg = rig.call("set_queue", max_parallel=0)
+    assert err and msg
+
+
+# ------------------------------------------------------------------ wait_for_task
+
+
+class Progress:
+    def __init__(self):
+        self.events = []
+
+    async def __call__(self, progress, total=None, message=None):
+        self.events.append((progress, total, message))
+
+
+def wait_call(rig, progress=None, **args):
+    async def go():
+        async with Client(rig.server) as c:
+            return await c.call_tool("wait_for_task", args, progress_callback=progress)
+
+    res = anyio.run(go)
+    return res.is_error, (json.loads(res.content[0].text) if not res.is_error else res.content[0].text)
+
+
+def test_wait_for_task_reports_progress_and_returns_the_final_state(rig, monkeypatch):
+    monkeypatch.setattr(mcp_server, "POLL_S", 0.1)
+    job = rig.ok("submit_job", profile="t_one", backend="fake", scenario="ok", speed=40)
+    tid = job["tasks"][0]["id"]
+    progress = Progress()
+    err, out = wait_call(rig, progress, task_id=tid, timeout_s=60)
+    assert not err and out["still_running"] is False and out["reached"] is True and out["status"] == "ok"
+    assert out["id"] == tid and any(s["id"] == "relax" and s["status"] == "ok" for s in out["stages"])
+    seen = [e[0] for e in progress.events]
+    assert len(seen) >= 3 and seen == sorted(seen) and progress.events[-1][:2] == (10, 10)
+    assert all(e[2] for e in progress.events)
+    wait_status(rig, job["id"])
+
+
+def test_wait_for_task_until_a_stage(rig, monkeypatch):
+    monkeypatch.setattr(mcp_server, "POLL_S", 0.1)
+    job = rig.ok("submit_job", profile="t_one", backend="fake", scenario="ok", speed=40)
+    tid = job["tasks"][0]["id"]
+    err, out = wait_call(rig, task_id=tid, until="pfss", timeout_s=60)
+    assert not err and out["reached"] is True
+    assert {s["id"]: s["status"] for s in out["stages"]}["pfss"] == "ok"
+    err, msg = wait_call(rig, task_id=tid, until="nonsense")
+    assert err and "unknown stage" in msg and "relax" in msg
+    wait_status(rig, job["id"])
+
+
+def test_wait_for_task_times_out_with_still_running(rig, monkeypatch):
+    monkeypatch.setattr(mcp_server, "POLL_S", 0.1)
+    job = rig.ok("submit_job", profile="t_one", backend="fake", scenario="ok", speed=1)
+    tid = job["tasks"][0]["id"]
+    try:
+        err, out = wait_call(rig, task_id=tid, timeout_s=1)
+        assert not err and out["still_running"] is True and out["status"] == "running" and out["stage"]
+        assert 0.9 <= out["waited_s"] < 10
+    finally:
+        rig.ok("cancel", job_id=job["id"])
+        wait_status(rig, job["id"], wanted=("cancelled",))
+
+
+def test_wait_for_task_on_a_missing_task_is_an_error(rig):
+    err, msg = wait_call(rig, task_id="nope")
+    assert err and "no such task" in msg
+
+
+# ------------------------------------------------------------------ annotations
+
+
+def test_tool_annotations(rig):
+    async def go():
+        async with Client(rig.server) as c:
+            return {t.name: t for t in (await c.list_tools()).tools}
+
+    tools = anyio.run(go)
+    assert len(tools) == 15 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
+        assert tools[name].annotations.read_only_hint is True, name
+    for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
+        assert tools[name].annotations.read_only_hint is True, name
+    assert tools["cancel"].annotations.destructive_hint is True
+    for name in ("submit_job", "retry_failed", "set_queue"):
+        a = tools[name].annotations
+        assert a.read_only_hint is False and a.destructive_hint is False, name
+    assert tools["submit_job"].annotations.idempotent_hint is False
+    assert tools["retry_failed"].annotations.idempotent_hint is False
+    for name in ("read_task_log", "get_task", "wait_for_task", "get_job", "status"):
+        assert "untrusted" in tools[name].description, name
