@@ -3,6 +3,8 @@ tqdm
 matplotlib
 astropy
 sunpy
+sunkit-image
+joblib
 bs4
 lxml
 zeep
