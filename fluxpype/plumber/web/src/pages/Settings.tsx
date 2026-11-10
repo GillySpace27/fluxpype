@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cloud, Cpu, Monitor, Moon, Server, Sun } from "lucide-react";
+import { Cloud, Cpu, FlaskConical, Monitor, Moon, Server, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Card, ErrorNote, PageHeader, Segmented, SectionTitle, Skeleton, Switch, useToast } from "../components/ui";
 import { ConnectAgentButton } from "../components/ConnectAgent";
 import { api } from "../lib/api";
-import { useQueue, useStatus } from "../lib/hooks";
+import { cn } from "../lib/cn";
+import { useHealth, useQueue, useStatus } from "../lib/hooks";
+import { Dot, useSetBackend } from "../components/SystemBar";
 import { useTheme } from "../lib/theme";
 
 function Row({ title, hint, children }: { title: string; hint?: React.ReactNode; children: React.ReactNode }) {
@@ -35,6 +37,8 @@ function Stepper({ value, min, max, onCommit }: { value: number; min: number; ma
 export function SettingsPage() {
   const { data: q, error, refetch } = useQueue();
   const { data: status } = useStatus();
+  const { data: health } = useHealth();
+  const setBackend = useSetBackend();
   const { choice, setChoice } = useTheme();
   const qc = useQueryClient();
   const toast = useToast();
@@ -108,25 +112,21 @@ export function SettingsPage() {
       </section>
 
       <section>
-        <SectionTitle title="Execution backends" hint="Where tasks run." />
+        <SectionTitle title="Execution backends" hint="Where new runs go. The choice is also at the top left of every page." />
         <div className="grid gap-3 sm:grid-cols-2">
-          {status.backends.map((b) => (
-            <Card key={b.name} className="p-4">
-              <div className="flex items-center justify-between">
-                <p className="flex items-center gap-2 text-[13.5px] font-semibold"><Cpu className="h-4 w-4 text-accent" />{b.name}</p>
-                {b.active && <Badge tone="ok">default</Badge>}
+          {(health?.backends ?? []).map((b) => (
+            <Card key={b.name} className={cn("p-4", !b.configured && "border-dashed opacity-70", b.active && "border-accent/50")}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-2 text-[13.5px] font-semibold">
+                  {b.kind === "fake" ? <FlaskConical className="h-4 w-4 text-accent" /> : b.kind === "slurm" ? <Cloud className="h-4 w-4" /> : b.kind === "ssh" ? <Server className="h-4 w-4" /> : <Cpu className="h-4 w-4 text-accent" />}
+                  {b.label}
+                </p>
+                {b.active ? <Badge tone="accent">plumbing</Badge> : b.configured ? <button className="btn btn-sm" onClick={() => setBackend.mutate(b.name)}>Use this</button> : <Badge>coming next</Badge>}
               </div>
               <p className="mt-2 text-xs leading-relaxed text-muted">{b.description}</p>
-              <p className="num mt-2 text-xs text-faint">{b.slots} slots{b.shared_fs ? " · shared filesystem" : ""}</p>
-            </Card>
-          ))}
-          {[{ n: "SSH host", i: <Server className="h-4 w-4" />, d: "Run on a workstation you can reach over SSH." }, { n: "Slurm cluster", i: <Cloud className="h-4 w-4" />, d: "Submit tasks as batch jobs on an HPC queue." }].map((b) => (
-            <Card key={b.n} className="border-dashed p-4 opacity-70">
-              <div className="flex items-center justify-between">
-                <p className="flex items-center gap-2 text-[13.5px] font-semibold text-muted">{b.i}{b.n}</p>
-                <Badge>coming next</Badge>
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted">{b.d}</p>
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-faint">
+                <Dot status={b.status} /> {b.checks.find((c) => c.status === "fail")?.detail ?? (b.configured ? `${b.slots} CPU slots` : "not set up")}
+              </p>
             </Card>
           ))}
         </div>

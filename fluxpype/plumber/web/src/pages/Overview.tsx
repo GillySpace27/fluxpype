@@ -64,7 +64,7 @@ export function Overview() {
         title="Overview"
         sub="What is running, what is waiting, and what just finished."
         right={
-          <Link to="/profiles" className="btn btn-primary">
+          <Link to="/presets" className="btn btn-primary">
             <Rocket className="h-4 w-4" /> New run
           </Link>
         }
@@ -82,10 +82,10 @@ export function Overview() {
           <EmptyState
             icon={<Rocket className="h-5 w-5" />}
             title="Nothing is running"
-            body="Pick a profile, review the tasks it expands to, and start a run. Progress shows up here live."
+            body="Pick a preset, review the tasks it expands to, and start a run. Progress shows up here live."
             action={
-              <Link to="/profiles" className="btn btn-primary">
-                Choose a profile <ArrowRight className="h-4 w-4" />
+              <Link to="/presets" className="btn btn-primary">
+                Choose a preset <ArrowRight className="h-4 w-4" />
               </Link>
             }
           />

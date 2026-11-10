@@ -4,6 +4,7 @@ import { api } from "./api";
 import { useLive } from "./live";
 import type {
   CacheData,
+  HealthReport,
   Job,
   Overview,
   ProfileDetail,
@@ -81,7 +82,11 @@ export const useRelax = (id: string | undefined, nPoints: number, active: boolea
   });
 };
 
-export const useProfiles = () => useQuery({ queryKey: ["profiles"], queryFn: () => api.get<{ profiles: ProfileSummary[] }>("/api/profiles") });
+export const useProfiles = () =>
+  useQuery({ queryKey: ["profiles"], queryFn: () => api.get<{ profiles: ProfileSummary[]; deleted: string[] }>("/api/profiles"), staleTime: 10_000 });
+
+export const useHealth = () =>
+  useQuery({ queryKey: ["health"], queryFn: () => api.get<HealthReport>("/api/health"), refetchInterval: 60_000, staleTime: 30_000 });
 
 export const useProfile = (name: string | undefined) =>
   useQuery({ queryKey: ["profile", name], queryFn: () => api.get<ProfileDetail>(`/api/profiles/${encodeURIComponent(name!)}`), enabled: !!name });

@@ -62,7 +62,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             soon([["queue"], ["overview"]]);
             break;
           case "cache_changed":
-            soon([["cache"], ["trash"]]);
+            soon([["cache"], ["trash"], ["profiles"], ["profile"]]);
+            break;
+          case "presets_changed":
+            soon([["profiles"], ["profile"]]);
+            break;
+          case "backend_changed":
+            soon([["status"], ["health"], ["queue"], ["cache"], ["trash"], ["profiles"], ["profile"]]);
             break;
           case "log_append":
             listeners.current.forEach((fn) => fn(msg.data));

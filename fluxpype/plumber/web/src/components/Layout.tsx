@@ -3,13 +3,14 @@ import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "../lib/cn";
 import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
-import { Badge, Tip } from "./ui";
+import { FlaskConical } from "lucide-react";
 import { QueuePill } from "./QueuePill";
 import { ConnectAgentButton } from "./ConnectAgent";
+import { BackendSwitcher, StatusLight } from "./SystemBar";
 
 const NAV = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
-  { to: "/profiles", label: "Profiles", icon: Layers },
+  { to: "/presets", label: "Presets", icon: Layers },
   { to: "/jobs", label: "Jobs", icon: ListChecks },
   { to: "/cache", label: "Cache", icon: Database },
   { to: "/settings", label: "Settings", icon: Settings },
@@ -67,22 +68,26 @@ export function Layout() {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b hair bg-bg/70 px-4 backdrop-blur md:px-8">
-        <div className="md:hidden">
-          <Logo compact />
+      <header className="sticky top-0 z-20 border-b hair bg-bg/70 backdrop-blur">
+        <div className="flex h-14 items-center justify-between gap-3 px-4 md:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="md:hidden">
+              <Logo compact />
+            </div>
+            <BackendSwitcher />
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusLight />
+            <ConnectAgentButton />
+            <QueuePill />
+          </div>
         </div>
-        <div className="hidden md:block" />
-        <div className="flex items-center gap-2">
-          {status?.demo && (
-            <Tip label="Demo mode: a simulated pipeline, nothing real is running">
-              <span>
-                <Badge tone="accent">Demo mode</Badge>
-              </span>
-            </Tip>
-          )}
-          <ConnectAgentButton />
-          <QueuePill />
-        </div>
+        {status?.sandboxed && (
+          <div className="flex items-center gap-2 border-t border-accent/25 bg-accent/10 px-4 py-1.5 text-xs text-ink/90 md:px-8">
+            <FlaskConical className="h-3.5 w-3.5 text-accent" />
+            Simulated runs: nothing real is computed, and results go to a sandbox, not your data folder.
+          </div>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-[1280px] px-4 pb-28 pt-6 md:px-8 md:pb-12">

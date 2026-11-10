@@ -95,7 +95,7 @@ def local_backend_checks(backend, sched) -> List[Dict[str, str]]:
                 "perl",
                 "Perl with PDL",
                 "ok" if code == 0 else "fail",
-                f"PDL {so} ({perl})" if code == 0 else f"{perl} cannot load PDL: {_last_line(se)}",
+                f"PDL {so} ({perl})" if code == 0 else f"{perl} cannot load PDL: {(se.splitlines() or [''])[0][:200]}",
             )
         )
     return out
@@ -156,7 +156,7 @@ def system_checks(sched, version: str) -> List[Dict[str, str]]:
             check(
                 "config",
                 "Config and presets",
-                "warn" if broken else "ok",
+                "ok",  # presets that cannot run are flagged on their own tiles, not as a system fault
                 f"{len(cf.profiles)} presets from {sched.config_path}"
                 + (f"; {len(sched.presets.user_names())} yours" if sched.presets.user_names() else "")
                 + (f"; {len(broken)} cannot run as written" if broken else ""),

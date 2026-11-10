@@ -81,7 +81,7 @@ export function JobsPage() {
       {!data ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : data.jobs.length === 0 ? (
-        <EmptyState icon={<ListChecks className="h-5 w-5" />} title="No jobs yet" body="Start a run from a profile and it will be tracked here." action={<Link to="/profiles" className="btn btn-primary">Choose a profile</Link>} />
+        <EmptyState icon={<ListChecks className="h-5 w-5" />} title="No jobs yet" body="Start a run from a preset and it will be tracked here." action={<Link to="/presets" className="btn btn-primary">Choose a preset</Link>} />
       ) : (
         <div className="space-y-2.5">
           {data.jobs.map((j) => {

@@ -38,7 +38,7 @@ class LocalBackend:
             kind=self.kind,
             slots=self.cpu_slots,
             shared_fs=True,
-            description=f"{self.description}; jobs run {self.python}",
+            description=f"{self.description}; jobs run {self.python}" if self.kind == "local" else self.description,
         )
 
     def probe(self) -> List[str]:

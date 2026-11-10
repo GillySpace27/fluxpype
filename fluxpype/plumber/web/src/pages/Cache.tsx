@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Database, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Database, FlaskConical, Layers, RotateCcw, Search, Trash2, X } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { Badge, Card, Checkbox, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { ago, bytes, kindLabel } from "../lib/format";
-import { useCache, useTrash } from "../lib/hooks";
+import { useCache, useProfile, useStatus, useTrash } from "../lib/hooks";
 import type { CacheRecord } from "../lib/types";
 
 const LIMIT = 200;
@@ -80,11 +81,24 @@ export function CachePage() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [trashOpen, setTrashOpen] = useState(false);
   const [limit, setLimit] = useState(LIMIT);
+  const [params, setParams] = useSearchParams();
+  const presetName = params.get("preset") ?? undefined;
+  const crParam = params.get("cr");
+  const { data: preset } = useProfile(presetName);
+  const { data: status } = useStatus();
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return (data?.records ?? []).filter((r) => (!kind || r.kind === kind) && (!needle || `${r.name} ${r.cr ?? ""} ${r.batch ?? ""}`.toLowerCase().includes(needle)));
-  }, [data, kind, q]);
+    const crs = crParam ? new Set([crParam]) : preset ? new Set(preset.axes.rotations ?? []) : null;
+    const batch = preset?.batch_name;
+    return (data?.records ?? []).filter(
+      (r) =>
+        (!kind || r.kind === kind) &&
+        (!needle || `${r.name} ${r.cr ?? ""} ${r.batch ?? ""}`.toLowerCase().includes(needle)) &&
+        (!crs || (r.cr !== undefined && crs.has(r.cr))) &&
+        (!presetName || !r.batch || !batch || r.batch === batch),
+    );
+  }, [data, kind, q, crParam, preset, presetName]);
   const shown = rows.slice(0, limit);
   const byId = useMemo(() => new Map((data?.records ?? []).map((r) => [r.id, r])), [data]);
   const selSize = [...sel].reduce((a, id) => a + (byId.get(id)?.size ?? 0), 0);
@@ -108,7 +122,19 @@ export function CachePage() {
     <div className="animate-fade-in space-y-6">
       <PageHeader
         title="Cache"
-        sub={data ? <span className="font-mono text-xs">{data.data_dir}</span> : undefined}
+        sub={
+          data ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {status?.sandboxed && (
+                <Badge tone="accent">
+                  <FlaskConical className="mr-1 inline h-3 w-3" />
+                  sandbox for simulated runs
+                </Badge>
+              )}
+              <span className="font-mono text-xs">{data.data_dir}</span>
+            </span>
+          ) : undefined
+        }
         right={
           <button className="btn" onClick={() => setTrashOpen(true)}>
             <Trash2 className="h-3.5 w-3.5" /> Trash {data && data.trash.count > 0 && <Badge>{data.trash.count}</Badge>}
@@ -133,6 +159,20 @@ export function CachePage() {
             ))}
           </div>
 
+          {presetName && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-[13px]">
+              <Layers className="h-4 w-4 text-accent" />
+              Files for preset
+              <Link to={`/presets/${encodeURIComponent(presetName)}`} className="font-semibold hover:underline">
+                {presetName}
+              </Link>
+              {crParam ? <span className="text-muted">· CR {crParam}</span> : preset && <span className="text-muted">· CR {(preset.axes.rotations ?? []).join(", ")}</span>}
+              {preset?.batch_name && <span className="text-muted">· batch {preset.batch_name}</span>}
+              <button className="btn btn-ghost btn-sm ml-auto" onClick={() => setParams({})}>
+                <X className="h-3.5 w-3.5" /> Show everything
+              </button>
+            </div>
+          )}
           <Card>
             <div className="flex flex-wrap items-center gap-3 border-b hair p-3">
               <div className="relative min-w-[180px] flex-1">

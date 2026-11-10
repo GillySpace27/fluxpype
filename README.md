@@ -66,11 +66,15 @@ A local web GUI for running and watching the pipeline: choose a profile, overrid
 ```bash
 pip install -e ".[plumber]"
 flux-plumb              # opens http://plumber.localhost:8765 (signed in via a token URL)
-flux-plumb --demo       # simulated pipeline at http://demo.plumber.localhost:8775, no FLUX/PDL needed
+flux-plumb --demo       # a throwaway Plumber that only simulates (demo.plumber.localhost:8775); normally just pick Simulated in the UI
 flux-plumb --open       # open the running Plumber in the browser, signed in
 flux-plumb --status     # address, process and login-item state
 flux-plumb --stop       # stop the Plumber for this state directory (running jobs keep running)
 ```
+
+**Backends.** The switch at the top left of every page chooses where new runs go: **This computer** (real FLUX runs) or **Simulated** (a fake pipeline for trying things out; its outputs go to `<home>/sandbox/data`, never your data folder). SSH and Slurm backends will appear there once they are set up. The status light at the top right opens a panel that checks each part: the server, live updates, the queue, the config, the data folder, and for the real backend the job Python, the science stack, the fluxpype runner and Perl with PDL, run the way a job runs them.
+
+**Presets.** The sections of `config.ini` appear as built-in presets; Plumber never writes that file. New presets (from scratch, a duplicate, or "Save as preset" from a run's changes) are stored in `<home>/presets.ini`, inherit `[DEFAULT]` like any section, and can be edited, renamed, hidden, deleted (restorable), exported as `.ini` and imported. Each preset tile shows how much of its work is already cached, and links to those files on the Cache page.
 
 Real FLUX jobs need the environment with the science stack and FLUX's Perl. If Plumber lives in its own venv, point jobs at the FLUX one with `--python` (or `$FLUX_PLUMBER_PYTHON`), and start Plumber from a shell where `perl -MPDL -e1` works.
 

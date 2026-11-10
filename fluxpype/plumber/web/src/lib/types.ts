@@ -133,6 +133,7 @@ export interface QueueState {
   pending: number;
   slots_used: number;
   default_backend: string;
+  active_backend?: string;
   backends: Record<string, { kind: string; slots: number; shared_fs: boolean; description: string }>;
   pending_tasks?: TaskRow[];
 }
@@ -160,6 +161,8 @@ export interface StatusInfo {
   data_dir: string;
   backends: { name: string; kind: string; slots: number; shared_fs: boolean; description: string; active: boolean }[];
   default_backend: string;
+  active_backend: string;
+  sandboxed: boolean;
   scenarios: string[];
   stages: { id: string; label: string }[];
   forbidden_keys: string[];
@@ -173,7 +176,47 @@ export interface ProfileSummary {
   errors: string[];
   warnings: string[];
   own_keys: number;
+  origin: "builtin" | "user";
+  hidden: boolean;
+  cache: PresetCache | null;
   is_default_profile: boolean;
+}
+
+export interface PresetCache {
+  tasks: number;
+  of: number;
+  counts: { magnetogram: number; footpoints: number; pfss: number; world: number; relaxed_world: number };
+}
+
+export type Health = "ok" | "warn" | "fail" | "off" | "unknown";
+
+export interface HealthCheck {
+  id: string;
+  label: string;
+  status: Health;
+  detail: string;
+}
+
+export interface BackendHealth {
+  name: string;
+  kind: string;
+  label: string;
+  description: string;
+  slots: number;
+  configured: boolean;
+  active: boolean;
+  sandboxed: boolean;
+  data_dir: string | null;
+  status: Health;
+  checks: HealthCheck[];
+}
+
+export interface HealthReport {
+  active_backend: string;
+  backends: BackendHealth[];
+  system: HealthCheck[];
+  checked_at: number;
+  overall: Health;
 }
 
 export interface ProfileEntry {
@@ -204,6 +247,11 @@ export interface ProfileDetail {
   axes: Record<string, string[]>;
   data_dir: string;
   slots: number;
+  origin: "builtin" | "user";
+  hidden: boolean;
+  batch_name: string;
+  backend: string;
+  sandboxed: boolean;
 }
 
 export interface CacheRecord {
