@@ -16,6 +16,11 @@ import pytest
 from _pytest.nodes import Item
 
 
+# test_methods.py is an unmodified project-template sample that imports a package
+# (python_package) which does not exist in this repository, so it cannot be collected.
+collect_ignore = ["test_methods.py"]
+
+
 def pytest_collection_modifyitems(items: list[Item]):
     for item in items:
         if "spark" in item.nodeid:

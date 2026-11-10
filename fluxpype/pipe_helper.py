@@ -184,7 +184,16 @@ def configurations(
 def find_config_file(config_filename):
     """Find the configuration file: as given (absolute or relative to cwd), else the one
     shipped beside this module. The Perl side (find_config_file in pipe_helper.pm) also
-    reads the shipped one, so both halves of a run see the same file from any cwd."""
+    reads the shipped one, so both halves of a run see the same file from any cwd.
+
+    FLUXPYPE_CONFIG_FILE, when set, wins over everything (the studio uses it to freeze a
+    per-job snapshot); if it is set but missing that is an error, not a silent fallback."""
+    override = os.environ.get("FLUXPYPE_CONFIG_FILE")
+    if override:
+        override = os.path.expanduser(override)
+        if not os.path.exists(override):
+            raise FileNotFoundError(f"FLUXPYPE_CONFIG_FILE points to a missing file: {override}")
+        return override
     config_path = os.path.expanduser(config_filename)
     if os.path.exists(config_path):
         return config_path
