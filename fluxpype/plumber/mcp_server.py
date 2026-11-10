@@ -810,11 +810,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--token-file", help="file holding the API token for --url (or set FLUX_PLUMBER_TOKEN)")
     p.add_argument("--no-autostart", action="store_true", help="never start a Plumber; fail if none is running")
     p.add_argument("--demo", action="store_true", help="autostart a demo Plumber (needs --home; simulated runs)")
+    p.add_argument(
+        "--print-prompt",
+        action="store_true",
+        help="print a prompt to paste into an AI agent so it registers this server, then exit",
+    )
     return p
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+    if args.url and args.print_prompt:
+        print(
+            "--print-prompt works with --home only (an agent on this machine reaches Plumber through its home)",
+            file=sys.stderr,
+        )
+        return 2
     if args.url:
         host = urlsplit(args.url).hostname
         if host not in LOCAL_HOSTS:
@@ -842,6 +853,11 @@ def main(argv=None) -> int:
             return 2
         home = Path(args.home).expanduser().resolve() if args.home else paths.plumber_home()
         home.mkdir(parents=True, exist_ok=True)
+        if args.print_prompt:
+            from . import agent_prompt
+
+            print(agent_prompt.build(home=home, demo=args.demo)["prompt"])
+            return 0
         resolver: Callable[[], Tuple[str, str]] = functools.partial(
             connect_home, home, not args.no_autostart, args.demo
         )

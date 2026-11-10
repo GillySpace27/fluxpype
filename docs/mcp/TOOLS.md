@@ -13,6 +13,16 @@ cd ~/vscode/fluxons-plumber/fluxpype
 
 Nothing is written to stdout except the MCP protocol; diagnostics go to stderr.
 
+### Connect-an-agent prompt
+
+Plumber's **Connect agent** button (top bar, and Settings > AI agents) shows a prompt to paste into any MCP-capable agent. It is built by `fluxpype/plumber/agent_prompt.py`, served at `GET /api/agent-prompt`, and printed by `flux-plumb-mcp --print-prompt [--home PATH] [--demo]`. It:
+
+- names the interpreter running Plumber and that Plumber's home, so the agent reaches the same queue (a demo Plumber registers as `fluxpype-demo` with `--demo`);
+- probes that interpreter from outside the repo with an empty environment, as an MCP host would launch it, and adds a `pip install` step if `mcp` or `httpx` is missing, or a warning if fluxpype itself is not importable;
+- gives the Claude Code command (`claude mcp add --scope user ...`), the JSON `mcpServers` entry, and a generic fallback;
+- asks the agent not to replace an existing server of the same name without asking, not to start jobs, and to confirm the connection by calling `status`;
+- never contains the API token.
+
 ## Tools
 
 Results are compact JSON. Every string is cut to 2,000 characters, except log text, which is bounded by line count (400) and by 40,000 characters. Config comments are removed from profile output.

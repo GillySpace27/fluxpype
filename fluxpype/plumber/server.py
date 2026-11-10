@@ -218,6 +218,12 @@ def create_app(
             }
         )
 
+    @app.get("/api/agent-prompt")
+    def agent_prompt_():
+        from . import agent_prompt
+
+        return reply(agent_prompt.build(home=Path(sched.home), demo=demo))
+
     @app.get("/api/profiles")
     def profiles():
         cf = sched.parsed()

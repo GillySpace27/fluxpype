@@ -5,6 +5,7 @@ import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { Badge, Tip } from "./ui";
 import { QueuePill } from "./QueuePill";
+import { ConnectAgentButton } from "./ConnectAgent";
 
 const NAV = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
@@ -79,6 +80,7 @@ export function Layout() {
               </span>
             </Tip>
           )}
+          <ConnectAgentButton />
           <QueuePill />
         </div>
       </header>

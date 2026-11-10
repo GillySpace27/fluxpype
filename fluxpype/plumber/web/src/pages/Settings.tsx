@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cloud, Cpu, Monitor, Moon, Server, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge, Card, ErrorNote, PageHeader, Segmented, SectionTitle, Skeleton, Switch, useToast } from "../components/ui";
+import { ConnectAgentButton } from "../components/ConnectAgent";
 import { api } from "../lib/api";
 import { useQueue, useStatus } from "../lib/hooks";
 import { useTheme } from "../lib/theme";
@@ -81,6 +82,15 @@ export function SettingsPage() {
                 { value: "system", label: <span className="flex items-center gap-1.5"><Monitor className="h-3.5 w-3.5" />System</span> },
               ]}
             />
+          </Row>
+        </Card>
+      </section>
+
+      <section>
+        <SectionTitle title="AI agents" />
+        <Card>
+          <Row title="Connect an agent" hint="Get a prompt to paste into Claude Code, Claude Desktop or another MCP agent. It registers Plumber's MCP server so the agent can queue runs, watch progress and read logs in this same queue.">
+            <ConnectAgentButton label="Get prompt" />
           </Row>
         </Card>
       </section>

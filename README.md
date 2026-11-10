@@ -80,7 +80,14 @@ Frontend sources live in `fluxpype/plumber/web` (React, TypeScript, Vite, Tailwi
 
 `flux-plumb-mcp` lets an AI assistant (Claude Code, Claude Desktop, any MCP client) look at and drive Plumber: submit jobs, wait for stages, read logs and relaxation curves, look at plots. It is a client of Plumber's local API, speaks MCP over stdio, and finds (or, if none is running, starts) the Plumber for your state directory. Tools, safety notes and the autostart lifetime are in [docs/mcp/TOOLS.md](docs/mcp/TOOLS.md).
 
-Install the extra into the same environment you use for Plumber:
+The quickest way to connect an agent: open Plumber, click **Connect agent** in the top bar (also under Settings), and paste the copied prompt into your agent. The prompt carries this Plumber's exact Python and state directory, checks whether the MCP SDK is installed, and asks the agent to register the server and confirm the connection without starting any jobs. It contains no token. The same prompt is available from a terminal:
+
+```bash
+cd ~/vscode/fluxons-plumber/fluxpype
+.venv-plumber/bin/python -m fluxpype.plumber.mcp_server --print-prompt
+```
+
+To set it up by hand instead, install the extra into the same environment you use for Plumber:
 
 ```bash
 cd ~/vscode/fluxons-plumber/fluxpype
