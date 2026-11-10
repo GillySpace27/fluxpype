@@ -1,7 +1,14 @@
 """The MCP server, driven through the SDK client against an in-process Plumber (fake backend, temp home)."""
 
+import base64
+import io
 import json
+import os
+import signal
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -12,12 +19,15 @@ pytest.importorskip("mcp")
 import anyio  # noqa: E402
 import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from mcp import Client  # noqa: E402
+from mcp import Client, StdioServerParameters  # noqa: E402
+from mcp.server.mcpserver.exceptions import ToolError  # noqa: E402
 
-from fluxpype.plumber import mcp_server  # noqa: E402
-from fluxpype.plumber.mcp_server import PlumberClient, build_server  # noqa: E402
+from fluxpype.plumber import cli, mcp_server  # noqa: E402
+from fluxpype.plumber.launcher import process_alive  # noqa: E402
+from fluxpype.plumber.mcp_server import PlumberClient, PlumberError, build_server  # noqa: E402
 from fluxpype.plumber.server import create_app  # noqa: E402
 
+REPO = Path(__file__).resolve().parent.parent
 TOKEN = "t0k3n-for-tests"
 H = {"X-Flux-Token": TOKEN}
 
@@ -416,3 +426,178 @@ def test_tool_annotations(rig):
     assert tools["retry_failed"].annotations.idempotent_hint is False
     for name in ("read_task_log", "get_task", "wait_for_task", "get_job", "status"):
         assert "untrusted" in tools[name].description, name
+
+
+# ------------------------------------------------------------------ images
+
+
+def call_raw(rig, tool, **args):
+    async def go():
+        async with Client(rig.server) as c:
+            return await c.call_tool(tool, args)
+
+    return anyio.run(go)
+
+
+def png_bytes(w, h):
+    from PIL import Image as PILImage
+
+    buf = io.BytesIO()
+    PILImage.effect_noise((w, h), 80).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_get_task_image_returns_the_image_and_a_caption(rig, done):
+    _, tid = done
+    arts = rig.ok("get_task", task_id=tid)["artifacts"]
+    res = call_raw(rig, "get_task_image", task_id=tid)
+    assert not res.is_error
+    kinds = [c.type for c in res.content]
+    assert kinds == ["image", "text"] and res.content[0].mime_type == "image/png"
+    assert base64.b64decode(res.content[0].data)[:4] == b"\x89PNG"
+    assert arts[-1]["name"] in res.content[1].text and f"artifact {arts[-1]['index']} of 3" in res.content[1].text
+    first = call_raw(rig, "get_task_image", task_id=tid, index=0)
+    assert arts[0]["name"] in first.content[1].text
+    for bad in (3, -4):
+        res = call_raw(rig, "get_task_image", task_id=tid, index=bad)
+        assert res.is_error and "out of range" in res.content[0].text
+
+
+def test_get_task_image_without_artifacts_is_an_error(rig):
+    rig.ok("set_queue", paused=True)
+    job = rig.ok("submit_job", profile="t_one", backend="fake", speed=300)
+    res = call_raw(rig, "get_task_image", task_id=job["tasks"][0]["id"])
+    assert res.is_error and "no image artifacts" in res.content[0].text
+    rig.ok("cancel", job_id=job["id"])
+
+
+def test_prepare_image_without_pillow_returns_small_and_rejects_large(monkeypatch):
+    monkeypatch.setitem(sys.modules, "PIL", None)  # makes `from PIL import ...` raise ImportError
+    data = b"\x89PNG" + b"0" * 1000
+    assert mcp_server.prepare_image(data, ".png", 512) == (data, "png", "1 KB")
+    big = b"\x89PNG" + b"0" * (mcp_server.MAX_RAW_IMAGE + 1)
+    with pytest.raises(ToolError, match=r"1\.5 MB.*Pillow"):
+        mcp_server.prepare_image(big, ".png", 512)
+
+
+def test_prepare_image_downscales_with_pillow():
+    PILImage = pytest.importorskip("PIL.Image")
+    data = png_bytes(3000, 2000)
+    out, fmt, note = mcp_server.prepare_image(data, ".png", 500)
+    assert fmt == "png" and "3000x2000 scaled to 500x333" in note and len(out) < len(data)
+    assert PILImage.open(io.BytesIO(out)).size == (500, 333)
+    small = png_bytes(100, 80)
+    assert mcp_server.prepare_image(small, ".png", 500)[0] == small  # already small: untouched
+    jpg = io.BytesIO()
+    PILImage.new("RGBA", (800, 600), (255, 0, 0, 255)).convert("RGB").save(jpg, format="JPEG")
+    out, fmt, _ = mcp_server.prepare_image(jpg.getvalue(), ".jpg", 200)
+    assert fmt == "jpeg" and PILImage.open(io.BytesIO(out)).size == (200, 150)
+    with pytest.raises(ToolError, match="could not decode"):
+        mcp_server.prepare_image(b"not an image", ".png", 200)
+
+
+def test_get_task_image_downscales_a_big_artifact_end_to_end(rig, done):
+    PILImage = pytest.importorskip("PIL.Image")
+    _, tid = done
+    art = rig.ok("get_task", task_id=tid)["artifacts"][-1]
+    with open(art["path"], "wb") as f:
+        f.write(png_bytes(2400, 1800))
+    res = call_raw(rig, "get_task_image", task_id=tid, max_edge=300)
+    assert not res.is_error
+    img = PILImage.open(io.BytesIO(base64.b64decode(res.content[0].data)))
+    assert img.size == (300, 225) and "scaled to 300x225" in res.content[1].text
+
+
+# ------------------------------------------------------------------ connection and CLI
+
+
+def test_main_rejects_non_local_urls_and_missing_tokens(capsys, monkeypatch):
+    monkeypatch.delenv("FLUX_PLUMBER_TOKEN", raising=False)
+    assert mcp_server.main(["--url", "http://plumber.example.com:8765", "--token", "x"]) == 2
+    assert "SSH tunnel" in capsys.readouterr().err
+    assert mcp_server.main(["--url", "http://127.0.0.1:8765"]) == 2
+    assert "--token" in capsys.readouterr().err
+    assert mcp_server.main(["--url", "http://127.0.0.1:8765", "--token-file", "/nonexistent/token"]) == 2
+    assert mcp_server.main(["--demo"]) == 2
+    assert "--home" in capsys.readouterr().err
+
+
+def test_connect_home_without_autostart_or_with_a_stuck_lock(plumber_home, monkeypatch):
+    with pytest.raises(PlumberError, match="no Plumber is running"):
+        mcp_server.connect_home(plumber_home, autostart=False)
+    monkeypatch.setattr(mcp_server, "LOCK_WAIT_S", 0.3)
+    assert cli.acquire_lock(plumber_home)
+    try:
+        for autostart in (False, True):  # never starts a second Plumber while the lock is held
+            with pytest.raises(PlumberError, match=r"flux-plumb --stop --home .*server\.log"):
+                mcp_server.connect_home(plumber_home, autostart=autostart)
+    finally:
+        os.close(cli._LOCK_FD)
+        cli._LOCK_FD = None
+
+
+def test_discovery_ignores_stale_and_foreign_server_json(plumber_home, tmp_path):
+    (plumber_home / "token").write_text("tok")
+    stale = {"pid": 2**22 + 777, "pid_start": "1", "port": 9, "host": "127.0.0.1", "home": str(plumber_home)}
+    (plumber_home / "server.json").write_text(json.dumps(stale))
+    assert mcp_server.discover_existing(plumber_home) is None
+    (plumber_home / "server.json").write_text("{not json")
+    assert mcp_server.discover_existing(plumber_home) is None
+
+
+# ------------------------------------------------------------------ real process: autostart over stdio
+
+
+def test_autostart_reuse_and_stop_over_stdio(tmp_path):
+    home = tmp_path / "mcp-home"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "fluxpype.plumber.mcp_server", "--home", str(home), "--demo"],
+        cwd=str(REPO),
+    )
+
+    async def status_and_pid():
+        async with Client(params) as c:
+            res = await c.call_tool("status", {})
+            assert not res.is_error, res.content[0].text
+            return json.loads(res.content[0].text), cli.read_server_json(home)
+
+    async def shut_down_work():
+        async with Client(params) as c:
+            call = lambda name, args=None: c.call_tool(name, args or {})  # noqa: E731
+            await call("set_queue", {"paused": True})
+            for _ in range(100):  # the demo seeds jobs for a moment; stop them all so nothing outlives the test
+                jobs = json.loads((await call("list_jobs", {"limit": 100})).content[0].text)["jobs"]
+                for j in jobs:
+                    if j["status"] in ("pending", "running"):
+                        await call("cancel", {"job_id": j["id"]})
+                st = json.loads((await call("status")).content[0].text)
+                if len(jobs) >= 7 and not st["running"] and not st["pending"]:
+                    return
+                await anyio.sleep(0.3)
+            raise AssertionError("demo jobs did not stop")
+
+    async def bounded(fn):
+        with anyio.fail_after(120):
+            return await fn()
+
+    info = None
+    try:
+        status, info = anyio.run(bounded, status_and_pid)
+        assert info and status["demo"] is True and status["plumber_home"] == str(home)
+        assert (home / "token").exists() and (home / "server.log").exists()
+        status2, info2 = anyio.run(bounded, status_and_pid)  # a second MCP server reuses the running Plumber
+        assert info2["pid"] == info["pid"] and info2["started"] == info["started"]
+        anyio.run(bounded, shut_down_work)
+        stop = subprocess.run(
+            [sys.executable, "-m", "fluxpype.plumber.cli", "--stop", "--home", str(home)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert stop.returncode == 0, stop.stderr
+        assert cli.read_server_json(home) is None and not process_alive(info["pid"], info["pid_start"])
+    finally:
+        if info and process_alive(info["pid"], info["pid_start"]):
+            os.kill(info["pid"], signal.SIGKILL)

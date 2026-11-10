@@ -37,6 +37,7 @@ LOG_TEXT_CAP = 40000
 LOG_MAX_LINES = 400
 POLL_S = 1.5  # wait_for_task polling interval
 AUTOSTART_WAIT_S = 15.0
+LOCK_WAIT_S = 5.0  # how long to wait for a Plumber that holds the lock but has not published server.json yet
 MAX_RAW_IMAGE = 1_500_000  # bytes; larger images need Pillow to be downscaled
 FINISHED = ("ok", "failed", "timeout", "cancelled", "crashed")
 OVERRIDE_VALUE = Union[str, int, float, bool, List[Union[str, int, float]]]
@@ -223,7 +224,7 @@ def connect_home(home: Path, autostart: bool, demo: bool = False) -> Tuple[str, 
     if found:
         return found
     if lock_is_held(home):
-        end = time.monotonic() + 5.0  # a Plumber that is still starting takes the lock before it writes server.json
+        end = time.monotonic() + LOCK_WAIT_S
         while time.monotonic() < end:
             found = discover_existing(home)
             if found:
@@ -381,7 +382,7 @@ def prepare_image(data: bytes, ext: str, max_edge: int) -> Tuple[bytes, str, str
                 f"the image is {len(data) / 1e6:.1f} MB, over the {MAX_RAW_IMAGE / 1e6:.1f} MB limit, "
                 "and Pillow is not installed to downscale it (pip install pillow)"
             ) from None
-        return data, fmt, f"{len(data) // 1024} KB"
+        return data, fmt, f"{max(len(data) // 1024, 1)} KB"
     try:
         with PILImage.open(io.BytesIO(data)) as im:
             w, h = im.size
