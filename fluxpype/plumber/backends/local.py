@@ -34,7 +34,12 @@ class LocalBackend:
 
     # -- interface
     def capabilities(self) -> BackendCaps:
-        return BackendCaps(kind=self.kind, slots=self.cpu_slots, shared_fs=True, description=self.description)
+        return BackendCaps(
+            kind=self.kind,
+            slots=self.cpu_slots,
+            shared_fs=True,
+            description=f"{self.description}; jobs run {self.python}",
+        )
 
     def probe(self) -> List[str]:
         """Ask the installed runner what it supports; an old install gives an empty list."""

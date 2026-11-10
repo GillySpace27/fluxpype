@@ -39,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-parallel", type=int, help="tasks to run at once (default 1; demo 2)")
     p.add_argument("--cpu-budget", type=int, help="CPU slots to share between tasks (default: all cores)")
     p.add_argument(
+        "--python",
+        help="interpreter that runs real FLUX jobs (default: $FLUX_PLUMBER_PYTHON, else the one running Plumber). "
+        "Point it at the environment that has the science stack, e.g. ~/vscode/fluxons/.venv/bin/python",
+    )
+    p.add_argument(
         "--headless",
         action="store_true",
         help="no browser and nothing on stdout; log to <home>/server.log (used by the MCP server's autostart)",
@@ -186,7 +191,13 @@ def main(argv=None) -> int:
         config_path = home / "config.ini"
         backends = {"fake": FakeBackend()}
     else:
-        backends = {"local": LocalBackend()}
+        job_python = args.python or os.environ.get("FLUX_PLUMBER_PYTHON")
+        if job_python:
+            job_python = str(Path(job_python).expanduser())
+            if not os.access(job_python, os.X_OK):
+                print(f"--python {job_python} is not an executable file", file=sys.stderr)
+                return 2
+        backends = {"local": LocalBackend(python=job_python)}
 
     bind_host = args.host if args.host not in ("0.0.0.0", "::") else "127.0.0.1"
     with socket.socket() as s:

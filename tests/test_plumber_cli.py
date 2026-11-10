@@ -122,3 +122,21 @@ def test_demo_with_home_seeds_that_directory(tmp_path, monkeypatch):
     assert os.environ["FLUX_PLUMBER_HOME"] == str(home)
     random_home = demo.prepare_home()  # unchanged behavior without a home
     assert random_home.name.startswith("flux-plumb-demo-") and random_home != home
+
+
+def test_python_flag_sets_the_job_interpreter(running, plumber_home):
+    import urllib.request
+
+    proc, info = running("--python", sys.executable)
+    token = (plumber_home / "token").read_text().strip()
+    req = urllib.request.Request(f"http://127.0.0.1:{info['port']}/api/status", headers={"X-Flux-Token": token})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        st = json.load(r)
+    local = [b for b in st["backends"] if b["name"] == "local"][0]
+    assert sys.executable in local["description"]
+
+
+def test_python_flag_rejects_a_missing_interpreter(plumber_home, plumber_config, tmp_path):
+    rc = cli.main(["--home", str(plumber_home), "--config", str(plumber_config), "--python", str(tmp_path / "nope")])
+    assert rc == 2
+    assert not (plumber_home / "server.json").exists()
