@@ -1,5 +1,7 @@
-import { Database, Gauge, Layers, ListChecks, Settings, Sun } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Database, Gauge, Layers, ListChecks, PanelsTopLeft, Settings, Sun } from "lucide-react";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { storeLayout, storedLayout, type LayoutMode } from "../lib/layoutMode";
 import { cn } from "../lib/cn";
 import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
@@ -8,13 +10,64 @@ import { QueuePill } from "./QueuePill";
 import { ConnectAgentButton } from "./ConnectAgent";
 import { BackendSwitcher, StatusLight } from "./SystemBar";
 
-const NAV = [
+const NAV_PRESETS = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
   { to: "/presets", label: "Presets", icon: Layers },
   { to: "/jobs", label: "Jobs", icon: ListChecks },
   { to: "/cache", label: "Cache", icon: Database },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
+
+const NAV_RUN = [
+  { to: "/run", label: "Run", icon: PanelsTopLeft, end: false },
+  { to: "/settings", label: "Settings", icon: Settings, end: false },
+];
+
+const PRESET_PAGES = /^\/(presets|jobs|cache)(\/|$)/;
+
+/** Where the same thing lives in the other layout (a job is a run; a run is a job). */
+function counterpart(pathname: string, search: string, to: LayoutMode): string {
+  if (to === "run") {
+    const job = pathname.match(/^\/jobs\/([^/]+)(?:\/([^/]+))?/);
+    if (job) return `/run/${job[1]}/progress${job[2] ? `?task=${job[2]}` : ""}`;
+    const preset = pathname.match(/^\/presets\/([^/]+)/);
+    if (preset) return `/run/new?preset=${preset[1]}`;
+    return "/run";
+  }
+  const run = pathname.match(/^\/run\/([^/]+)/);
+  if (run && run[1] !== "new") {
+    const task = new URLSearchParams(search).get("task");
+    return `/jobs/${run[1]}${task ? `/${task}` : ""}`;
+  }
+  const preset = new URLSearchParams(search).get("preset");
+  return preset ? `/presets/${preset}` : "/presets";
+}
+
+/** Presets | Run switch: the same jobs and files, arranged around presets or around one run. */
+function LayoutSwitch({ mode, onSwitch }: { mode: LayoutMode; onSwitch: (m: LayoutMode) => void }) {
+  return (
+    <div className="inline-flex rounded-lg border border-line bg-bg/50 p-0.5" role="radiogroup" aria-label="Layout">
+      {(
+        [
+          ["presets", "Presets", Layers, "Launch several jobs from presets"],
+          ["run", "Run", PanelsTopLeft, "One run, start to finish"],
+        ] as const
+      ).map(([m, label, Icon, hint]) => (
+        <button
+          key={m}
+          role="radio"
+          aria-checked={mode === m}
+          title={hint}
+          onClick={() => mode !== m && onSwitch(m)}
+          className={cn("flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors", mode === m ? "bg-raised text-ink shadow-sm" : "text-muted hover:text-ink")}
+        >
+          <Icon className={cn("h-3.5 w-3.5", mode === m ? "text-accent" : "text-faint")} />
+          <span className="hidden sm:inline">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function Logo({ compact }: { compact?: boolean }) {
   return (
@@ -33,6 +86,23 @@ function Logo({ compact }: { compact?: boolean }) {
 export function Layout() {
   const { data: status } = useStatus();
   const { connected } = useLive();
+  const loc = useLocation();
+  const nav = useNavigate();
+  const [mode, setMode] = useState<LayoutMode>(storedLayout);
+  useEffect(() => {
+    // the page decides the layout; neutral pages (Settings) keep the last one
+    const m: LayoutMode | null = loc.pathname.startsWith("/run") ? "run" : PRESET_PAGES.test(loc.pathname) ? "presets" : null;
+    if (m && m !== mode) {
+      setMode(m);
+      storeLayout(m);
+    }
+  }, [loc.pathname, mode]);
+  const switchTo = (m: LayoutMode) => {
+    storeLayout(m);
+    setMode(m);
+    nav(counterpart(loc.pathname, loc.search, m));
+  };
+  const NAV = mode === "run" ? NAV_RUN : NAV_PRESETS;
   return (
     <div className="min-h-screen md:pl-[220px]">
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[220px] flex-col border-r hair bg-surface/70 px-3 py-5 backdrop-blur md:flex">
@@ -74,6 +144,7 @@ export function Layout() {
             <div className="md:hidden">
               <Logo compact />
             </div>
+            <LayoutSwitch mode={mode} onSwitch={switchTo} />
             <BackendSwitcher />
           </div>
           <div className="flex items-center gap-2">

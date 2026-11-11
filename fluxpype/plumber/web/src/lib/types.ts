@@ -359,3 +359,60 @@ export interface FitsRender {
   stats: { hdu?: string; shape?: number[]; vmin?: number; vmax?: number; min?: number | null; max?: number | null; nan?: number };
   image: string;
 }
+
+/* ------------------------------------------------------------------ one run's results and settings */
+
+export interface ResultFile extends CacheRecord {
+  /** true: written while the task ran; false: older, reused from the cache; null: can't tell */
+  made_here: boolean | null;
+  /** made: written during the task; reused: older; later: rewritten after the task ended */
+  origin: "made" | "reused" | "later" | null;
+}
+
+export interface ResultProduct {
+  id: "magnetogram" | "footpoints" | "pfss" | "world" | "relaxed_world" | "wind" | "fluxlight";
+  label: string;
+  files: ResultFile[];
+  more: number;
+  /** status of the pipeline stage that writes this product, when known */
+  stage_status?: StageStatus | null;
+}
+
+export interface TaskResults {
+  task_id: string;
+  job_id: string;
+  data_dir: string | null;
+  products: ResultProduct[];
+  plots: ResultFile[];
+  headline: string | null;
+}
+
+export interface JobConfigEntry extends ProfileEntry {
+  overridden: boolean;
+  preset_value: string | null;
+  differs_from_preset: boolean;
+  set_by_plumber: boolean;
+}
+
+export interface JobConfig {
+  job_id: string;
+  profile: string;
+  preset_exists: boolean;
+  overrides: Record<string, string>;
+  data_dir: string;
+  batch_name: string;
+  entries: JobConfigEntry[];
+}
+
+export interface JobFile extends ResultFile {
+  stage: string;
+  tasks: string[];
+}
+
+export interface JobFiles {
+  job_id: string;
+  data_dir: string | null;
+  is_current_data_dir: boolean;
+  files: JobFile[];
+  missing: { task_id: string; cr: string; nflux: string; stage: string; label: string }[];
+}

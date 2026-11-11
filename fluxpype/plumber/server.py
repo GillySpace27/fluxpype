@@ -30,6 +30,9 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 APP_DOMAIN = "plumber.localhost"  # *.localhost always resolves to loopback (RFC 6761)
 PUBLIC_FILES = {"/manifest.webmanifest", "/sw.js", "/login", "/favicon.ico"}
 PUBLIC_PREFIXES = ("/assets/", "/icons/")
+# results product id -> pipeline stage id (monitor.STAGES)
+PRODUCT_STAGE = {"relaxed_world": "relax"}
+
 IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -582,6 +585,7 @@ def create_app(
         except Exception:  # noqa: BLE001
             now = None
         entries = []
+        pinned = ("data_dir", "base_dir")  # Plumber writes these into every snapshot; a difference is not a user change
         for key, e in eff.items():
             current = now[key].value if now is not None and key in now else None
             entries.append(
@@ -595,7 +599,8 @@ def create_app(
                     "editable": key not in config_io.FORBIDDEN_KEYS,
                     "overridden": key in (job.get("overrides") or {}),
                     "preset_value": current,
-                    "differs_from_preset": now is not None and current != e.value,
+                    "differs_from_preset": now is not None and current != e.value and key not in pinned,
+                    "set_by_plumber": key in pinned,
                 }
             )
         return reply(
@@ -613,7 +618,14 @@ def create_app(
     def results_for(t: Dict[str, Any]) -> Dict[str, Any]:
         from .results import task_results
 
-        return task_results(sched.probe_context(t), t.get("started"), t.get("ended"))
+        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"))
+        try:
+            stages = {s["id"]: s["status"] for s in sched.task_state(t["id"]).get("stages", [])}
+        except Exception:  # noqa: BLE001
+            stages = {}
+        for prod in out["products"]:
+            prod["stage_status"] = stages.get(PRODUCT_STAGE.get(prod["id"], prod["id"]))
+        return out
 
     @app.get("/api/tasks/{task_id}/results")
     def task_results_view(task_id: str):
@@ -633,7 +645,7 @@ def create_app(
             r = results_for(t)
             data_dir = data_dir or r["data_dir"]
             for prod in r["products"]:
-                if not prod["files"]:
+                if not prod["files"] and prod.get("stage_status") not in ("skipped", "pending", "running"):
                     missing.append({"task_id": t["id"], "cr": t["cr"], "nflux": t["nflux"], "stage": prod["id"], "label": prod["label"]})
                 for f in prod["files"]:
                     by_path.setdefault(f["path"], {**f, "stage": prod["id"], "tasks": []})["tasks"].append(t["id"])

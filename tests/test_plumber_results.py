@@ -6,7 +6,7 @@ import time
 import pytest
 
 from fluxpype.plumber.monitor import ProbeContext
-from fluxpype.plumber.results import for_this_nflux, made_here, task_results
+from fluxpype.plumber.results import for_this_nflux, made_here, origin, task_results
 
 
 def touch(path, mtime=None, data=b"x"):
@@ -30,6 +30,8 @@ def test_made_here():
     assert made_here(150.0, 100.0, 200.0) is True
     assert made_here(98.0, 100.0, 200.0) is True  # clock slack
     assert made_here(1000.0, 100.0, 200.0) is None  # touched long after the run
+    assert [origin(m, 100.0, 200.0) for m in (50.0, 150.0, 1000.0)] == ["reused", "made", "later"]
+    assert origin(1.0, None, None) is None
 
 
 def test_task_results_groups_products_and_tags_reuse(tmp_path):
@@ -114,6 +116,7 @@ def test_task_results_and_job_files(client):
     r = client.get(f"/api/tasks/{tid}/results", headers=H).json()
     ids = [p["id"] for p in r["products"]]
     assert ids[:2] == ["magnetogram", "footpoints"] and "fluxlight" in ids
+    assert r["products"][0]["stage_status"] == "ok"  # each product carries its stage's status
     made = [f for p in r["products"] for f in p["files"] if f["made_here"]]
     assert made, "the simulated run wrote files"
     files = client.get(f"/api/jobs/{job['id']}/files", headers=H).json()

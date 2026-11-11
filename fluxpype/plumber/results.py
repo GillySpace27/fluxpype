@@ -47,6 +47,17 @@ def made_here(mtime: float, started: Optional[float], ended: Optional[float]) ->
     return True
 
 
+def origin(mtime: float, started: Optional[float], ended: Optional[float]) -> Optional[str]:
+    """'made' (written during the task), 'reused' (older), 'later' (rewritten after it ended), or None."""
+    if started is None:
+        return None
+    if mtime < started - SLACK_S:
+        return "reused"
+    if ended is not None and mtime > ended + 60:
+        return "later"
+    return "made"
+
+
 def _rel(path: str, root: str) -> str:
     return os.path.relpath(path, root).replace(os.sep, "/")
 
@@ -66,6 +77,7 @@ def _file(path: str, root: str, started, ended) -> Optional[Dict[str, Any]]:
         "size": st.st_size,
         "mtime": st.st_mtime,
         "made_here": made_here(st.st_mtime, started, ended),
+        "origin": origin(st.st_mtime, started, ended),
         **{k: v for k, v in info.items() if k in ("kind", "cr", "batch", "n", "inst", "reduce", "sel", "steps")},
     }
 
