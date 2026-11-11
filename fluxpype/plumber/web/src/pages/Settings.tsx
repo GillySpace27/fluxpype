@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Badge, Card, ErrorNote, PageHeader, Segmented, SectionTitle, Skeleton, Switch, useToast } from "../components/ui";
 import { ConnectAgentButton } from "../components/ConnectAgent";
 import { DataFolderCard } from "../components/DataFolder";
+import { UpdatesCard } from "../components/Updates";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useHealth, useQueue, useStatus } from "../lib/hooks";
@@ -48,6 +49,10 @@ export function SettingsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["queue"] }),
     onError: (e) => toast("error", e instanceof Error ? e.message : String(e)),
   });
+  useEffect(() => {
+    if (!q || !status || !window.location.hash) return;
+    document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [q, status]);
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
   if (!q || !status) return <Skeleton className="h-96" />;
   const paths: [string, string][] = [
@@ -97,6 +102,11 @@ export function SettingsPage() {
             <ConnectAgentButton label="Get prompt" />
           </Row>
         </Card>
+      </section>
+
+      <section id="updates">
+        <SectionTitle title="Updates" hint="Plumber runs from a git checkout of fluxpype. Updating pulls the new commits (fast-forward only) and restarts Plumber; running jobs keep going." />
+        <UpdatesCard />
       </section>
 
       <section id="data-folder">

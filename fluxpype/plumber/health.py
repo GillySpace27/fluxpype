@@ -245,10 +245,34 @@ def extras(home) -> List[Dict[str, str]]:
     return out
 
 
+def update_check(updater) -> List[Dict[str, str]]:
+    """Uses the last fetch only (no network here); the UI's "Check for updates" fetches."""
+    if updater is None:
+        return []
+    try:
+        st = updater.status(fetch=False)
+    except Exception as e:  # noqa: BLE001
+        return [check("updates", "Updates", "unknown", str(e))]
+    if not st.get("supported"):
+        return [check("updates", "Updates", "off", st.get("reason", ""))]
+    where = f"{st.get('branch') or 'detached'} at {st.get('head')}"
+    if st.get("behind"):
+        return [
+            check(
+                "updates",
+                "Updates",
+                "ok",
+                f"{st['behind']} new commit(s) on {st['upstream']}; update under Settings, Updates ({where})",
+            )
+        ]
+    return [check("updates", "Updates", "ok", f"up to date with {st.get('upstream') or 'no upstream'} ({where})")]
+
+
 class Health:
-    def __init__(self, sched, version: str):
+    def __init__(self, sched, version: str, updater=None):
         self.sched = sched
         self.version = version
+        self.updater = updater
         self._deep: Dict[str, Any] = {}
         self._at = 0.0
         self.lock = threading.Lock()
@@ -292,7 +316,7 @@ class Health:
                     ],
                 }
             )
-        system = system_checks(self.sched, self.version) + extras(self.sched.home)
+        system = system_checks(self.sched, self.version) + update_check(self.updater) + extras(self.sched.home)
         return {
             "active_backend": self.sched.active_backend,
             "backends": backends,
