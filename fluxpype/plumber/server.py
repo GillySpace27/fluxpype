@@ -77,6 +77,10 @@ class BackendIn(BaseModel):
     name: str
 
 
+class UpdateIn(BaseModel):
+    restart: bool = True
+
+
 class DataDirIn(BaseModel):
     path: Optional[str] = None
 
@@ -185,8 +189,14 @@ def create_app(
     cookie_name: str = COOKIE,
     token_hint: str = "the URL printed by flux-plumb",
     token_file: str = "~/.fluxpype/plumber/token",
+    updater=None,
+    allow_restart: bool = True,
 ) -> FastAPI:
     hub = Hub()
+    if updater is None:
+        from .updates import Updater
+
+        updater = Updater(str(paths.checkout_root()))
 
     @asynccontextmanager
     async def lifespan(app_: FastAPI):
@@ -262,7 +272,7 @@ def create_app(
         return with_cookie(await call_next(request))
 
     # ------------------------------------------------------------------ helpers
-    health = Health(sched, version)
+    health = Health(sched, version, updater)
     preset_cache: Dict[str, Any] = {}
 
     def cache_for(profile: Optional[str] = None, backend: Optional[str] = None) -> Cache:
@@ -287,6 +297,7 @@ def create_app(
         return reply(
             {
                 "version": version,
+                "commit": updates_head(),
                 "demo": demo,
                 "plumber_home": str(sched.home),
                 "config_path": sched.config_path,
@@ -317,6 +328,45 @@ def create_app(
         preset_cache.clear()
         hub.publish("backend_changed", {"active_backend": sched.active_backend})
         return reply({"active_backend": sched.active_backend, "queue": state})
+
+    def updates_head():
+        from .updates import head
+
+        return head(updater.repo)
+
+    @app.get("/api/update")
+    def update_status(fetch: bool = False):
+        """Updates for the checkout Plumber runs from; fetch=1 asks the remote (cached for 10 minutes)."""
+        from .updates import UpdateError
+
+        try:
+            return reply(updater.status(fetch=fetch, max_age=0 if fetch else 600))
+        except UpdateError as e:
+            fail(e, 500)
+
+    @app.post("/api/update")
+    def update_apply(body: UpdateIn):
+        from .updates import UpdateError, restart_in_place
+
+        try:
+            result = updater.apply()
+        except UpdateError as e:
+            fail(e, 409)
+        restarting = bool(body.restart and allow_restart)
+        if restarting:
+            hub.publish("server_restarting", {"to": result["to"]})
+            restart_in_place()
+        return reply({**result, "restarting": restarting})
+
+    @app.post("/api/restart")
+    def restart():
+        from .updates import restart_in_place
+
+        if not allow_restart:
+            fail(ValueError("restart is disabled here"), 409)
+        hub.publish("server_restarting", {})
+        restart_in_place()
+        return reply({"restarting": True})
 
     @app.get("/api/data-dir")
     def data_dir_get():

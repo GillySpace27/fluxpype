@@ -9,6 +9,7 @@ import { FlaskConical } from "lucide-react";
 import { QueuePill } from "./QueuePill";
 import { ConnectAgentButton } from "./ConnectAgent";
 import { BackendSwitcher, StatusLight } from "./SystemBar";
+import { UpdatePill } from "./Updates";
 
 const NAV_PRESETS = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
@@ -148,6 +149,7 @@ export function Layout() {
             <BackendSwitcher />
           </div>
           <div className="flex items-center gap-2">
+            <UpdatePill />
             <StatusLight />
             <ConnectAgentButton />
             <QueuePill />

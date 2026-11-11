@@ -155,6 +155,7 @@ export interface Overview {
 
 export interface StatusInfo {
   version: string;
+  commit?: string | null;
   demo: boolean;
   plumber_home: string;
   config_path: string;
@@ -415,4 +416,29 @@ export interface JobFiles {
   is_current_data_dir: boolean;
   files: JobFile[];
   missing: { task_id: string; cr: string; nflux: string; stage: string; label: string }[];
+}
+
+export interface UpdateCommit {
+  sha: string;
+  subject: string;
+  author: string;
+  time: number;
+}
+
+export interface UpdateStatus {
+  supported: boolean;
+  repo: string;
+  checked_at: number;
+  head?: string | null;
+  branch?: string | null;
+  upstream?: string | null;
+  dirty?: string[];
+  behind?: number;
+  ahead?: number;
+  commits?: UpdateCommit[];
+  deps_changed?: string[];
+  can_update?: boolean;
+  reason?: string | null;
+  fetched?: boolean | null;
+  fetch_error?: string | null;
 }
