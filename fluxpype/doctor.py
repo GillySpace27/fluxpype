@@ -45,6 +45,19 @@ def checks():
         "entries from your shell rc file",
     )
 
+    # Inline::Pdlpp (used by the footpoint/wind code) loads silently without Inline::C and then dies
+    # with 'Base class package "Inline::C" is empty', so test the pair the way the pipeline loads them.
+    code, out = (
+        _run(["perl", "-e", "require Inline::C; require Inline::Pdlpp; print $Inline::C::VERSION"]) if perl else (1, "")
+    )
+    yield (
+        "Inline::C + Inline::Pdlpp",
+        code == 0,
+        f"Inline::C {out.splitlines()[-1]}" if code == 0 else (out.split(" (@INC")[0].splitlines()[0] if out else ""),
+        "cpanm Inline::C Inline::Pdlpp, using the cpanm of the same Perl that `perl` resolves to "
+        "(e.g. `perl $(which cpanm) Inline::C`); a C compiler (Xcode CLT) is also required",
+    )
+
     gp = shutil.which("gnuplot")
     yield ("gnuplot", gp is not None, gp or "not found", "brew install gnuplot (or conda install gnuplot)")
 
