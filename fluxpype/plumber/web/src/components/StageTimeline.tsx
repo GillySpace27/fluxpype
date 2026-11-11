@@ -51,7 +51,7 @@ export function StageTimeline({ task, selected, onSelect }: { task: TaskState; s
   };
   return (
     <div className="space-y-1">
-      <div role={onSelect ? "radiogroup" : undefined} aria-label="Pipeline stages" className="space-y-0.5">
+      <div role={onSelect ? "radiogroup" : undefined} aria-label="Stage timeline" className="space-y-0.5">
         {task.stages.map((s, i) => (
           <Row key={s.id} s={s} t0={isFinite(t0) ? t0 : 0} total={total} now={now} sel={s.id === selected} onSelect={onSelect && (() => onSelect(s.id))} onKey={(e) => move(e, i)} />
         ))}

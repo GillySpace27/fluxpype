@@ -1,23 +1,32 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, PanelsTopLeft } from "lucide-react";
+import { ArrowLeft, Ban, Copy, PanelsTopLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
+import { PipelineChips } from "../components/PipelineChips";
 import { ResultsPane } from "../components/ResultsPane";
+import { RunFiles, RunSettings } from "../components/RunTabs";
 import { StagePanel } from "../components/StagePanel";
 import { RelaxCharts } from "../components/RelaxCharts";
 import { SourcesPanel } from "../components/SourcesPanel";
-import { StageTimeline } from "../components/StageTimeline";
+import { StageTimeline, useProgress } from "../components/StageTimeline";
 import { Banner, Card, EmptyState, ErrorNote, Skeleton, StatusBadge, StatusIcon, Tab, TabList, TabPanel, Tabs, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
 import { useJob, useNow, useRelax, useTask } from "../lib/hooks";
-import type { Stage, TaskRow, TaskState } from "../lib/types";
+import type { Job, Stage, TaskRow, TaskState } from "../lib/types";
 import { JobActions } from "./Jobs";
 
+/** The stage chips as radio selectors; while wind runs its chip fills with the progress. */
+function Strip({ task, selected, onSelect }: { task: TaskState; selected: string; onSelect: (id: string) => void }) {
+  const { wind } = useProgress(task);
+  const windRunning = task.stages.find((s) => s.id === "wind")?.status === "running";
+  return <PipelineChips stages={task.stages} className="mt-3" selected={selected} onSelect={onSelect} fill={windRunning && wind ? { wind: wind.frac } : undefined} />;
+}
+
 /** One task: header with metrics and banners, then tabs. `results` adds the Results tab (the run view shows results in its own tab). */
-export function TaskView({ row, results = true, defaultTab = "progress" }: { row: TaskRow; results?: boolean; defaultTab?: string }) {
+export function TaskView({ row, job, results = true, defaultTab = "progress" }: { row: TaskRow; job?: Job; results?: boolean; defaultTab?: string }) {
   const active = row.status === "running" || row.status === "pending";
   const { data: t, error, refetch } = useTask(row.id, true);
   const live = t ? t.status === "running" || t.status === "pending" : active;
@@ -42,6 +51,12 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
   const pick = (f: (x: Stage) => boolean) => t.stages.find(f)?.id;
   const stageId = (t.stages.some((x) => x.id === sp.get("stage")) ? sp.get("stage") : null) ?? pick((x) => x.status === "running") ?? pick((x) => x.status === "failed") ?? [...t.stages].reverse().find((x) => x.status === "ok")?.id ?? t.stages[0]?.id ?? "";
   const select = (id: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("stage", id); return n; }, { replace: true });
+  // ?view=compact swaps the strip for the stage rail beside the panel (kept for a compact view elsewhere)
+  const compact = sp.get("view") === "compact";
+  // the tab lives in the URL (?tab=) so a link opens on it
+  const tabs = ["progress", "log", ...(results ? ["results"] : []), ...(job ? ["files", "settings"] : []), "sources"];
+  const tab = tabs.includes(sp.get("tab") ?? "") ? (sp.get("tab") as string) : defaultTab;
+  const setTab = (v: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("tab", v); return n; }, { replace: true });
   const bad = ["failed", "timeout", "crashed"].includes(t.status);
   const failedStage = t.stages.find((x) => x.status === "failed");
   const reason = failedStage?.detail ?? (t.outcome && t.outcome !== "failed" ? t.outcome : null) ?? t.warnings[0] ?? null;
@@ -83,7 +98,8 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
             </button>
           )}
         </div>
-        <p className="num mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
+        {!compact && <Strip task={t} selected={stageId} onSelect={select} />}
+        <p className="num mt-3 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
           {metrics.map(([k, v]) => (
             <span key={k}>
               {k} <span className="font-medium text-ink">{v}</span>
@@ -107,7 +123,7 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
         )}
       </Card>
 
-      <Tabs defaultValue={defaultTab}>
+      <Tabs value={tab} onValueChange={setTab}>
         <TabList>
           <Tab value="progress">Progress</Tab>
           <Tab value="log">Log</Tab>
@@ -116,9 +132,12 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
               Results
             </Tab>
           )}
+          {job && <Tab value="files">Files</Tab>}
+          {job && <Tab value="settings">Settings used</Tab>}
           <Tab value="sources">Evidence</Tab>
         </TabList>
-        <TabPanel value="progress" className="grid gap-4 pt-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
+        {compact ? (
+          <TabPanel value="progress" className="grid gap-4 pt-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
           <Card className="p-3 lg:sticky lg:top-20 lg:self-start">
             <details open={railOpen}>
               <summary className="flex cursor-pointer items-center gap-2 text-[13px]">
@@ -152,13 +171,59 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
                 </Card>
             }
           />
-        </TabPanel>
+          </TabPanel>
+        ) : (
+          <TabPanel value="progress" className="space-y-4 pt-4">
+            <Card className="p-3">
+              <details open={live || bad}>
+                <summary className="flex cursor-pointer items-center gap-2 text-[13px]">
+                  <span className="label">Timeline</span>
+                  <span className="num text-xs text-muted">{duration(elapsed)}</span>
+                </summary>
+                <div className="mt-2">
+                  <StageTimeline task={t} selected={stageId} onSelect={select} />
+                </div>
+              </details>
+            </Card>
+          <StagePanel
+            task={t}
+            stageId={stageId}
+            onSelect={select}
+            relaxNode={
+            <Card className="p-4">
+                  <RelaxCharts
+                    points={relax?.points ?? []}
+                    cycles={relax?.cycles ?? []}
+                    idle={(() => {
+                      const rs = t.stages.find((s) => s.id === "relax")?.status;
+                      if (rs === "skipped") return { title: "Relaxation skipped", body: "This task did not run the relaxation stage." };
+                      if (rs === "ok") return { title: "No relaxation steps recorded", body: "The stage finished without reporting steps, usually because an existing relaxed world was reused from the cache." };
+                      if (rs === "failed") return { title: "Relaxation failed before reporting steps", body: "The Log tab shows where it stopped." };
+                      if (!["pending", "running"].includes(t.status)) return { title: "Relaxation did not run", body: "The task ended before reaching the relaxation stage." };
+                      return undefined;
+                    })()}
+                  />
+                </Card>
+            }
+          />
+          </TabPanel>
+        )}
         <TabPanel value="log" className="pt-5">
           <LogPane taskId={t.id} active={live} />
         </TabPanel>
         {results && (
           <TabPanel value="results" className="pt-5">
             <ResultsPane task={t} />
+          </TabPanel>
+        )}
+        {job && (
+          <TabPanel value="files" className="pt-5">
+            <RunFiles job={job} task={row} />
+          </TabPanel>
+        )}
+        {job && (
+          <TabPanel value="settings" className="pt-5">
+            <RunSettings job={job} />
           </TabPanel>
         )}
         <TabPanel value="sources" className="pt-5">
@@ -206,6 +271,9 @@ export function JobDetail() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Link to={`/run/new?from=${job.id}`} className="btn btn-sm">
+              <Copy className="h-3.5 w-3.5" /> Duplicate as new run
+            </Link>
             <Link to={`/run/${job.id}/progress${selected ? `?task=${selected.id}` : ""}`} className="btn btn-sm">
               <PanelsTopLeft className="h-3.5 w-3.5" /> Open as run
             </Link>
@@ -235,7 +303,7 @@ export function JobDetail() {
         </div>
       )}
 
-      {selected ? <TaskView key={selected.id} row={selected} /> : <EmptyState title="This job has no tasks" />}
+      {selected ? <TaskView key={selected.id} row={selected} job={job} /> : <EmptyState title="This job has no tasks" />}
     </div>
   );
 }
