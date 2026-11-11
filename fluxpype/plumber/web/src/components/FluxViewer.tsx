@@ -37,7 +37,7 @@ interface Opts {
   fluxons: boolean;
   conc: boolean;
   sphere: boolean;
-  colorBy: "id" | "radius";
+  colorBy: "id" | "radius" | "theta" | "polarity";
   width: number;
   fit: Fit;
 }
@@ -73,7 +73,38 @@ const VIRIDIS = [
   [0.369, 0.788, 0.384],
   [0.993, 0.906, 0.144],
 ];
-const CSS_VIRIDIS = `linear-gradient(to right, ${VIRIDIS.map(([r, g, b]) => `rgb(${r * 255 | 0} ${g * 255 | 0} ${b * 255 | 0})`).join(", ")})`;
+// diverging blue, grey, red (RdBu, with a mid grey that stays visible on both themes): inward 180 deg, tangential 90, outward 0
+const DIVERGING = [
+  [0.129, 0.4, 0.675],
+  [0.263, 0.576, 0.765],
+  [0.557, 0.557, 0.557],
+  [0.839, 0.376, 0.302],
+  [0.698, 0.094, 0.169],
+];
+const css = (stops: number[][]) => `linear-gradient(to right, ${stops.map(([r, g, b]) => `rgb(${r * 255 | 0} ${g * 255 | 0} ${b * 255 | 0})`).join(", ")})`;
+const POS: Vec3 = [0.96, 0.45, 0.5]; // positive flux (also the concentration points)
+const NEG: Vec3 = [0.38, 0.65, 0.98];
+const SHUT: Vec3 = [0.6, 0.6, 0.6]; // closed loops have a footpoint of each sign
+
+function ramp(stops: number[][], t: number, c: Color) {
+  const x = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const k = Math.min(stops.length - 2, Math.floor(x));
+  const f = x - k;
+  c.setRGB(...(stops[k].map((a, j) => a + f * (stops[k + 1][j] - a)) as Vec3), SRGBColorSpace);
+}
+
+/** Polarity of each fluxon: the sign of its photospheric end. FLUX stores every fluxon from its positive end (fc0) to its
+ *  negative end (fc1), so the vertex order is the field direction. Only concentrations listed in the file are
+ *  photospheric (the special open and plasmoid ones are not). An open fluxon has one listed end; a closed one has two,
+ *  so it gets 0. */
+function polarities(w: FluxWorld): number[] {
+  const sign = new Map(w.concentrations.id.map((id, i) => [id, Math.sign(w.concentrations.flux[i])] as const));
+  return w.fluxons.id.map((_, f) => {
+    const a = sign.get(w.fluxons.fc0[f]);
+    const b = sign.get(w.fluxons.fc1[f]);
+    return a != null && b == null ? a : b != null && a == null ? b : 0;
+  });
+}
 
 function place(link: Link, dir: Vec3, sun: boolean) {
   const vs = [...link.views];
@@ -183,21 +214,33 @@ function View({ w, o, link, range }: { w: FluxWorld; o: Opts; link: Link; range:
     const s = S.current!;
     s.fl?.removeFromParent();
     s.fl?.geometry.dispose();
-    const { offsets, xyz, id } = w.fluxons;
+    const { offsets, xyz } = w.fluxons;
+    const id = w.fluxons.id;
+    const pol = o.colorBy === "polarity" ? polarities(w) : [];
+    const ctr = w.boundary?.type === "SPHERE" ? w.boundary.args : [0, 0, 0];
     const nSeg = xyz.length / 3 - id.length;
     const pos = new Float32Array(nSeg * 6);
     const col = new Float32Array(nSeg * 6);
     const c = new Color();
     const [r0, r1] = range;
     const dark = theme === "dark";
-    const vcol = (i: number, fid: number, out: number) => {
-      if (o.colorBy === "id") c.setHSL((((fid * 0.61803) % 1) + 1) % 1, 0.7, dark ? 0.62 : 0.42, SRGBColorSpace);
-      else {
-        const t = Math.min(1, Math.max(0, (Math.hypot(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]) - r0) / (r1 - r0 || 1))) * (VIRIDIS.length - 1);
-        const k = Math.min(VIRIDIS.length - 2, Math.floor(t));
-        const f = t - k;
-        c.setRGB(...(VIRIDIS[k].map((a, j) => a + f * (VIRIDIS[k + 1][j] - a)) as Vec3), SRGBColorSpace);
-      }
+    const vcol = (i: number, f: number, out: number) => {
+      if (o.colorBy === "id") c.setHSL((((id[f] * 0.61803) % 1) + 1) % 1, 0.7, dark ? 0.62 : 0.42, SRGBColorSpace);
+      else if (o.colorBy === "polarity") c.setRGB(...(pol[f] > 0 ? POS : pol[f] < 0 ? NEG : SHUT), SRGBColorSpace);
+      else if (o.colorBy === "theta") {
+        // angle between the field direction (vertex order, positive to negative end) and the radial unit vector:
+        // 0 outward, 90 tangential, 180 inward
+        const lo = Math.max(offsets[f], i - 1);
+        const hi = Math.min(offsets[f + 1] - 1, i + 1);
+        const rx = xyz[3 * i] - ctr[0];
+        const ry = xyz[3 * i + 1] - ctr[1];
+        const rz = xyz[3 * i + 2] - ctr[2];
+        const dx = xyz[3 * hi] - xyz[3 * lo];
+        const dy = xyz[3 * hi + 1] - xyz[3 * lo + 1];
+        const dz = xyz[3 * hi + 2] - xyz[3 * lo + 2];
+        const cos = (dx * rx + dy * ry + dz * rz) / (Math.hypot(dx, dy, dz) * Math.hypot(rx, ry, rz) || 1);
+        ramp(DIVERGING, 1 - Math.acos(Math.min(1, Math.max(-1, cos))) / Math.PI, c);
+      } else ramp(VIRIDIS, (Math.hypot(xyz[3 * i], xyz[3 * i + 1], xyz[3 * i + 2]) - r0) / (r1 - r0 || 1), c);
       col[out] = c.r;
       col[out + 1] = c.g;
       col[out + 2] = c.b;
@@ -206,8 +249,8 @@ function View({ w, o, link, range }: { w: FluxWorld; o: Opts; link: Link; range:
     for (let f = 0; f < id.length; f++)
       for (let j = offsets[f]; j < offsets[f + 1] - 1; j++, k += 6) {
         pos.set(xyz.slice(3 * j, 3 * j + 6), k);
-        vcol(j, id[f], k);
-        vcol(j + 1, id[f], k + 3);
+        vcol(j, f, k);
+        vcol(j + 1, f, k + 3);
       }
     const g = new LineSegmentsGeometry();
     if (nSeg > 0) {
@@ -242,8 +285,8 @@ function View({ w, o, link, range }: { w: FluxWorld; o: Opts; link: Link; range:
     const { xyz, flux } = w.concentrations;
     const g = new BufferGeometry();
     g.setAttribute("position", new Float32BufferAttribute(xyz, 3));
-    const pos = new Color().setRGB(0.96, 0.45, 0.5, SRGBColorSpace);
-    const neg = new Color().setRGB(0.38, 0.65, 0.98, SRGBColorSpace);
+    const pos = new Color().setRGB(...POS, SRGBColorSpace);
+    const neg = new Color().setRGB(...NEG, SRGBColorSpace);
     g.setAttribute("color", new Float32BufferAttribute(flux.flatMap((f) => (f > 0 ? pos : neg).toArray()), 3));
     const p = new Points(g, new PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true }));
     p.visible = o.conc;
@@ -308,8 +351,25 @@ function Pane({ path, base, mtime, o, link }: { path: string; base: string; mtim
         {w && o.colorBy === "radius" && (
           <div className="num pointer-events-none absolute bottom-2 left-2 flex items-center gap-1.5 text-[10.5px] text-muted">
             r {range[0].toFixed(1)}
-            <span className="h-1.5 w-24 rounded-full" style={{ background: CSS_VIRIDIS }} />
+            <span className="h-1.5 w-24 rounded-full" style={{ background: css(VIRIDIS) }} />
             {range[1].toFixed(1)}
+          </div>
+        )}
+        {w && o.colorBy === "theta" && (
+          <div className="num pointer-events-none absolute bottom-2 left-2 flex items-center gap-1.5 text-[10.5px] text-muted" title="Angle between the field direction and the radial direction">
+            180° in
+            <span className="h-1.5 w-24 rounded-full" style={{ background: css([...DIVERGING].reverse()) }} />
+            0° out <span className="text-faint">(90° sideways)</span>
+          </div>
+        )}
+        {w && o.colorBy === "polarity" && (
+          <div className="pointer-events-none absolute bottom-2 left-2 flex items-center gap-3 text-[10.5px] text-muted">
+            {([[POS, "+ footpoint, field out"], [NEG, "- footpoint, field in"], [SHUT, "closed loop"]] as [Vec3, string][]).map(([v, text]) => (
+              <span key={text} className="flex items-center gap-1">
+                <span className="h-1.5 w-4 rounded-full" style={{ background: `rgb(${v.map((a) => (a * 255) | 0).join(" ")})` }} />
+                {text}
+              </span>
+            ))}
           </div>
         )}
       </div>
@@ -361,7 +421,7 @@ export function FluxViewer({ path, base = "/api/cache", mtime, others = [] }: { 
         </div>
         <Seg label="Fit" value={o.fit} onChange={(v) => set("fit", v)} items={[["all", "Fit all"], ["sun", "Fit sun"]]} />
         <div className="flex items-center gap-1">{[toggle("fluxons", "Fluxons"), toggle("conc", "Points"), toggle("sphere", "Sphere")]}</div>
-        <Seg label="Colour by" value={o.colorBy} onChange={(v) => set("colorBy", v)} items={[["id", "Fluxon id"], ["radius", "Radius"]]} />
+        <Seg label="Colour by" value={o.colorBy} onChange={(v) => set("colorBy", v)} items={[["id", "Fluxon id"], ["radius", "Radius"], ["theta", "Deviation"], ["polarity", "Polarity"]]} />
         <label className="flex items-center gap-1.5 text-xs text-muted">
           Width
           <input type="range" min={1} max={6} step={0.5} value={o.width} onChange={(e) => set("width", +e.target.value)} className="w-20 accent-accent" />
@@ -381,7 +441,7 @@ export function FluxViewer({ path, base = "/api/cache", mtime, others = [] }: { 
         <Pane path={path} base={base} mtime={mtime} o={o} link={link} />
         {cmp && <Pane key={cmp} path={cmp} base={base} o={o} link={link} />}
       </div>
-      <p className="text-[11px] text-faint">Drag to rotate, wheel to zoom, right-drag or shift-drag to pan. Points: red positive flux, blue negative. Axes: z is up in the side views.</p>
+      <p className="text-[11px] text-faint">Drag to rotate, wheel to zoom, right-drag or shift-drag to pan. Points: red positive flux, blue negative. Deviation: angle between the field and the radial direction, field running from the positive to the negative end. Axes: z is up in the side views.</p>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { api } from "./api";
 import { useLive } from "./live";
 import type {
   CacheData,
+  DatData,
   DataDirReport,
   HealthReport,
   FluxWorld,
@@ -148,6 +149,16 @@ export const useFluxWorld = (path: string | undefined, base = "/api/cache", mtim
   useQuery({
     queryKey: ["flux", base, path, mtime],
     queryFn: () => api.get<FluxWorld>(`${base}/flux?path=${encodeURIComponent(path!)}`),
+    enabled: !!path,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+/** A numeric .dat table parsed by the server; same bases as `useFluxWorld`. */
+export const useDatTable = (path: string | undefined, base = "/api/cache", mtime?: number) =>
+  useQuery({
+    queryKey: ["dat", base, path, mtime],
+    queryFn: () => api.get<DatData>(`${base}/dat?path=${encodeURIComponent(path!)}`),
     enabled: !!path,
     staleTime: 60_000,
     retry: false,

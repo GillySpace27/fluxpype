@@ -372,6 +372,25 @@ export interface FluxWorld {
   decimated: { step: number; fluxons_kept: number; fluxons_total: number; vertices_total: number } | null;
 }
 
+/** A numeric .dat table parsed by the server (see plumber/datfile.py); `data` is one list per column, null for NaN. */
+export interface DatPlotSpec {
+  type: "scatter" | "lines";
+  x: number;
+  y: number;
+  group?: number;
+  color?: number;
+  logy?: boolean;
+}
+export interface DatData {
+  rows: number;
+  bad_rows: number;
+  header: boolean;
+  columns: { name: string; min: number | null; max: number | null; mean: number | null; nonfinite: number; integer: boolean; sorted: boolean }[];
+  data: (number | null)[][];
+  decimated: { step: number; rows_kept: number; rows_total: number } | null;
+  kind: { id: string; label: string; writer: string; columns: { name: string; unit: string }[] | null; plot: DatPlotSpec; notes: string[] } | null;
+}
+
 export interface FitsRender {
   stats: { hdu?: string; shape?: number[]; vmin?: number; vmax?: number; min?: number | null; max?: number | null; nan?: number };
   image: string;

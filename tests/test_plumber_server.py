@@ -308,6 +308,24 @@ def test_flux_endpoints_parse_and_stay_confined(client, tmp_path):
             assert client.get(url, params={"path": bad}, headers=H).status_code in (400, 403, 404), (url, bad)
 
 
+def test_dat_endpoints_parse_and_stay_confined(client, tmp_path):
+    TEXT = "fluxon_position,radius,velocity\n0,1.0,0\n0,2.0,10.5\n1,1.0,nan\n"
+    data = client.sched.data_dir()
+    os.makedirs(os.path.join(data, "wind"), exist_ok=True)
+    with open(os.path.join(data, "wind", "results_parker_full_velocity.dat"), "w") as f:
+        f.write(TEXT)
+    (tmp_path / "out.dat").write_text(TEXT)
+    job = client.post("/api/jobs", json={"profile": "t_one", "backend": "fake", "speed": 300}, headers=H).json()
+    for url in ("/api/cache/dat", f"/api/jobs/{job['id']}/data/dat"):
+        r = client.get(url, params={"path": "wind/results_parker_full_velocity.dat"}, headers=H)
+        assert r.status_code == 200, url
+        d = r.json()
+        assert d["rows"] == 3 and d["kind"]["id"] == "velocity" and d["data"][2] == [0, 10.5, None]
+        assert client.get(url, params={"path": "wind/none.dat"}, headers=H).status_code == 404
+        for bad in ("../out.dat", "/etc/hostname", str(tmp_path / "out.dat")):
+            assert client.get(url, params={"path": bad}, headers=H).status_code in (400, 403, 404), (url, bad)
+
+
 # ------------------------------------------------------------------ frontend
 
 

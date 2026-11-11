@@ -3,9 +3,11 @@ import { ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Loader2, Panel
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { useDatTable } from "../lib/hooks";
 import { cn } from "../lib/cn";
 import { ago, bytes, kindLabel, num } from "../lib/format";
 import type { CacheRecord, FilePreview, FitsCard, FitsRender, PresetScope } from "../lib/types";
+import { DatPlot, DatTable } from "./DatViewer";
 import { Badge, Dialog, ErrorNote, Skeleton, Tip, useToast } from "./ui";
 
 const FluxViewer = lazy(() => import("./FluxViewer").then((m) => ({ default: m.FluxViewer }))); // three.js: loaded when a .flux file is opened
@@ -150,6 +152,30 @@ function FluxView({ p, base, others }: { p: FilePreview; base: string; others: S
   );
 }
 
+/** A numeric .dat table: a chart chosen by the file kind, the table with column statistics, the raw text as fallback. */
+function DatView({ p, base }: { p: FilePreview; base: string }) {
+  const [tab, setTab] = useState<"plot" | "table" | "text">("plot");
+  const { data: d, error, isLoading, refetch } = useDatTable(p.path, base, p.mtime);
+  return (
+    <div className="space-y-3">
+      <div className="inline-flex rounded-lg border border-line bg-bg/50 p-0.5" role="radiogroup" aria-label="View">
+        {(
+          [
+            ["plot", "Plot"],
+            ["table", "Table"],
+            ["text", "Text"],
+          ] as const
+        ).map(([v, label]) => (
+          <button key={v} role="radio" aria-checked={tab === v} onClick={() => setTab(v)} className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition-colors", tab === v ? "bg-raised text-ink shadow-sm" : "text-muted hover:text-ink")}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {tab === "text" ? <TextView p={p} /> : error ? <ErrorNote error={error} retry={() => refetch()} /> : isLoading || !d ? <Skeleton className="h-72" /> : tab === "plot" ? <DatPlot d={d} /> : <DatTable d={d} />}
+    </div>
+  );
+}
+
 function Body({ p, base, others }: { p: FilePreview; base: string; others: Sibling[] }) {
   if (p.view === "image")
     return (
@@ -159,7 +185,11 @@ function Body({ p, base, others }: { p: FilePreview; base: string; others: Sibli
     );
   if (p.view === "pdf") return <iframe src={fileUrl(p.path, false, base)} title={p.name} className="h-[75vh] w-full rounded-xl border border-line bg-white" />;
   if (p.view === "fits") return <FitsView p={p} base={base} />;
-  if (p.view === "text") return /\.flux$/i.test(p.name) ? <FluxView key={p.path} p={p} base={base} others={others} /> : <TextView p={p} />;
+  if (p.view === "text") {
+    if (/\.flux$/i.test(p.name)) return <FluxView key={p.path} p={p} base={base} others={others} />;
+    if (/\.dat$/i.test(p.name)) return <DatView key={p.path} p={p} base={base} />;
+    return <TextView p={p} />;
+  }
   return <p className="rounded-xl border border-line bg-bg/40 px-3 py-6 text-center text-[13px] text-muted">{p.note ?? "No preview for this file."}</p>;
 }
 

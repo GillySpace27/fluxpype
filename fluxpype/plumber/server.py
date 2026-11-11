@@ -1088,6 +1088,20 @@ def create_app(
     def cache_flux(path: str):
         return flux_reply(cache_file(path))
 
+    def dat_reply(full: str):
+        from . import datfile
+
+        try:
+            return JSONResponse(
+                datfile.payload(full), headers={"Cache-Control": "private, max-age=30"}
+            )  # null for NaN: no clean()
+        except OSError as e:
+            fail(e, 500)
+
+    @app.get("/api/cache/dat")
+    def cache_dat(path: str):
+        return dat_reply(cache_file(path))
+
     # job-scoped twins: a job's snapshot can pin a data folder other than the current one
     def job_file(job_id: str, rel: str) -> str:
         from .cache import _confine
@@ -1120,6 +1134,10 @@ def create_app(
     @app.get("/api/jobs/{job_id}/data/flux")
     def job_flux(job_id: str, path: str):
         return flux_reply(job_file(job_id, path))
+
+    @app.get("/api/jobs/{job_id}/data/dat")
+    def job_dat(job_id: str, path: str):
+        return dat_reply(job_file(job_id, path))
 
     @app.get("/api/artifacts")
     def artifact(path: str):
