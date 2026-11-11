@@ -176,6 +176,8 @@ export interface ProfileSummary {
   errors: string[];
   warnings: string[];
   own_keys: number;
+  own: Record<string, string>;
+  runs: { jobs: number; ok: number; last_status: string | null; last_at: number | null } | null;
   origin: "builtin" | "user";
   hidden: boolean;
   cache: PresetCache | null;
@@ -280,6 +282,34 @@ export interface CacheData {
   trash: { count: number; size: number };
   records: CacheRecord[];
   truncated: boolean;
+  presets: PresetScope[];
+  sandboxed: boolean;
+}
+
+export interface PresetScope {
+  name: string;
+  batch: string;
+  crs: string[];
+  insts: string[];
+  hidden: boolean;
+}
+
+export interface DataFolder {
+  path: string;
+  real: string;
+  exists: boolean;
+  magnetograms: number;
+  pfss: number;
+  batches: number;
+  has_data: boolean;
+  aliases?: string[];
+}
+
+export interface DataDirReport {
+  current: DataFolder;
+  source: "plumber" | "config";
+  config_value: string;
+  candidates: DataFolder[];
 }
 
 export interface TrashItem {

@@ -67,6 +67,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "presets_changed":
             soon([["profiles"], ["profile"]]);
             break;
+          case "data_dir_changed":
+            soon([["status"], ["health"], ["datadir"], ["cache"], ["trash"], ["profiles"], ["profile"]]);
+            break;
           case "backend_changed":
             soon([["status"], ["health"], ["queue"], ["cache"], ["trash"], ["profiles"], ["profile"]]);
             break;

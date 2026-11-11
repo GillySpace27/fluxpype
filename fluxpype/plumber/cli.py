@@ -47,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
         "Point it at the environment that has the science stack, e.g. ~/vscode/fluxons/.venv/bin/python",
     )
     p.add_argument(
+        "--data-dir",
+        help="folder real runs read and write (kept across restarts; also settable in the UI). "
+        "Default: config.ini's data_dir. Pass '' to go back to it",
+    )
+    p.add_argument(
         "--headless",
         action="store_true",
         help="no browser and nothing on stdout; log to <home>/server.log (used by the MCP server's autostart)",
@@ -242,7 +247,7 @@ def main(argv=None) -> int:
     from . import demo, paths
     from .backends.fake import FakeBackend
     from .backends.local import LocalBackend
-    from .scheduler import Scheduler
+    from .scheduler import Scheduler, SchedulerError
     from .server import create_app
     from .store import Store
 
@@ -310,6 +315,12 @@ def main(argv=None) -> int:
     )
     if args.max_parallel or args.demo:
         scheduler.set_queue(max_parallel=args.max_parallel or 2)
+    if args.data_dir is not None and not args.demo:
+        try:
+            scheduler.set_data_dir(args.data_dir or None)
+        except SchedulerError as e:
+            print(f"--data-dir: {e}", file=sys.stderr)
+            return 2
 
     token = load_or_create_token(home, rotate=args.rotate_token)
     hosts = ["localhost", "127.0.0.1", "::1"] + ([args.host] if args.host not in ("0.0.0.0", "::") else [])

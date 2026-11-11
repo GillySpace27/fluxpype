@@ -16,6 +16,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Search,
   SlidersHorizontal,
   TextCursorInput,
   Trash2,
@@ -28,6 +29,8 @@ import { Badge, Banner, Card, Checkbox, Dialog, EmptyState, ErrorNote, PageHeade
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { instOf } from "../lib/format";
+import { fuzzyMatch, type Field, type Match } from "../lib/fuzzy";
+import { DataFolderBanner } from "../components/DataFolder";
 import { useHealth, useProfile, useProfiles, useStatus } from "../lib/hooks";
 import type { Job, PresetCache, ProfileDetail, ProfileEntry, ProfileSummary } from "../lib/types";
 
@@ -702,7 +705,47 @@ function PresetView({ name, presets }: { name: string; presets: ProfileSummary[]
 }
 
 /* ------------------------------------------------------------------ list */
-function PresetTile({ p, selected }: { p: ProfileSummary; selected: boolean }) {
+/* ------------------------------------------------------------------ list filtering */
+const AXIS_LABEL: Record<string, string> = { rotations: "CR", fluxon_count: "fluxons", adapts: "source", flow_method: "method" };
+
+function presetFields(p: ProfileSummary): Field[] {
+  const f: Field[] = [{ label: "name", text: p.name, weight: 3 }];
+  if (p.batch_name) f.push({ label: "batch", text: p.batch_name, weight: 2, display: `batch ${p.batch_name}` });
+  for (const [k, vals] of Object.entries(p.axes)) {
+    const lab = AXIS_LABEL[k] ?? k;
+    const shown = k === "adapts" ? vals.map((v) => instOf(v)) : vals;
+    f.push({ label: lab, text: `${lab} ${shown.join(" ")} ${shown.map((v) => `${lab}${v}`).join(" ")}`, weight: 2, quiet: k === "rotations" || k === "fluxon_count", display: shown.join(", ") });
+  }
+  for (const [k, v] of Object.entries(p.own ?? {})) f.push({ label: k, text: `${k} ${v}`, display: `${k} = ${v}` });
+  f.push({ label: "origin", text: p.origin === "user" ? "yours mine user" : "built-in builtin config.ini", quiet: true });
+  if (p.hidden) f.push({ label: "state", text: "hidden", quiet: true });
+  if (p.errors.length) f.push({ label: "problem", text: `can't run invalid broken ${p.errors.join(" ")}`, quiet: true });
+  if (p.warnings.length) f.push({ label: "warning", text: p.warnings.join(" "), display: p.warnings[0] });
+  if (p.runs) f.push({ label: "last run", text: `ran ${p.runs.last_status ?? ""}`, display: `last run ${p.runs.last_status ?? ""}` });
+  return f;
+}
+
+const isComplete = (p: ProfileSummary) => !!p.cache && p.cache.tasks > 0 && p.cache.tasks === p.cache.of && p.cache.counts.relaxed_world >= p.cache.tasks;
+const hasResults = (p: ProfileSummary) => !!p.cache && p.cache.counts.relaxed_world > 0;
+
+type FilterKey = "runnable" | "complete" | "partial" | "fresh" | "ran";
+const FILTERS: { key: FilterKey; label: string; tip: string; test: (p: ProfileSummary) => boolean }[] = [
+  { key: "runnable", label: "Runnable", tip: "Only presets that can run as written", test: (p) => p.errors.length === 0 },
+  { key: "complete", label: "Complete", tip: "Every task already has a relaxed world in the data folder", test: isComplete },
+  { key: "partial", label: "Has results", tip: "At least one task has a relaxed world in the data folder", test: hasResults },
+  { key: "fresh", label: "Not run yet", tip: "Runnable, and no task has a relaxed world yet", test: (p) => p.errors.length === 0 && !hasResults(p) },
+  { key: "ran", label: "Ran in Plumber", tip: "Presets with at least one job finished OK from Plumber", test: (p) => (p.runs?.ok ?? 0) > 0 },
+];
+
+function loadFilters(): Set<FilterKey> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("plumber.presetFilters") || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
+function PresetTile({ p, selected, match }: { p: ProfileSummary; selected: boolean; match?: Match | null }) {
   const rot = p.axes.rotations ?? [];
   return (
     <Link to={`/presets/${enc(p.name)}`} className="block focus:outline-none">
@@ -717,7 +760,13 @@ function PresetTile({ p, selected }: { p: ProfileSummary; selected: boolean }) {
         </div>
         <p className="mt-1 truncate text-xs text-muted">
           {rot.length ? `CR ${rot.slice(0, 3).join(", ")}${rot.length > 3 ? "..." : ""}` : "no rotations"} · {p.axes.fluxon_count?.join(", ") || "?"} fluxons
+          {p.runs && p.runs.ok > 0 && <span className="text-faint"> · ran {p.runs.ok}x here</span>}
         </p>
+        {match?.hint && (
+          <p className="mt-1 truncate font-mono text-[10.5px] text-accent/90" title={match.hint.display ?? match.hint.text}>
+            {match.hint.display ?? match.hint.text}
+          </p>
+        )}
         {p.errors.length > 0 ? (
           <p className="mt-2 line-clamp-2 text-[11.5px] leading-snug text-fail/90">{p.errors[0]}</p>
         ) : (
@@ -740,8 +789,33 @@ export function PresetsPage() {
   const toast = useToast();
   const presets = useMemo(() => data?.profiles ?? [], [data]);
   const hiddenCount = presets.filter((p) => p.hidden).length;
-  const needle = q.trim().toLowerCase();
-  const visible = presets.filter((p) => (showHidden || !p.hidden || p.name === name) && (!needle || p.name.toLowerCase().includes(needle)));
+  const [filters, setFilters] = useState<Set<FilterKey>>(loadFilters);
+  const toggleFilter = (k: FilterKey) =>
+    setFilters((cur) => {
+      const n = new Set(cur);
+      if (n.has(k)) n.delete(k);
+      else {
+        n.add(k);
+        if (k === "fresh") ["complete", "partial"].forEach((x) => n.delete(x as FilterKey)); // contradictory
+        if (k === "complete" || k === "partial") n.delete("fresh");
+      }
+      try {
+        localStorage.setItem("plumber.presetFilters", JSON.stringify([...n]));
+      } catch {
+        /* per-browser convenience only */
+      }
+      return n;
+    });
+  const matches = useMemo(() => {
+    const m = new Map<string, Match | null>();
+    for (const p of presets) m.set(p.name, q.trim() ? fuzzyMatch(q, presetFields(p)) : { score: 0 });
+    return m;
+  }, [presets, q]);
+  const active = FILTERS.filter((f) => filters.has(f.key));
+  const visible = presets
+    .filter((p) => (showHidden || !p.hidden || p.name === name) && matches.get(p.name) && active.every((f) => f.test(p)))
+    .sort((a, b) => (q.trim() ? (matches.get(b.name)?.score ?? 0) - (matches.get(a.name)?.score ?? 0) : 0));
+  const filteredOut = presets.filter((p) => showHidden || !p.hidden).length - visible.filter((p) => showHidden || !p.hidden).length;
   const mine = visible.filter((p) => p.origin === "user");
   const builtin = visible.filter((p) => p.origin === "builtin");
 
@@ -764,7 +838,7 @@ export function PresetsPage() {
       <div className="space-y-2">
         <p className="px-1 text-[11px] uppercase tracking-[0.12em] text-faint">{title}</p>
         {rows.map((p) => (
-          <PresetTile key={p.name} p={p} selected={name === p.name} />
+          <PresetTile key={p.name} p={p} selected={name === p.name} match={q.trim() ? matches.get(p.name) : null} />
         ))}
       </div>
     );
@@ -789,17 +863,53 @@ export function PresetsPage() {
           </button>
         )}
       </div>
-      {presets.length > 8 && (
+      <div className="space-y-2">
         <div className="relative">
-          <input className="input pr-8" placeholder="Filter presets" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-faint" />
+          <input
+            className="input pl-8 pr-8"
+            placeholder="Search name, batch, CR, fluxons, any setting"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            aria-label="Search presets"
+          />
           {q && (
-            <button className="absolute right-2 top-2 text-faint hover:text-ink" aria-label="Clear filter" onClick={() => setQ("")}>
+            <button className="absolute right-2 top-2 text-faint hover:text-ink" aria-label="Clear search" onClick={() => setQ("")}>
               <X className="h-4 w-4" />
             </button>
           )}
         </div>
-      )}
+        <div className="flex flex-wrap gap-1.5">
+          {FILTERS.map((f) => {
+            const on = filters.has(f.key);
+            const n = presets.filter((p) => (showHidden || !p.hidden) && f.test(p)).length;
+            return (
+              <Tip key={f.key} label={f.tip}>
+                <button
+                  onClick={() => toggleFilter(f.key)}
+                  aria-pressed={on}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+                    on ? "border-accent/60 bg-accent/15 text-ink" : "border-line text-muted hover:border-faint/60 hover:text-ink",
+                  )}
+                >
+                  {f.label} <span className="num text-faint">{n}</span>
+                </button>
+              </Tip>
+            );
+          })}
+        </div>
+        {data && filteredOut > 0 && (q.trim() || active.length > 0) && (
+          <p className="flex items-center justify-between px-1 text-[11px] text-faint">
+            {visible.length} shown, {filteredOut} filtered out
+            <button className="hover:text-ink hover:underline" onClick={() => { setQ(""); active.forEach((f) => toggleFilter(f.key)); }}>
+              Clear
+            </button>
+          </p>
+        )}
+      </div>
       {!data && [0, 1, 2].map((i) => <Skeleton key={i} className="h-[96px]" />)}
+      {data && visible.length === 0 && <p className="px-1 py-6 text-center text-[13px] text-muted">No presets match.</p>}
       {group("Your presets", mine)}
       {group(mine.length ? "Built-in (config.ini)" : "Presets (config.ini)", builtin)}
     </div>
@@ -807,6 +917,7 @@ export function PresetsPage() {
   return (
     <div className="animate-fade-in">
       {!name && <PageHeader title="Presets" sub="A preset is a saved recipe for a set of runs: rotations x fluxon counts x sources x methods, plus every setting they use." />}
+      <DataFolderBanner className="mb-4" />
       <div className="grid gap-6 md:grid-cols-[300px_minmax(0,1fr)]">
         <div className={cn(name && "hidden md:block")}>{list}</div>
         <div className={cn(!name && "hidden md:block")}>

@@ -76,6 +76,8 @@ flux-plumb --stop       # stop the Plumber for this state directory (running job
 
 **Presets.** The sections of `config.ini` appear as built-in presets; Plumber never writes that file. New presets (from scratch, a duplicate, or "Save as preset" from a run's changes) are stored in `<home>/presets.ini`, inherit `[DEFAULT]` like any section, and can be edited, renamed, hidden, deleted (restorable), exported as `.ini` and imported. Each preset tile shows how much of its work is already cached, and links to those files on the Cache page.
 
+**Data folder.** Real runs read and write config.ini's `data_dir` unless you choose another folder under Settings, Data folder (or start with `--data-dir PATH`; the choice is kept across restarts). Plumber lists the FLUX data folders it finds next to its checkout (every `<sibling>/fluxpype/fluxpype/data`), and the Presets and Cache pages offer to switch when the current folder is empty but another one holds runs. The Cache page shows which presets use each file and can list the files no preset uses.
+
 Real FLUX jobs need the environment with the science stack and FLUX's Perl. If Plumber lives in its own venv, point jobs at the FLUX one with `--python` (or `$FLUX_PLUMBER_PYTHON`), and start Plumber from a shell where `perl -MPDL -e1` works.
 
 The access token is kept in `<home>/token` (mode 0600) and survives restarts, so bookmarks stay signed in. `--rotate-token` makes a new one. A browser without the token gets a sign-in page. Each state directory uses its own cookie, so the demo and a real Plumber can be open side by side.

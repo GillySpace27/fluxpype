@@ -165,19 +165,44 @@ def system_checks(sched, version: str) -> List[Dict[str, str]]:
     except Exception as e:  # noqa: BLE001
         out.append(check("config", "Config and presets", "fail", f"cannot read {sched.config_path}: {e}"))
     data = sched.data_dir()
+    elsewhere = ""
+    if not sched.is_sandboxed():
+        from . import datadirs
+
+        here = datadirs.describe(data)
+        if not here["has_data"]:
+            try:
+                other = next(
+                    (c for c in sched.data_dir_report()["candidates"] if c["has_data"] and c["real"] != here["real"]),
+                    None,
+                )
+            except Exception:  # noqa: BLE001
+                other = None
+            if other:
+                elsewhere = (
+                    f"; no runs here, but {other['path']} holds {other['magnetograms']} magnetograms and "
+                    f"{other['batches']} batches: choose it under Settings, Data folder"
+                )
     if not os.path.isdir(data):
-        out.append(check("data", "Data folder", "warn", f"{data} does not exist yet; the first run creates it"))
+        out.append(
+            check(
+                "data",
+                "Data folder",
+                "warn",
+                f"{data} does not exist yet" + (elsewhere or "; the first run creates it"),
+            )
+        )
     else:
         free = shutil.disk_usage(data).free
         writable = os.access(data, os.W_OK)
-        status = "fail" if not writable else "warn" if free < 5e9 else "ok"
+        status = "fail" if not writable else "warn" if free < 5e9 or elsewhere else "ok"
         sand = " (sandbox for simulated runs)" if sched.is_sandboxed() else ""
         out.append(
             check(
                 "data",
                 "Data folder",
                 status,
-                f"{data}{sand}; {free / 1e9:.0f} GB free" + ("" if writable else "; not writable"),
+                f"{data}{sand}; {free / 1e9:.0f} GB free" + ("" if writable else "; not writable") + elsewhere,
             )
         )
     return out
@@ -227,6 +252,10 @@ class Health:
         self._deep: Dict[str, Any] = {}
         self._at = 0.0
         self.lock = threading.Lock()
+
+    def invalidate(self) -> None:
+        with self.lock:
+            self._at = 0.0
 
     def _deep_backends(self) -> Dict[str, List[Dict[str, str]]]:
         jobs = {n: b for n, b in self.sched.backends.items() if getattr(b, "kind", "") != "fake"}

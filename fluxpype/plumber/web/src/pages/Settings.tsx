@@ -3,6 +3,7 @@ import { Cloud, Cpu, FlaskConical, Monitor, Moon, Server, Sun } from "lucide-rea
 import { useEffect, useState } from "react";
 import { Badge, Card, ErrorNote, PageHeader, Segmented, SectionTitle, Skeleton, Switch, useToast } from "../components/ui";
 import { ConnectAgentButton } from "../components/ConnectAgent";
+import { DataFolderCard } from "../components/DataFolder";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { useHealth, useQueue, useStatus } from "../lib/hooks";
@@ -52,11 +53,10 @@ export function SettingsPage() {
   const paths: [string, string][] = [
     ["Plumber home", status.plumber_home],
     ["Config file", status.config_path],
-    ["Data directory", status.data_dir],
   ];
   return (
     <div className="max-w-3xl animate-fade-in space-y-8">
-      <PageHeader title="Settings" sub="Queue limits take effect immediately. Paths are read-only here; change them in the config file." />
+      <PageHeader title="Settings" sub="Changes take effect immediately. The config file path is read-only here." />
 
       <section>
         <SectionTitle title="Queue" />
@@ -97,6 +97,11 @@ export function SettingsPage() {
             <ConnectAgentButton label="Get prompt" />
           </Row>
         </Card>
+      </section>
+
+      <section id="data-folder">
+        <SectionTitle title="Data folder" hint="Where real runs read cached inputs and write results. The Cache page and the cache bars on presets show this folder." />
+        <DataFolderCard />
       </section>
 
       <section>

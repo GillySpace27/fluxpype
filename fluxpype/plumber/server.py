@@ -73,6 +73,10 @@ class BackendIn(BaseModel):
     name: str
 
 
+class DataDirIn(BaseModel):
+    path: Optional[str] = None
+
+
 class PresetIn(BaseModel):
     name: str
     base: Optional[str] = None
@@ -310,6 +314,21 @@ def create_app(
         hub.publish("backend_changed", {"active_backend": sched.active_backend})
         return reply({"active_backend": sched.active_backend, "queue": state})
 
+    @app.get("/api/data-dir")
+    def data_dir_get():
+        return reply(sched.data_dir_report())
+
+    @app.put("/api/data-dir")
+    def data_dir_put(body: DataDirIn):
+        try:
+            sched.set_data_dir(body.path)
+        except SchedulerError as e:
+            fail(e)
+        preset_cache.clear()
+        health.invalidate()
+        hub.publish("data_dir_changed", {"data_dir": sched.data_dir()})
+        return reply(sched.data_dir_report())
+
     @app.get("/api/agent-prompt")
     def agent_prompt_():
         from . import agent_prompt
@@ -318,7 +337,7 @@ def create_app(
 
     def preset_cache_summary(cf, name: str, plan) -> Dict[str, Any]:
         """How many of the preset's tasks already have each cached product (first 60 tasks), on the active backend."""
-        key = f"{sched.active_backend}|{name}|{hash(tuple(plan.tasks[:60]))}"
+        key = f"{sched.active_backend}|{sched.data_dir_setting()}|{name}|{hash(tuple(plan.tasks[:60]))}"
         hit = preset_cache.get(key)
         if hit and time.time() - hit[0] < 20:
             return hit[1]
@@ -339,6 +358,7 @@ def create_app(
         cf = sched.parsed()
         hidden = set(sched.presets.hidden())
         builtin = set(sched.presets.builtin_names())
+        stats = sched.store.run_stats()
         rows = []
         for name in cf.profiles:
             eff = cf.effective(name)
@@ -353,6 +373,8 @@ def create_app(
                     "errors": plan.errors,
                     "warnings": plan.warnings,
                     "own_keys": len(own),
+                    "own": {k: e.value for k, e in own.items()},
+                    "runs": stats.get(name),
                     "origin": "builtin" if name in builtin else "user",
                     "hidden": name in hidden,
                     "cache": preset_cache_summary(cf, name, plan) if cache and not plan.errors else None,
@@ -712,7 +734,39 @@ def create_app(
         c = cache_for(profile)
         summary = c.summary(rescan)
         records = c.records()[:20000]
-        return reply({**summary, "records": records, "truncated": summary["total_count"] > len(records)})
+        return reply(
+            {
+                **summary,
+                "records": records,
+                "truncated": summary["total_count"] > len(records),
+                "presets": preset_scopes(),
+                "sandboxed": sched.is_sandboxed(),
+            }
+        )
+
+    def preset_scopes() -> List[Dict[str, Any]]:
+        """For each runnable preset: the batch, rotations and instruments it reads and writes."""
+        out = []
+        try:
+            cf = sched.parsed()
+        except Exception:  # noqa: BLE001
+            return out
+        hidden = set(sched.presets.hidden())
+        for name in cf.profiles:
+            eff = cf.effective(name)
+            plan = config_io.expand_tasks(eff)
+            if plan.errors:
+                continue
+            out.append(
+                {
+                    "name": name,
+                    "batch": config_io.resolve(eff, "batch_name"),
+                    "crs": sorted({str(t[1]) for t in plan.tasks}),
+                    "insts": sorted({config_io.task_instrument(t[0]) for t in plan.tasks}),
+                    "hidden": name in hidden,
+                }
+            )
+        return out
 
     @app.post("/api/cache/trash")
     def cache_trash(body: TrashIn):

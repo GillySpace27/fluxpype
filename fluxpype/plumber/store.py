@@ -144,6 +144,25 @@ class Store:
         rows = self._all("SELECT * FROM jobs ORDER BY created DESC, rowid DESC LIMIT ?", (limit,))
         return [self._job_row(r) for r in rows]
 
+    def run_stats(self) -> Dict[str, Dict[str, Any]]:
+        """Per preset: how many jobs, how many finished ok, and the latest job's status and time."""
+        rows = self._all(
+            "SELECT profile, COUNT(*) AS jobs, SUM(status = 'ok') AS ok, MAX(created) AS last_at FROM jobs GROUP BY profile"
+        )
+        out = {}
+        for r in rows:
+            last = self._one(
+                "SELECT status, COALESCE(ended, created) AS at FROM jobs WHERE profile = ? ORDER BY created DESC LIMIT 1",
+                (r["profile"],),
+            )
+            out[r["profile"]] = {
+                "jobs": r["jobs"],
+                "ok": r["ok"] or 0,
+                "last_status": last["status"] if last else None,
+                "last_at": last["at"] if last else None,
+            }
+        return out
+
     def update_job(self, job_id: str, **fields) -> None:
         if not fields:
             return

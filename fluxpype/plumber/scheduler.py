@@ -103,15 +103,62 @@ class Scheduler:
         os.makedirs(path, exist_ok=True)
         return path
 
-    def data_dir(self, profile: str = None, backend: str = None) -> str:
+    def data_dir_setting(self) -> Optional[str]:
+        """The data folder chosen in Plumber for real runs, or None to use config.ini's data_dir."""
+        val = self.store.get_setting("data_dir")
+        return str(val) if val else None
+
+    def set_data_dir(self, path: Optional[str]) -> Optional[str]:
+        """Pin real runs to `path` (an existing folder), or None to go back to config.ini's data_dir."""
+        if path is None or not str(path).strip():
+            self.store.set_setting("data_dir", None)
+            return None
+        full = os.path.abspath(os.path.expanduser(str(path).strip()))
+        if not os.path.isdir(full):
+            raise SchedulerError(f"{full} is not a folder")
+        if os.path.realpath(full) == os.path.realpath(os.path.join(str(self.home), "sandbox", "data")):
+            raise SchedulerError("that is the sandbox for simulated runs; choose your real data folder")
+        self.store.set_setting("data_dir", full)
+        return full
+
+    def pinned_data_dir(self, backend: str = None) -> Optional[str]:
+        """The folder a job on `backend` must write to regardless of config.ini, if any."""
         if self.is_sandboxed(backend):
             return self.sandbox_dir()
+        return self.data_dir_setting()
+
+    def config_data_dir(self) -> str:
+        """data_dir as config.ini's [DEFAULT] gives it."""
+        return config_io.resolved_path(dict(self.parsed().defaults), "data_dir", str(paths.checkout_root()))
+
+    def data_dir_report(self) -> Dict[str, Any]:
+        """Where real runs read and write, why, and other folders on this machine that hold data."""
+        from . import datadirs
+
+        chosen = self.data_dir_setting()
+        from_config = self.config_data_dir()
+        current = chosen or from_config
+        return {
+            "current": datadirs.describe(current),
+            "source": "plumber" if chosen else "config",
+            "config_value": from_config,
+            "candidates": datadirs.candidates(
+                config_io.auto_base_dir(str(paths.checkout_root())), [current, from_config]
+            ),
+        }
+
+    def data_dir(self, profile: str = None, backend: str = None) -> str:
+        pinned = self.pinned_data_dir(backend)
+        if pinned:
+            return pinned
         cf = self.parsed()
         eff = cf.effective(profile) if profile and profile in cf.sections else dict(cf.defaults)
         return config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
 
     def all_data_dirs(self) -> List[str]:
         dirs = {self.sandbox_dir()}
+        if self.data_dir_setting():
+            dirs.add(self.data_dir_setting())
         try:
             cf = self.parsed()
             dirs.add(config_io.resolved_path(dict(cf.defaults), "data_dir", str(paths.checkout_root())))
@@ -190,11 +237,12 @@ class Scheduler:
             snapshot = config_io.make_snapshot(text, profile, overrides or {}, str(paths.checkout_root()))
         except config_io.ConfigError as e:
             raise SchedulerError(str(e)) from e
-        if self.is_sandboxed(backend):  # simulated runs write into the sandbox, never the real data_dir
-            sandbox = self.sandbox_dir()
-            snapshot = config_io.set_value(snapshot, "DEFAULT", "data_dir", sandbox)
+        # simulated runs write into the sandbox, never the real data_dir; real runs go to the folder chosen in Plumber
+        pinned = self.pinned_data_dir(backend)
+        if pinned:
+            snapshot = config_io.set_value(snapshot, "DEFAULT", "data_dir", pinned)
             if "data_dir" in config_io.parse(snapshot).sections.get(profile, {}):
-                snapshot = config_io.set_value(snapshot, profile, "data_dir", sandbox)
+                snapshot = config_io.set_value(snapshot, profile, "data_dir", pinned)
         eff = config_io.parse(snapshot).effective(profile)
         plan = config_io.expand_tasks(eff)
         if plan.errors:
@@ -526,9 +574,7 @@ class Scheduler:
             return None
         return ProbeContext(
             data_dir=(
-                self.sandbox_dir()
-                if self.is_sandboxed(backend)
-                else config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+                self.pinned_data_dir(backend) or config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
             ),
             batch=config_io.resolve(eff, "batch_name"),
             cr=cr,

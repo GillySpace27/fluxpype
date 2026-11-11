@@ -4,6 +4,7 @@ import { api } from "./api";
 import { useLive } from "./live";
 import type {
   CacheData,
+  DataDirReport,
   HealthReport,
   Job,
   Overview,
@@ -90,6 +91,9 @@ export const useHealth = () =>
 
 export const useProfile = (name: string | undefined) =>
   useQuery({ queryKey: ["profile", name], queryFn: () => api.get<ProfileDetail>(`/api/profiles/${encodeURIComponent(name!)}`), enabled: !!name });
+
+export const useDataDir = () =>
+  useQuery({ queryKey: ["datadir"], queryFn: () => api.get<DataDirReport>("/api/data-dir"), staleTime: 30_000 });
 
 export const useCache = () => useQuery({ queryKey: ["cache"], queryFn: () => api.get<CacheData>("/api/cache"), staleTime: 15_000 });
 
