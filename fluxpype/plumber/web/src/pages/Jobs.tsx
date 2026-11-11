@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ban, ListChecks, RotateCw, Trash2 } from "lucide-react";
+import { Ban, ListChecks, Plus, RotateCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Card, EmptyState, ErrorNote, PageHeader, Skeleton, StatusBadge, Tip, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
@@ -77,7 +77,15 @@ export function JobsPage() {
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Jobs" sub="Every run you have started, newest first." />
+      <PageHeader
+        title="Jobs"
+        sub="Every run you have started, newest first."
+        right={
+          <Link to="/jobs/new" className="btn btn-primary">
+            <Plus className="h-3.5 w-3.5" /> New run
+          </Link>
+        }
+      />
       {!data ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : data.jobs.length === 0 ? (

@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Copy, PanelsTopLeft } from "lucide-react";
+import { ArrowLeft, Ban, Copy } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
 import { PipelineChips } from "../components/PipelineChips";
 import { ResultsPane } from "../components/ResultsPane";
 import { RunFiles, RunSettings } from "../components/RunTabs";
+import { SameRotation } from "../components/SameRotation";
 import { StagePanel } from "../components/StagePanel";
 import { RelaxCharts } from "../components/RelaxCharts";
 import { SourcesPanel } from "../components/SourcesPanel";
@@ -14,7 +15,7 @@ import { Banner, Card, EmptyState, ErrorNote, Skeleton, StatusBadge, StatusIcon,
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
-import { useJob, useNow, useRelax, useTask } from "../lib/hooks";
+import { useJob, useNow, useRelax, useTask, useTaskResults } from "../lib/hooks";
 import type { Job, Stage, TaskRow, TaskState } from "../lib/types";
 import { JobActions } from "./Jobs";
 
@@ -22,7 +23,16 @@ import { JobActions } from "./Jobs";
 function Strip({ task, selected, onSelect }: { task: TaskState; selected: string; onSelect: (id: string) => void }) {
   const { wind } = useProgress(task);
   const windRunning = task.stages.find((s) => s.id === "wind")?.status === "running";
-  return <PipelineChips stages={task.stages} className="mt-3" selected={selected} onSelect={onSelect} fill={windRunning && wind ? { wind: wind.frac } : undefined} />;
+  // a finished stage whose files all predate this run was reused from the cache, so hatch its chip
+  const { data } = useTaskResults(task.id, task.status === "running" || task.status === "pending");
+  const reused = new Set<string>();
+  const byStage = new Map<string, { origin: string | null }[]>();
+  data?.products.forEach((p) => byStage.set(p.id === "relaxed_world" ? "relax" : p.id, p.files));
+  data?.plots.forEach((f) => f.stage && byStage.set(f.stage, [...(byStage.get(f.stage) ?? []), f]));
+  byStage.forEach((files, id) => {
+    if (files.length && files.every((f) => f.origin === "reused") && task.stages.find((s) => s.id === id)?.status === "ok") reused.add(id);
+  });
+  return <PipelineChips stages={task.stages} className="mt-3" selected={selected} onSelect={onSelect} fill={windRunning && wind ? { wind: wind.frac } : undefined} reused={reused} />;
 }
 
 /** One task: header with metrics and banners, then tabs. `results` adds the Results tab (the run view shows results in its own tab). */
@@ -206,6 +216,7 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
                 </Card>
             }
           />
+            <SameRotation task={t} />
           </TabPanel>
         )}
         <TabPanel value="log" className="pt-5">
@@ -271,11 +282,8 @@ export function JobDetail() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link to={`/run/new?from=${job.id}`} className="btn btn-sm">
+            <Link to={`/jobs/new?from=${job.id}`} className="btn btn-sm">
               <Copy className="h-3.5 w-3.5" /> Duplicate as new run
-            </Link>
-            <Link to={`/run/${job.id}/progress${selected ? `?task=${selected.id}` : ""}`} className="btn btn-sm">
-              <PanelsTopLeft className="h-3.5 w-3.5" /> Open as run
             </Link>
             <JobActions job={job} onDeleted={() => nav("/jobs")} />
           </div>

@@ -53,7 +53,7 @@ export function RunSettings({ job }: { job: Job }) {
           {nDrift > 0 && <p className="text-[12px] text-faint">{nDrift} setting{nDrift === 1 ? " has" : "s have"} changed in the preset since this run. The values below are what the run used.</p>}
         </div>
         <div className="flex items-start">
-          <Link to={`/run/new?from=${job.id}`} className="btn btn-sm">
+          <Link to={`/jobs/new?from=${job.id}`} className="btn btn-sm">
             <Copy className="h-3.5 w-3.5" /> Duplicate as new run
           </Link>
         </div>

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { StageStrip, type StripItem } from "../components/StageStrip";
 import { Badge, Banner, Card, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, Tip, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -57,25 +58,18 @@ function useInvalidatePresets() {
 /* ------------------------------------------------------------------ cache status along a tile */
 export function CacheBar({ cache, className }: { cache: PresetCache | null; className?: string }) {
   if (!cache || cache.tasks === 0) return null;
-  return (
-    <div className={cn("grid grid-cols-5 gap-1.5", className)}>
-      {CACHE_KINDS.map(([k, short, long]) => {
-        const n = cache.counts[k];
-        const frac = n / cache.tasks;
-        const tone = frac >= 1 ? "bg-ok" : frac > 0 ? "bg-run" : "bg-line";
-        return (
-          <Tip key={k} label={`${long}: ${n} of ${cache.tasks} task${cache.tasks === 1 ? "" : "s"} already on disk${cache.of > cache.tasks ? ` (first ${cache.tasks} of ${cache.of} checked)` : ""}`}>
-            <div className="min-w-0">
-              <div className="h-1 overflow-hidden rounded-full bg-line/60">
-                <div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.max(frac, n > 0 ? 0.12 : 0) * 100}%` }} />
-              </div>
-              <p className={cn("mt-1 truncate text-[10px] font-medium", frac >= 1 ? "text-ok" : frac > 0 ? "text-run" : "text-faint")}>{short}</p>
-            </div>
-          </Tip>
-        );
-      })}
-    </div>
-  );
+  const items: StripItem[] = CACHE_KINDS.map(([k, short, long]) => {
+    const n = cache.counts[k];
+    const frac = n / cache.tasks;
+    return {
+      id: k,
+      label: short,
+      tone: frac >= 1 ? "ok" : frac > 0 ? "run" : "idle",
+      fill: Math.max(frac, n > 0 ? 0.12 : 0),
+      tip: `${long}: ${n} of ${cache.tasks} task${cache.tasks === 1 ? "" : "s"} already on disk${cache.of > cache.tasks ? ` (first ${cache.tasks} of ${cache.of} checked)` : ""}`,
+    };
+  });
+  return <StageStrip items={items} className={className} />;
 }
 
 /* ------------------------------------------------------------------ small dialogs */
@@ -333,6 +327,9 @@ function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open
             {nTasks} task{nTasks === 1 ? "" : "s"}
             {changed.length > 0 && ` · ${changed.length} change${changed.length === 1 ? "" : "s"}`}
           </span>
+          <Link to={`/jobs/new?preset=${enc(detail.name)}`} className="btn" onClick={() => onOpenChange(false)}>
+            Open as full page
+          </Link>
           {changed.length > 0 && (
             <button className="btn" onClick={() => setSaveAs(true)}>
               <Save className="h-3.5 w-3.5" /> Save as preset

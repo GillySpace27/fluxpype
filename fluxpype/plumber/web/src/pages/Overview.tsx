@@ -1,6 +1,6 @@
 import { Activity, ArrowRight, CheckCircle2, Clock, Layers, Rocket } from "lucide-react";
 import { Link } from "react-router-dom";
-import { PipelineChips } from "../components/PipelineChips";
+import { StageStrip, toneOf } from "../components/StageStrip";
 import { TaskCard } from "../components/TaskCard";
 import { Card, EmptyState, ErrorNote, PageHeader, SectionTitle, Skeleton, StatusBadge } from "../components/ui";
 import { artifactUrl } from "../lib/api";
@@ -34,7 +34,7 @@ function RecentRow({ t, now }: { t: RecentTask; now: number }) {
         <p className="mt-0.5 truncate text-xs text-muted">{t.failure ? t.failure : `${t.stages_ok}/10 stages · ${t.profile}`}</p>
       </div>
       <div className="hidden w-[190px] sm:block">
-        <PipelineChips stages={t.stages.map((s) => ({ ...s, label: s.id, started: null, ended: null, elapsed_s: null, detail: null, verified: null }))} className="!grid-cols-10 gap-0.5 [&_div]:!h-1.5 [&_div]:!text-[0px]" />
+        <StageStrip items={t.stages.map((s) => ({ id: s.id, label: s.id, tone: toneOf(s.status) }))} labels={false} className="!gap-0.5" />
       </div>
       <div className="w-[88px] text-right">
         <StatusBadge status={t.status} />

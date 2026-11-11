@@ -41,7 +41,7 @@ export function stageTip(s: Stage) {
 }
 
 /** The ten pipeline stages as chips. Filled when the state comes from events, outlined when it was inferred. */
-export function PipelineChips({ stages, className, selected, onSelect, fill }: { stages: Stage[]; className?: string; selected?: string; onSelect?: (id: string) => void; fill?: Record<string, number> }) {
+export function PipelineChips({ stages, className, selected, onSelect, fill, reused }: { stages: Stage[]; className?: string; selected?: string; onSelect?: (id: string) => void; fill?: Record<string, number>; reused?: Set<string> }) {
   // with onSelect the chips are radio buttons: one stage at a time, arrow keys move between them
   const move = (e: React.KeyboardEvent, i: number) => {
     const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
@@ -67,7 +67,14 @@ export function PipelineChips({ stages, className, selected, onSelect, fill }: {
                   : "border-dashed border-line text-faint bg-transparent";
         return (
           <li key={s.id}>
-            <Tip label={stageTip(s)}>
+            <Tip
+              label={
+                <>
+                  {stageTip(s)}
+                  {reused?.has(s.id) && <p className="mt-0.5 text-info">Reused from the cache, not recomputed.</p>}
+                </>
+              }
+            >
               <div
                 role={onSelect ? "radio" : undefined}
                 aria-checked={onSelect ? s.id === selected : undefined}
@@ -84,6 +91,7 @@ export function PipelineChips({ stages, className, selected, onSelect, fill }: {
                 )}
               >
                 {fill?.[s.id] != null && <span className="pointer-events-none absolute inset-y-0 left-0 rounded-[inherit] bg-run/30" style={{ width: `${fill[s.id] * 100}%` }} />}
+                {reused?.has(s.id) && <span className="hatch pointer-events-none absolute inset-0 rounded-[inherit]" />}
                 <span className="relative">{SHORT[s.id] ?? s.label}</span>
                 {s.verified === false && <AlertCircle className="absolute -right-1 -top-1 h-3 w-3 fill-bg text-run" />}
               </div>
