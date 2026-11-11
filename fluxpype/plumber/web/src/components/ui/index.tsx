@@ -247,6 +247,7 @@ export function Dialog({
   footer,
   side,
   wide,
+  xl,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -256,6 +257,8 @@ export function Dialog({
   footer?: ReactNode;
   side?: boolean;
   wide?: boolean;
+  /** A wide side panel, for viewers. */
+  xl?: boolean;
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -265,7 +268,7 @@ export function Dialog({
           className={cn(
             "fixed z-50 flex flex-col border border-line bg-surface shadow-pop focus:outline-none",
             side
-              ? "inset-y-0 right-0 w-full max-w-[560px] animate-slide-in rounded-l-2xl"
+              ? cn("inset-y-0 right-0 w-full animate-slide-in rounded-l-2xl", xl ? "max-w-[1100px]" : "max-w-[560px]")
               : cn("left-1/2 top-1/2 max-h-[88vh] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 animate-rise rounded-2xl", wide ? "max-w-3xl" : "max-w-md"),
           )}
         >

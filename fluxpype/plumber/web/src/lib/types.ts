@@ -334,3 +334,28 @@ export interface LogChunk {
   text: string;
   file: string | null;
 }
+
+export interface FitsCard {
+  key: string;
+  value: string;
+  comment: string;
+}
+
+export interface FilePreview {
+  path: string;
+  name: string;
+  size: number;
+  mtime: number;
+  view: "image" | "pdf" | "fits" | "text" | "none";
+  media_type?: string;
+  hdus?: { name: string; dims: number[]; bitpix?: string; cards: FitsCard[]; incomplete?: boolean }[];
+  renderable?: boolean;
+  lines?: string[];
+  truncated?: boolean;
+  note?: string;
+}
+
+export interface FitsRender {
+  stats: { hdu?: string; shape?: number[]; vmin?: number; vmax?: number; min?: number | null; max?: number | null; nan?: number };
+  image: string;
+}

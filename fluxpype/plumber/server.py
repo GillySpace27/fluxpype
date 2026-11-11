@@ -5,12 +5,13 @@ import hmac
 import json
 import math
 import os
+import sys
 import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -798,6 +799,74 @@ def create_app(
         return reply(result)
 
     # ------------------------------------------------------------------ artifacts
+    def cache_file(rel: str) -> str:
+        """Absolute path of a file in the current data folder (confined like the trash: no .., no escaping links)."""
+        from .cache import _confine
+
+        try:
+            full = _confine(cache_for().data_dir, rel)
+        except CacheError as e:
+            fail(e, 403)
+        if not os.path.isfile(full):
+            raise HTTPException(404, "no such file (rescan the cache)")
+        return full
+
+    def render_python() -> str:
+        local = next((b for b in sched.backends.values() if getattr(b, "kind", "") == "local"), None)
+        return getattr(local, "python", None) or sys.executable
+
+    @app.get("/api/cache/preview")
+    def cache_preview(path: str):
+        from . import preview
+
+        full = cache_file(path)
+        try:
+            return reply(preview.describe(full, path))
+        except OSError as e:
+            fail(e, 500)
+
+    @app.get("/api/cache/file")
+    def cache_raw(path: str, download: bool = False):
+        from . import preview
+
+        full = cache_file(path)
+        mt = preview.media_type(full)
+        inline = not download and mt != "application/octet-stream"
+        headers = {"Cache-Control": "private, max-age=30", "X-Content-Type-Options": "nosniff"}
+        if mt == "image/svg+xml":
+            headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        return FileResponse(
+            full,
+            media_type=mt,
+            headers=headers,
+            filename=os.path.basename(full),
+            content_disposition_type="inline" if inline else "attachment",
+        )
+
+    @app.get("/api/cache/render")
+    def cache_render(path: str):
+        from . import preview
+
+        full = cache_file(path)
+        if preview.kind_of(full) != "fits":
+            fail(ValueError("only FITS files are rendered"), 415)
+        try:
+            out = preview.render_fits(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return reply({"stats": out["stats"], "image": f"/api/cache/render.png?path={quote(path)}"})
+
+    @app.get("/api/cache/render.png")
+    def cache_render_png(path: str):
+        from . import preview
+
+        full = cache_file(path)
+        try:
+            out = preview.render_fits(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return FileResponse(out["png"], media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
     @app.get("/api/artifacts")
     def artifact(path: str):
         ext = os.path.splitext(path)[1].lower()

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Database, FlaskConical, Layers, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Badge, Card, Checkbox, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -9,6 +9,7 @@ import { ago, bytes, kindLabel } from "../lib/format";
 import { useCache, useProfile, useStatus, useTrash } from "../lib/hooks";
 import type { CacheRecord, PresetScope } from "../lib/types";
 import { DataFolderBanner } from "../components/DataFolder";
+import { FileViewer } from "../components/FileViewer";
 
 const UNUSED = "__unused__";
 
@@ -108,6 +109,7 @@ export function CachePage() {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [trashOpen, setTrashOpen] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
   const [limit, setLimit] = useState(LIMIT);
   const [params, setParams] = useSearchParams();
   const presetName = params.get("preset") ?? undefined;
@@ -118,6 +120,7 @@ export function CachePage() {
   const scopes = useMemo(() => data?.presets ?? [], [data]);
   const users = useMemo(() => new Map((data?.records ?? []).map((r) => [r.id, usedBy(r, scopes)])), [data, scopes]);
   const unusedOnly = presetName === UNUSED;
+  const usedByOf = useCallback((r: CacheRecord) => users.get(r.id) ?? [], [users]);
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const scope = presetName && !unusedOnly ? scopes.find((p) => p.name === presetName) : undefined;
@@ -235,7 +238,7 @@ export function CachePage() {
                   ))}
                 </optgroup>
               </select>
-              <span className="num text-xs text-muted">{rows.length} of {data.total_count} files · {bytes(data.total_size)} total</span>
+              <span className="num text-xs text-muted">Click a file to preview it · {rows.length} of {data.total_count} files · {bytes(data.total_size)} total</span>
               <button className="btn btn-danger btn-sm" disabled={!sel.size}
                 onClick={async () => { if (await ask({ title: `Move ${sel.size} item(s) to the trash?`, body: `${bytes(selSize)} will be moved aside. Nothing is deleted until you empty the trash, and you can restore it first.`, confirm: "Move to trash", danger: true })) trash.mutate([...sel].map((id) => byId.get(id)!.path)); }}>
                 <Trash2 className="h-3.5 w-3.5" /> Trash {sel.size || ""}
@@ -250,9 +253,9 @@ export function CachePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((r) => (
-                    <tr key={r.id} onClick={() => toggle(r)} className={cn("cursor-pointer border-b border-line/40 last:border-0 hover:bg-raised/40", sel.has(r.id) && "bg-accent/5")}>
-                      <td className="px-3 py-2"><Checkbox checked={sel.has(r.id)} label={r.name} onChange={() => toggle(r)} /></td>
+                  {shown.map((r, i) => (
+                    <tr key={r.id} onClick={() => setViewing(i)} title="Preview" className={cn("cursor-pointer border-b border-line/40 last:border-0 hover:bg-raised/40", sel.has(r.id) && "bg-accent/5", viewing === i && "bg-raised/60")}>
+                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}><Checkbox checked={sel.has(r.id)} label={r.name} onChange={() => toggle(r)} /></td>
                       <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs" title={r.path}>{r.name}</td>
                       <td className="px-3 py-2"><Badge>{kindLabel[r.kind] ?? r.kind}</Badge></td>
                       <td className="num px-3 py-2 text-muted">{r.cr ? `CR ${r.cr}` : "-"}</td>
@@ -276,6 +279,19 @@ export function CachePage() {
         </>
       )}
       {trashOpen && <TrashDialog open={trashOpen} onOpenChange={setTrashOpen} />}
+      {viewing !== null && data && rows[viewing] && (
+        <FileViewer
+          records={rows}
+          index={viewing}
+          onIndex={(i) => {
+            setViewing(i);
+            if (i >= limit) setLimit(i + 1);
+          }}
+          onClose={() => setViewing(null)}
+          dataDir={data.data_dir}
+          usedBy={usedByOf}
+        />
+      )}
       {node}
     </div>
   );
