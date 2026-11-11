@@ -98,18 +98,20 @@ function FitsView({ p }: { p: FilePreview }) {
 }
 
 function TextView({ p }: { p: FilePreview }) {
-  const lines = p.lines ?? [];
+  const all = p.lines ?? [];
+  const skip = Math.max(0, all.findIndex((l) => l.trim() !== "")); // world files start with blank lines
+  const lines = all.slice(skip);
   return (
     <div className="space-y-1.5">
       <pre className="max-h-[70vh] overflow-auto rounded-xl border border-line bg-bg/60 py-2 text-[11.5px] leading-[1.55]">
         {lines.map((l, i) => (
           <div key={i} className="flex">
-            <span className="num w-12 shrink-0 select-none pr-3 text-right text-faint/70">{i + 1}</span>
+            <span className="num w-12 shrink-0 select-none pr-3 text-right text-faint/70">{i + 1 + skip}</span>
             <span className="whitespace-pre pr-3 font-mono">{l || " "}</span>
           </div>
         ))}
       </pre>
-      {p.truncated && <p className="text-[11px] text-faint">Showing the first {lines.length} lines. Download the file for the rest.</p>}
+      {p.truncated && <p className="text-[11px] text-faint">Showing the first {all.length} lines. Download the file for the rest.</p>}
     </div>
   );
 }
