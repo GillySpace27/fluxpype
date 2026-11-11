@@ -3,29 +3,18 @@ import { ArrowLeft, Ban, PanelsTopLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
-import { PipelineChips } from "../components/PipelineChips";
 import { ResultsPane } from "../components/ResultsPane";
 import { StagePanel } from "../components/StagePanel";
 import { RelaxCharts } from "../components/RelaxCharts";
 import { SourcesPanel } from "../components/SourcesPanel";
 import { StageTimeline } from "../components/StageTimeline";
-import { Banner, Card, EmptyState, ErrorNote, SectionTitle, Skeleton, StatusBadge, Tab, TabList, TabPanel, Tabs, useConfirm, useToast } from "../components/ui";
+import { Banner, Card, EmptyState, ErrorNote, Skeleton, StatusBadge, StatusIcon, Tab, TabList, TabPanel, Tabs, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
 import { useJob, useNow, useRelax, useTask } from "../lib/hooks";
 import type { Stage, TaskRow, TaskState } from "../lib/types";
 import { JobActions } from "./Jobs";
-
-function Metric({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-line/70 bg-bg/40 px-3 py-2">
-      <p className="label truncate">{label}</p>
-      <p className="num mt-0.5 truncate text-[15px] font-semibold tracking-tight">{value}</p>
-      {sub && <p className="truncate text-[11px] text-faint">{sub}</p>}
-    </div>
-  );
-}
 
 /** One task: header with metrics and banners, then tabs. `results` adds the Results tab (the run view shows results in its own tab). */
 export function TaskView({ row, results = true, defaultTab = "progress" }: { row: TaskRow; results?: boolean; defaultTab?: string }) {
@@ -58,9 +47,21 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
   const reason = failedStage?.detail ?? (t.outcome && t.outcome !== "failed" ? t.outcome : null) ?? t.warnings[0] ?? null;
   const extraWarnings = [...new Set(t.warnings)].filter((w) => w !== reason);
   const nVert = t.metrics.find((m) => m.name === "n_actual");
+  // one line of numbers instead of six tiles; a metric with no value yet is left out
+  const metrics = [
+    ["Elapsed", duration(elapsed)],
+    ["Stiffness", num(t.relax.latest?.stiffness) + (t.relax.threshold != null ? ` / ${num(t.relax.threshold)}` : "")],
+    ["Step", int(t.relax.latest?.step)],
+    ["Cycles", t.relax.cycles ? String(t.relax.cycles) : "-"],
+    ["Vertices", int(t.relax.latest?.vertices)],
+    ["Fluxons out", nVert ? `${nVert.value} of ${t.nflux}` : "-"],
+  ].filter(([, v]) => v && !v.startsWith("-"));
+  const warnings = [...(t.degraded ? [t.degraded_reason ?? "Structured events stopped arriving, so stages are read from the log."] : []), ...extraWarnings];
+  // the stage list stays open while it is useful (running, failed) and on wide screens; on a phone a finished task shows just the selected row
+  const railOpen = live || bad || window.matchMedia("(min-width: 1024px)").matches;
   return (
-    <div className="space-y-5">
-      <Card className="p-5">
+    <div className="space-y-4">
+      <Card className="p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2.5 text-[17px]">
@@ -82,22 +83,29 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
             </button>
           )}
         </div>
-        <PipelineChips stages={t.stages} className="mt-4" selected={stageId} onSelect={select} />
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <Metric label="Elapsed" value={duration(elapsed)} />
-          <Metric label="Stiffness" value={num(t.relax.latest?.stiffness)} sub={t.relax.threshold != null ? `target ${num(t.relax.threshold)}` : undefined} />
-          <Metric label="Relax step" value={int(t.relax.latest?.step)} sub={t.relax.steps_per_s ? `${num(t.relax.steps_per_s, 3)} steps/s` : undefined} />
-          <Metric label="Cycles" value={t.relax.cycles || "-"} sub={t.relax.cycle?.nc_curve != null ? `${t.relax.cycle.nc_curve} curvature fixes` : undefined} />
-          <Metric label="Vertices" value={int(t.relax.latest?.vertices)} />
-          <Metric label="Fluxons out" value={nVert ? String(nVert.value) : "-"} sub={nVert ? `of ${t.nflux} asked` : undefined} />
-        </div>
+        <p className="num mt-2 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
+          {metrics.map(([k, v]) => (
+            <span key={k}>
+              {k} <span className="font-medium text-ink">{v}</span>
+            </span>
+          ))}
+        </p>
+        {bad && (
+          <button className="mt-2 block text-left text-[13px] text-fail hover:underline" onClick={() => failedStage && select(failedStage.id)}>
+            {failedStage ? `${failedStage.label} failed` : "Task failed"}: {reason ? `${reason}. ` : ""}Exit code {t.exit_code ?? "?"}. The Log tab shows where it stopped.
+          </button>
+        )}
+        {warnings.length > 0 && (
+          <details className="mt-2 text-[13px]">
+            <summary className="cursor-pointer text-run">{warnings.length} warning{warnings.length === 1 ? "" : "s"}</summary>
+            <div className="mt-2 space-y-2">
+              {warnings.map((w) => (
+                <Banner key={w} tone="warn">{w}</Banner>
+              ))}
+            </div>
+          </details>
+        )}
       </Card>
-
-      {bad && <Banner tone="error" title={failedStage ? `${failedStage.label} failed` : "Task failed"}>{reason ? `${reason}. ` : ""}Exit code {t.exit_code ?? "?"}. The Log tab shows where it stopped.</Banner>}
-      {t.degraded && <Banner tone="warn" title="Progress is partly inferred">{t.degraded_reason ?? "Structured events stopped arriving, so stages are read from the log."}</Banner>}
-      {extraWarnings.map((w) => (
-        <Banner key={w} tone="warn">{w}</Banner>
-      ))}
 
       <Tabs defaultValue={defaultTab}>
         <TabList>
@@ -110,13 +118,19 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
           )}
           <Tab value="sources">Evidence</Tab>
         </TabList>
-        <TabPanel value="progress" className="space-y-6 pt-5">
-          <section>
-            <SectionTitle title="Stages" hint="Pick a stage above to see its progress and what it made." />
-            <Card className="p-4">
-              <StageTimeline task={t} />
-            </Card>
-          </section>
+        <TabPanel value="progress" className="grid gap-4 pt-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
+          <Card className="p-3 lg:sticky lg:top-20 lg:self-start">
+            <details open={railOpen}>
+              <summary className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <span className="label">Stages</span>
+                <StatusIcon status={t.stages.find((x) => x.id === stageId)?.status ?? "pending"} className="h-3.5 w-3.5" />
+                {t.stages.find((x) => x.id === stageId)?.label}
+              </summary>
+              <div className="mt-2">
+                <StageTimeline task={t} selected={stageId} onSelect={select} />
+              </div>
+            </details>
+          </Card>
           <StagePanel
             task={t}
             stageId={stageId}

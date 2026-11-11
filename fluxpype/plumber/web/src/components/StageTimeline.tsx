@@ -3,17 +3,10 @@ import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { clock, duration } from "../lib/format";
 import { useNow } from "../lib/hooks";
-import type { LogChunk, Source, Stage, TaskState } from "../lib/types";
-import { Badge, StatusIcon, Tip } from "./ui";
+import type { LogChunk, Stage, TaskState } from "../lib/types";
+import { StatusIcon, Tip } from "./ui";
 import { AlertCircle } from "lucide-react";
 import { stageTip } from "./PipelineChips";
-
-const SRC: Record<Source, { label: string; tone: "ok" | "info" | "neutral" | "accent" }> = {
-  event: { label: "events", tone: "accent" },
-  log: { label: "log", tone: "info" },
-  file: { label: "files", tone: "neutral" },
-  none: { label: "", tone: "neutral" },
-};
 
 const CALC = /Calculated \w+: (\d+) of (\d+), [\d.]+\(s\) elapsed, ([\d.]+)\(s\) \[[\d.]+ mins\] remaining\.*/g;
 const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
@@ -36,8 +29,8 @@ export function useProgress(task: TaskState) {
   return { wind, tail };
 }
 
-/** One row per stage; bars are positioned by when each stage ran, relative to the task. */
-export function StageTimeline({ task }: { task: TaskState }) {
+/** One row per stage; bars are positioned by when each stage ran, relative to the task. With onSelect the rows are the stage radio buttons. */
+export function StageTimeline({ task, selected, onSelect }: { task: TaskState; selected?: string; onSelect?: (id: string) => void }) {
   const running = task.status === "running";
   const now = useNow(running ? 1000 : 60000);
   const { wind, tail } = useProgress(task);
@@ -47,12 +40,23 @@ export function StageTimeline({ task }: { task: TaskState }) {
   const end = task.ended ?? Math.max(now, ...timed.map((s) => (s.ended ?? s.started ?? 0) as number));
   const total = Math.max(end - (isFinite(t0) ? t0 : end), 1);
 
+  // arrow keys move between rows, as in the chip radiogroup
+  const move = (e: React.KeyboardEvent, i: number) => {
+    const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!d || !onSelect) return;
+    e.preventDefault();
+    const j = (i + d + task.stages.length) % task.stages.length;
+    onSelect(task.stages[j].id);
+    e.currentTarget.closest("[role=radiogroup]")?.querySelectorAll<HTMLElement>("[role=radio]")[j]?.focus();
+  };
   return (
     <div className="space-y-1">
-      {task.stages.map((s) => (
-        <Row key={s.id} s={s} t0={isFinite(t0) ? t0 : 0} total={total} now={now} />
-      ))}
-      <div className="flex justify-between pl-[9.5rem] pr-[7.5rem] pt-1 text-[10.5px] text-faint num max-sm:pl-[7rem] max-sm:pr-0">
+      <div role={onSelect ? "radiogroup" : undefined} aria-label="Pipeline stages" className="space-y-0.5">
+        {task.stages.map((s, i) => (
+          <Row key={s.id} s={s} t0={isFinite(t0) ? t0 : 0} total={total} now={now} sel={s.id === selected} onSelect={onSelect && (() => onSelect(s.id))} onKey={(e) => move(e, i)} />
+        ))}
+      </div>
+      <div className="flex justify-between pl-[8.4rem] pr-[3.9rem] pt-1 text-[10.5px] text-faint num">
         <span>{isFinite(t0) ? clock(t0) : ""}</span>
         <span>{duration(total)}</span>
       </div>
@@ -87,7 +91,7 @@ export function StageTimeline({ task }: { task: TaskState }) {
   );
 }
 
-function Row({ s, t0, total, now }: { s: Stage; t0: number; total: number; now: number }) {
+function Row({ s, t0, total, now, sel, onSelect, onKey }: { s: Stage; t0: number; total: number; now: number; sel: boolean; onSelect?: () => void; onKey: (e: React.KeyboardEvent) => void }) {
   const has = s.started != null;
   const stop = s.ended ?? (s.status === "running" ? now : s.started ?? 0);
   const left = has ? ((s.started! - t0) / total) * 100 : 0;
@@ -103,12 +107,24 @@ function Row({ s, t0, total, now }: { s: Stage; t0: number; total: number; now: 
   const elapsed = s.elapsed_s ?? (has && s.status === "running" ? now - s.started! : null);
   return (
     <Tip label={stageTip(s)} side="top">
-      <div className="group grid grid-cols-[9.5rem_1fr_7.5rem] items-center gap-3 rounded-md px-1.5 py-1 hover:bg-raised/60 max-sm:grid-cols-[7rem_1fr]">
+      <div
+        role={onSelect ? "radio" : undefined}
+        aria-checked={onSelect ? sel : undefined}
+        tabIndex={onSelect ? (sel ? 0 : -1) : undefined}
+        onClick={onSelect}
+        onKeyDown={onSelect && ((e) => (e.key === " " || e.key === "Enter" ? (e.preventDefault(), onSelect()) : onKey(e)))}
+        className={cn(
+          "group grid grid-cols-[7.5rem_1fr_3rem] items-center gap-2 rounded-md px-1.5 py-0.5 hover:bg-raised/60",
+          onSelect && "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent/70",
+          sel && "bg-accent/10 ring-1 ring-accent/50",
+        )}
+      >
         <div className="flex min-w-0 items-center gap-2">
-          <StatusIcon status={s.status} className="h-3.5 w-3.5" />
-          <span className={cn("truncate text-[13px]", s.status === "pending" ? "text-faint" : "text-ink")}>{s.label}</span>
+          <StatusIcon status={s.status} className="h-3.5 w-3.5 shrink-0" />
+          <span className={cn("truncate text-[12.5px]", s.status === "pending" ? "text-faint" : "text-ink")}>{s.label}</span>
+          {s.verified === false && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-run" />}
         </div>
-        <div className="relative h-4 rounded bg-raised/70">
+        <div className="relative h-3 rounded bg-raised/70">
           {has && s.status !== "skipped" && (
             <div
               className={cn("absolute top-0 h-full rounded", barTone, s.status === "running" && "animate-pulse")}
@@ -117,15 +133,7 @@ function Row({ s, t0, total, now }: { s: Stage; t0: number; total: number; now: 
           )}
           {s.status === "skipped" && <div className="absolute inset-x-0 top-1/2 h-px bg-skip/40" />}
         </div>
-        <div className="flex items-center justify-end gap-1.5 max-sm:hidden">
-          <span className="num text-xs text-muted">{s.status === "skipped" ? "skipped" : elapsed != null ? duration(elapsed) : ""}</span>
-          {s.verified === false && <AlertCircle className="h-3.5 w-3.5 text-run" />}
-          {s.source !== "none" && s.status !== "pending" && s.status !== "skipped" && SRC[s.source].label && (
-            <Badge tone={SRC[s.source].tone} className="px-1 text-[10px]">
-              {SRC[s.source].label}
-            </Badge>
-          )}
-        </div>
+        <span className="num text-right text-xs text-muted">{s.status === "skipped" ? "skip" : elapsed != null ? duration(elapsed) : ""}</span>
       </div>
     </Tip>
   );
