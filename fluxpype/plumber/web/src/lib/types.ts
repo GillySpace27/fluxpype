@@ -358,6 +358,18 @@ export interface FilePreview {
   note?: string;
 }
 
+/** A parsed .flux world file (flat arrays; xyz is x,y,z repeated; fluxon i owns vertices offsets[i] to offsets[i+1]). */
+export interface FluxWorld {
+  frame: number | null;
+  boundary: { type: string; args: number[] } | null;
+  globals: string[];
+  counts: { vertices: number; fluxons: number; concentrations: number; vneighbor_rows: number; pseudo_fluxons: number; bad_rows: number };
+  concentrations: { id: number[]; xyz: number[]; flux: number[] };
+  fluxons: { id: number[]; flux: number[]; fc0: number[]; fc1: number[]; offsets: number[]; xyz: number[] };
+  /** set when the server kept only every `step`-th fluxon to bound the payload */
+  decimated: { step: number; fluxons_kept: number; fluxons_total: number; vertices_total: number } | null;
+}
+
 export interface FitsRender {
   stats: { hdu?: string; shape?: number[]; vmin?: number; vmax?: number; min?: number | null; max?: number | null; nan?: number };
   image: string;
@@ -370,6 +382,8 @@ export interface ResultFile extends CacheRecord {
   made_here: boolean | null;
   /** made: written during the task; reused: older; later: rewritten after the task ended */
   origin: "made" | "reused" | "later" | null;
+  /** plots only: the stage that writes it, guessed from its folder */
+  stage?: string | null;
 }
 
 export interface ResultProduct {

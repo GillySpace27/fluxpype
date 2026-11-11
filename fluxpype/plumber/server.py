@@ -317,9 +317,11 @@ def create_app(
                 "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
                 "stages": [{"id": s, "label": l} for s, l in STAGES],
                 "forbidden_keys": sorted(config_io.FORBIDDEN_KEYS),
-                "agent": None
-                if agent["ts"] is None
-                else {"age_s": time.time() - agent["ts"], "tool": agent["tool"], "count": agent["count"]},
+                "agent": (
+                    None
+                    if agent["ts"] is None
+                    else {"age_s": time.time() - agent["ts"], "tool": agent["tool"], "count": agent["count"]}
+                ),
             }
         )
 
@@ -1047,6 +1049,20 @@ def create_app(
     def cache_render_png(path: str):
         return render_png(cache_file(path))
 
+    def flux_reply(full: str):
+        from . import fluxfile
+
+        try:
+            return JSONResponse(
+                fluxfile.payload(full), headers={"Cache-Control": "private, max-age=30"}
+            )  # finite by construction: skip clean()
+        except OSError as e:
+            fail(e, 500)
+
+    @app.get("/api/cache/flux")
+    def cache_flux(path: str):
+        return flux_reply(cache_file(path))
+
     # job-scoped twins: a job's snapshot can pin a data folder other than the current one
     def job_file(job_id: str, rel: str) -> str:
         from .cache import _confine
@@ -1075,6 +1091,10 @@ def create_app(
     @app.get("/api/jobs/{job_id}/data/render.png")
     def job_render_png(job_id: str, path: str):
         return render_png(job_file(job_id, path))
+
+    @app.get("/api/jobs/{job_id}/data/flux")
+    def job_flux(job_id: str, path: str):
+        return flux_reply(job_file(job_id, path))
 
     @app.get("/api/artifacts")
     def artifact(path: str):

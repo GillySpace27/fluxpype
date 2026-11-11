@@ -277,6 +277,28 @@ def test_cache_refuses_traversal(client, tmp_path):
     assert (tmp_path / "keep.txt").read_text() == "keep"
 
 
+def test_flux_endpoints_parse_and_stay_confined(client, tmp_path):
+    FIXTURE = (
+        "NEW\t100\t0.6\t0\t0.8\t-1\t(null)\t0\nNEW\t200\t0\t0.6\t0.8\t1\t(null)\t0\n"
+        "LINE\t-10\t-3\t-4\t-10\t-11\t0  0 0 0  0 0 0\n"
+        "LINE\t101\t-302\t-301\t200\t100\t1  0 0.6 0.8  0.6 0 0.8\n\tVERTEX\t101\t102\t1\t0.4\t0.4\t1.5\n"
+    )
+    data = client.sched.data_dir()
+    os.makedirs(os.path.join(data, "world"), exist_ok=True)
+    with open(os.path.join(data, "world", "w.flux"), "w") as f:
+        f.write(FIXTURE)
+    (tmp_path / "out.flux").write_text(FIXTURE)
+    job = client.post("/api/jobs", json={"profile": "t_one", "backend": "fake", "speed": 300}, headers=H).json()
+    for url in ("/api/cache/flux", f"/api/jobs/{job['id']}/data/flux"):
+        r = client.get(url, params={"path": "world/w.flux"}, headers=H)
+        assert r.status_code == 200, url
+        w = r.json()
+        assert w["counts"]["fluxons"] == 2 and w["fluxons"]["id"] == [101] and w["decimated"] is None
+        assert client.get(url, params={"path": "world/none.flux"}, headers=H).status_code == 404
+        for bad in ("../out.flux", "/etc/hostname", str(tmp_path / "out.flux")):
+            assert client.get(url, params={"path": bad}, headers=H).status_code in (400, 403, 404), (url, bad)
+
+
 # ------------------------------------------------------------------ frontend
 
 

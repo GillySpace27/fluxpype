@@ -6,6 +6,7 @@ import type {
   CacheData,
   DataDirReport,
   HealthReport,
+  FluxWorld,
   Job,
   JobConfig,
   JobFiles,
@@ -141,3 +142,13 @@ export const useJobFiles = (id: string | undefined, active: boolean) =>
 
 /** API prefix for the file viewer when it reads a job's own data folder. */
 export const jobDataBase = (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}/data`;
+
+/** A .flux world file parsed by the server; `base` is the API prefix (current data folder or a job's). */
+export const useFluxWorld = (path: string | undefined, base = "/api/cache", mtime?: number) =>
+  useQuery({
+    queryKey: ["flux", base, path, mtime],
+    queryFn: () => api.get<FluxWorld>(`${base}/flux?path=${encodeURIComponent(path!)}`),
+    enabled: !!path,
+    staleTime: 60_000,
+    retry: false,
+  });
