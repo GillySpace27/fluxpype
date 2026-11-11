@@ -192,6 +192,28 @@ def discover_existing(home: Path) -> Optional[Tuple[str, str]]:
     return url, token
 
 
+HEARTBEAT_S = 60.0
+
+
+def heartbeat(find: Callable[[], Optional[Tuple[str, str]]]) -> None:
+    """Tell a running Plumber, once a minute, that this MCP server is up, so its "Agent connected" button knows
+    an agent is registered even before the first tool call. Never starts a Plumber; errors are swallowed."""
+    while True:
+        try:
+            found = find()
+            if found:
+                url, token = found
+                httpx.get(
+                    url + "/api/status",
+                    headers={"X-Flux-Token": token, "X-Flux-Client": "mcp-heartbeat"},
+                    timeout=3.0,
+                    trust_env=False,
+                )
+        except Exception:  # noqa: BLE001 - a beat must never take the MCP server down (or write to stdout)
+            pass
+        time.sleep(HEARTBEAT_S)
+
+
 def _log_tail(home: Path, lines: int = 8) -> str:
     try:
         return "\n".join((home / "server.log").read_text(encoding="utf-8", errors="replace").splitlines()[-lines:])
@@ -859,6 +881,7 @@ def main(argv=None) -> int:
             print("--url needs --token, --token-file or $FLUX_PLUMBER_TOKEN", file=sys.stderr)
             return 2
         client = PlumberClient(base_url=args.url.rstrip("/"), token=token)
+        find: Callable[[], Optional[Tuple[str, str]]] = lambda: (args.url.rstrip("/"), token)  # noqa: E731
     else:
         if args.demo and not args.home:
             print("--demo needs --home, so the demo never seeds your real Plumber directory", file=sys.stderr)
@@ -874,6 +897,8 @@ def main(argv=None) -> int:
             connect_home, home, not args.no_autostart, args.demo
         )
         client = PlumberClient(resolver=resolver)
+        find = functools.partial(discover_existing, home)
+    threading.Thread(target=heartbeat, args=(find,), daemon=True).start()
     build_server(client).run(transport="stdio")
     return 0
 

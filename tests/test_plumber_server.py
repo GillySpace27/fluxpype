@@ -208,6 +208,15 @@ def test_agent_requests_are_recorded_and_pushed(client):
     assert agent["tool"] == "get_job" and agent["count"] == 1 and 0 <= agent["age_s"] < 30
 
 
+def test_agent_heartbeat_marks_alive_without_a_tool_call(client):
+    link = client.get("/api/status", headers=H).json()["agent_link"]
+    assert link == {"alive": None, "seen": None}
+    client.get("/api/queue", headers={**H, "X-Flux-Client": "mcp-heartbeat"})
+    st = client.get("/api/status", headers=H).json()
+    assert st["agent"] is None  # a beat is not a tool call
+    assert 0 <= st["agent_link"]["alive"] < 30 and 0 <= st["agent_link"]["seen"] < 30
+
+
 # ------------------------------------------------------------------ artifacts
 
 

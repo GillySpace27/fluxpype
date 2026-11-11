@@ -194,6 +194,24 @@ def create_app(
 ) -> FastAPI:
     hub = Hub()
     agent: Dict[str, Any] = {"ts": None, "tool": "", "count": 0}  # last MCP-agent request
+    # the MCP server's heartbeat: alive = latest beat, seen = latest sign of any agent ever (kept on disk across restarts)
+    link: Dict[str, Any] = {"alive": None, "seen": None, "saved": 0.0}
+    seen_file = Path(scheduler.home) / "agent_seen.json"
+    try:
+        link["seen"] = float(json.loads(seen_file.read_text())["seen"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+    def agent_alive() -> None:
+        now = time.time()
+        link["alive"] = link["seen"] = now
+        if now - link["saved"] > 30:  # a few writes a minute at most
+            link["saved"] = now
+            try:
+                seen_file.write_text(json.dumps({"seen": now}))
+            except OSError:
+                pass  # the dashboard just forgets across a restart
+
     if updater is None:
         from .updates import Updater
 
@@ -264,7 +282,11 @@ def create_app(
                 return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-            if request.headers.get("x-flux-client") == "mcp":  # an AI agent via the MCP server
+            client = request.headers.get("x-flux-client")
+            if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
+                agent_alive()
+            elif client == "mcp":  # an AI agent via the MCP server
+                agent_alive()
                 agent["ts"], agent["count"] = time.time(), agent["count"] + 1
                 agent["tool"] = request.headers.get("x-flux-tool", "")[:64]
                 hub.publish("agent_activity", {"tool": agent["tool"], "count": agent["count"]})
@@ -322,6 +344,9 @@ def create_app(
                     if agent["ts"] is None
                     else {"age_s": time.time() - agent["ts"], "tool": agent["tool"], "count": agent["count"]}
                 ),
+                "agent_link": {
+                    k: None if link[k] is None else time.time() - link[k] for k in ("alive", "seen")
+                },  # ages in s
             }
         )
 

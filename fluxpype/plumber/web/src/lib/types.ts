@@ -169,6 +169,8 @@ export interface StatusInfo {
   forbidden_keys: string[];
   /** the last MCP-agent request Plumber saw, or null if none since it started */
   agent?: { age_s: number; tool: string; count: number } | null;
+  /** seconds since the MCP server's last heartbeat (alive) and since any agent was last seen, kept across restarts (seen) */
+  agent_link?: { alive: number | null; seen: number | null };
 }
 
 export interface ProfileSummary {

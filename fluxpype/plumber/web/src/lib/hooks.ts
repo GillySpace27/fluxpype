@@ -37,7 +37,7 @@ function useRefetch(fast: number, slow: number) {
   return connected ? slow : fast;
 }
 
-export const useStatus = () => useQuery({ queryKey: ["status"], queryFn: () => api.get<StatusInfo>("/api/status"), staleTime: 60_000 });
+export const useStatus = (poll?: number) => useQuery({ queryKey: ["status"], queryFn: () => api.get<StatusInfo>("/api/status"), staleTime: 60_000, refetchInterval: poll });
 
 export const useOverview = () => {
   const refetchInterval = useRefetch(2000, 8000);

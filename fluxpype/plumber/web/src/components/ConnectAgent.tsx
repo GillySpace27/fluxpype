@@ -3,6 +3,7 @@ import { AlertTriangle, Bot, Check, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
+import { ago } from "../lib/format";
 import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { Badge, Dialog, ErrorNote, Skeleton, useToast } from "./ui";
@@ -61,7 +62,7 @@ function CopyBlock({ text, label, primary, rows }: { text: string; label: string
   );
 }
 
-export function ConnectAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+export function ConnectAgentDialog({ open, onOpenChange, idle }: { open: boolean; onOpenChange: (o: boolean) => void; idle?: string }) {
   const { data, error, refetch } = useQuery({
     queryKey: ["agent-prompt"],
     queryFn: () => api.get<AgentPrompt>("/api/agent-prompt"),
@@ -99,13 +100,25 @@ export function ConnectAgentDialog({ open, onOpenChange }: { open: boolean; onOp
               </span>
             </p>
           )}
-          <CopyBlock text={data.prompt} label="Copy prompt" primary rows={14} />
-          <p className="text-xs leading-relaxed text-muted">
-            The prompt holds no secrets: the server reads its token from <span className="font-mono">{data.home}</span>. The agent is asked to set things up and check the connection only, not to start jobs.
-          </p>
+          {idle && (
+            <div className="space-y-2">
+              <p className="text-[13px] leading-relaxed">
+                An agent has been set up here (last seen {idle}) but is not connected right now. Plumber cannot wake it: open or restart Claude Code and it reconnects by itself, or paste this into a session that has it:
+              </p>
+              <CopyBlock text={`Call the ${data.name} status tool.`} label="Copy" primary rows={2} />
+            </div>
+          )}
+          {(!idle || more) && (
+            <>
+              <CopyBlock text={data.prompt} label="Copy prompt" primary={!idle} rows={14} />
+              <p className="text-xs leading-relaxed text-muted">
+                The prompt holds no secrets: the server reads its token from <span className="font-mono">{data.home}</span>. The agent is asked to set things up and check the connection only, not to start jobs.
+              </p>
+            </>
+          )}
           <button className="flex items-center gap-1 text-xs font-medium text-muted hover:text-ink" onClick={() => setMore((m) => !m)}>
             <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", more && "rotate-90")} />
-            Register it yourself instead
+            {idle ? "Set it up again instead" : "Register it yourself instead"}
           </button>
           {more && (
             <div className="space-y-3">
@@ -133,6 +146,8 @@ export function ConnectAgentDialog({ open, onOpenChange }: { open: boolean; onOp
 
 /** An agent counts as connected while its last MCP request is this recent (the MCP link has no heartbeat). */
 const AGENT_FRESH_MS = 10 * 60_000;
+/** ...or while the MCP server's heartbeat (one a minute) is this recent. */
+const BEAT_FRESH_MS = 150_000;
 
 export function ConnectAgentButton({
   className,
@@ -146,7 +161,7 @@ export function ConnectAgentButton({
 }) {
   const [open, setOpen] = useState(false);
   const { agent } = useLive();
-  const { data: status, dataUpdatedAt } = useStatus();
+  const { data: status, dataUpdatedAt } = useStatus(live ? 30_000 : undefined); // the heartbeat only shows up in /api/status
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!live) return;
@@ -157,7 +172,13 @@ export function ConnectAgentButton({
   // last request time: a live push, or what /api/status said when it was fetched
   const fromStatus = status?.agent ? dataUpdatedAt - status.agent.age_s * 1000 : 0;
   const seen = Math.max(agent?.ts ?? 0, fromStatus);
-  const connected = !!live && seen > 0 && Math.max(now, agent?.ts ?? 0) - seen < AGENT_FRESH_MS;
+  const link = status?.agent_link;
+  const beat = link?.alive != null ? dataUpdatedAt - link.alive * 1000 : 0; // the MCP server pings every minute
+  const connected = !!live && (beat > 0 && now - beat < BEAT_FRESH_MS || (seen > 0 && Math.max(now, agent?.ts ?? 0) - seen < AGENT_FRESH_MS));
+  // registered and seen before, but silent now: the button says so instead of offering the setup prompt again
+  const lastSeen = link?.seen != null ? dataUpdatedAt - link.seen * 1000 : 0;
+  const idle = !!live && !connected && lastSeen > 0;
+  const idleAgo = idle ? ago(lastSeen / 1000, now / 1000) : undefined;
   const last = agent?.tool || status?.agent?.tool;
 
   return (
@@ -165,14 +186,14 @@ export function ConnectAgentButton({
       <button
         className={cn("btn btn-sm relative", connected && "border-ok/50 text-ok", className)}
         onClick={() => setOpen(true)}
-        title={connected ? `AI agent connected${last ? `; last call: ${last}` : ""}` : undefined}
+        title={connected ? `AI agent connected${last ? `; last call: ${last}` : ""}` : idle ? `AI agent set up, not connected; last seen ${idleAgo}` : undefined}
       >
         {connected && agent && <span key={agent.ts} className="pointer-events-none absolute inset-0 rounded-[inherit] animate-agent-flash" aria-hidden />}
         <Bot className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">{connected ? "Agent connected" : label}</span>
+        <span className="hidden sm:inline">{connected ? "Agent connected" : idle ? "Agent idle" : label}</span>
         {connected && <span className="sr-only">: {last}</span>}
       </button>
-      <ConnectAgentDialog open={open} onOpenChange={setOpen} />
+      <ConnectAgentDialog open={open} onOpenChange={setOpen} idle={idleAgo} />
     </>
   );
 }
