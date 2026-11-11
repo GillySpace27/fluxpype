@@ -9,6 +9,7 @@ about a minute). Scenarios exercise the plumber's failure and fallback paths:
 
 * ``ok``              everything succeeds
 * ``fail_in_pfss``    the PFSS stage fails and the task exits 1
+* ``failure_swallowed`` the PFSS stage fails but the process still exits 0 (as the real runner can)
 * ``slow_relax``      many more relaxation cycles
 * ``no_events``       no events at all: only the log and files tell the story
 * ``events_dropout``  events stop partway through relaxation while the log goes on
@@ -179,13 +180,15 @@ class Fake:
             self.banner("(py) Running PFSS Code to Trace Footpoints into the Corona")
             self.say("\n\tTracing Open and Closed Fluxons...", end="")
             self.sleep(2.0)
-            if self.scenario == "fail_in_pfss":
+            if self.scenario in ("fail_in_pfss", "failure_swallowed"):
                 self.say(
                     '\nTraceback (most recent call last):\n  File "get_pfss.py", line 262, in <module>\nValueError: not enough footpoints in open flux'  # noqa: E501
                 )
                 self.say("get_pfss.py failed (status 256)")
                 self.end("pfss", status="failed", detail="get_pfss.py failed (status 256)", started=t)
-                return self.finish(1, "PDL script failed with exit code 255")
+                return self.finish(
+                    0 if self.scenario == "failure_swallowed" else 1, "PDL script failed with exit code 255"
+                )
             self.say("\n\t\tNeed to trace? True: Done!")
             self.sleep(1.5)
             self.touch(f"pfss/pfss_cr{cr}_r{red}_{inst}.pkl", size=118_000_000)

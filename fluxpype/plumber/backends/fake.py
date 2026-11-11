@@ -6,7 +6,7 @@ from typing import List
 from .base import TaskSpec
 from .local import REQUIRED_FEATURES, LocalBackend
 
-SCENARIOS = ("ok", "fail_in_pfss", "slow_relax", "no_events", "events_dropout", "cached_relax")
+SCENARIOS = ("ok", "fail_in_pfss", "slow_relax", "no_events", "events_dropout", "cached_relax", "failure_swallowed")
 
 
 class FakeBackend(LocalBackend):

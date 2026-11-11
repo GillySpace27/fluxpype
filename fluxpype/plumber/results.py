@@ -30,6 +30,18 @@ _NFLUX = re.compile(r"_f(\d+)(?:_|\.|$)")
 SLACK_S = 5.0  # file clocks and the task's start time are compared with this much tolerance
 
 
+def plot_stage(path: str) -> Optional[str]:
+    """The pipeline stage that writes a plot, judged from where it sits (a guess by folder, not a record)."""
+    p = "/" + path.replace("\\", "/")
+    if "fluxlight" in os.path.basename(p):
+        return "fluxlight"
+    if "/imgs/footpoints/" in p:
+        return "fieldmap"
+    if "/imgs/world/" in p:
+        return "world_plots"
+    return "wind_plots" if "/imgs/" in p else None
+
+
 def for_this_nflux(name: str, nflux: str) -> bool:
     """False only when the file name names a different fluxon count (``_f<N>_``)."""
     m = _NFLUX.search(name)
@@ -105,15 +117,22 @@ def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: O
         products.append({"id": sid, "label": label, "files": files, "more": max(0, len(hits) - limit)})
 
     plots = []
-    for pat in [os.path.join(root, "batches", ctx.batch, "data", f"cr{ctx.cr}", "**", "*")]:
+    # plots sit beside the data, and under batches/<batch>/imgs/ (all rotations mixed, so match the name)
+    batch = os.path.join(root, "batches", ctx.batch)
+    for pat, by_name in [
+        (os.path.join(batch, "data", f"cr{ctx.cr}", "**", "*"), False),
+        (os.path.join(batch, "imgs", "**", "*"), True),
+    ]:
         for p in glob.glob(pat, recursive=True)[:2000]:
             if not p.lower().endswith(PLOT_EXT) or os.path.realpath(p) in seen:
                 continue
             if not for_this_nflux(os.path.basename(p), ctx.nflux):
                 continue
+            if by_name and f"cr{ctx.cr}" not in os.path.basename(p):
+                continue
             f = _file(p, root, started, ended)
             if f:
-                plots.append(f)
+                plots.append({**f, "stage": plot_stage(f["path"])})
     plots.sort(key=lambda f: f["mtime"], reverse=True)
 
     headline = None

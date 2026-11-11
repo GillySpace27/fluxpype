@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Ban, PanelsTopLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
 import { PipelineChips } from "../components/PipelineChips";
 import { ResultsPane } from "../components/ResultsPane";
+import { StagePanel } from "../components/StagePanel";
 import { RelaxCharts } from "../components/RelaxCharts";
 import { SourcesPanel } from "../components/SourcesPanel";
 import { StageTimeline } from "../components/StageTimeline";
@@ -13,7 +14,7 @@ import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
 import { useJob, useNow, useRelax, useTask } from "../lib/hooks";
-import type { TaskRow, TaskState } from "../lib/types";
+import type { Stage, TaskRow, TaskState } from "../lib/types";
 import { JobActions } from "./Jobs";
 
 function Metric({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
@@ -36,6 +37,7 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
   const qc = useQueryClient();
   const toast = useToast();
   const { ask, node } = useConfirm();
+  const [sp, setSp] = useSearchParams();
   const cancel = useMutation({
     mutationFn: () => api.post(`/api/tasks/${row.id}/cancel`),
     onSuccess: () => {
@@ -47,6 +49,10 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
   if (!t) return <Skeleton className="h-96" />;
   const elapsed = t.started ? (t.ended ?? now) - t.started : t.elapsed_s;
+  // the selected stage: the one in the URL, else what is running, else what failed, else the last one that finished
+  const pick = (f: (x: Stage) => boolean) => t.stages.find(f)?.id;
+  const stageId = (t.stages.some((x) => x.id === sp.get("stage")) ? sp.get("stage") : null) ?? pick((x) => x.status === "running") ?? pick((x) => x.status === "failed") ?? [...t.stages].reverse().find((x) => x.status === "ok")?.id ?? t.stages[0]?.id ?? "";
+  const select = (id: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("stage", id); return n; }, { replace: true });
   const bad = ["failed", "timeout", "crashed"].includes(t.status);
   const failedStage = t.stages.find((x) => x.status === "failed");
   const reason = failedStage?.detail ?? (t.outcome && t.outcome !== "failed" ? t.outcome : null) ?? t.warnings[0] ?? null;
@@ -76,7 +82,7 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
             </button>
           )}
         </div>
-        <PipelineChips stages={t.stages} className="mt-4" />
+        <PipelineChips stages={t.stages} className="mt-4" selected={stageId} onSelect={select} />
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <Metric label="Elapsed" value={duration(elapsed)} />
           <Metric label="Stiffness" value={num(t.relax.latest?.stiffness)} sub={t.relax.threshold != null ? `target ${num(t.relax.threshold)}` : undefined} />
@@ -106,28 +112,32 @@ export function TaskView({ row, results = true, defaultTab = "progress" }: { row
         </TabList>
         <TabPanel value="progress" className="space-y-6 pt-5">
           <section>
-            <SectionTitle title="Relaxation" hint="Stiffness should fall toward the threshold; dotted lines mark cycles." />
-            <Card className="p-4">
-              <RelaxCharts
-                points={relax?.points ?? []}
-                cycles={relax?.cycles ?? []}
-                idle={(() => {
-                  const rs = t.stages.find((s) => s.id === "relax")?.status;
-                  if (rs === "skipped") return { title: "Relaxation skipped", body: "This task did not run the relaxation stage." };
-                  if (rs === "ok") return { title: "No relaxation steps recorded", body: "The stage finished without reporting steps, usually because an existing relaxed world was reused from the cache." };
-                  if (rs === "failed") return { title: "Relaxation failed before reporting steps", body: "The Log tab shows where it stopped." };
-                  if (!["pending", "running"].includes(t.status)) return { title: "Relaxation did not run", body: "The task ended before reaching the relaxation stage." };
-                  return undefined;
-                })()}
-              />
-            </Card>
-          </section>
-          <section>
-            <SectionTitle title="Stages" />
+            <SectionTitle title="Stages" hint="Pick a stage above to see its progress and what it made." />
             <Card className="p-4">
               <StageTimeline task={t} />
             </Card>
           </section>
+          <StagePanel
+            task={t}
+            stageId={stageId}
+            onSelect={select}
+            relaxNode={
+            <Card className="p-4">
+                  <RelaxCharts
+                    points={relax?.points ?? []}
+                    cycles={relax?.cycles ?? []}
+                    idle={(() => {
+                      const rs = t.stages.find((s) => s.id === "relax")?.status;
+                      if (rs === "skipped") return { title: "Relaxation skipped", body: "This task did not run the relaxation stage." };
+                      if (rs === "ok") return { title: "No relaxation steps recorded", body: "The stage finished without reporting steps, usually because an existing relaxed world was reused from the cache." };
+                      if (rs === "failed") return { title: "Relaxation failed before reporting steps", body: "The Log tab shows where it stopped." };
+                      if (!["pending", "running"].includes(t.status)) return { title: "Relaxation did not run", body: "The task ended before reaching the relaxation stage." };
+                      return undefined;
+                    })()}
+                  />
+                </Card>
+            }
+          />
         </TabPanel>
         <TabPanel value="log" className="pt-5">
           <LogPane taskId={t.id} active={live} />

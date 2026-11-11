@@ -140,3 +140,13 @@ def test_job_scoped_preview_is_confined_to_the_job_data_dir(client, tmp_path):
         assert client.get(f"{base}/file", params={"path": bad}, headers=H).status_code == 403
     assert client.get(f"{base}/render", params={"path": img["path"]}, headers=H).status_code == 415
     assert client.get(f"{base}/file", params={"path": img["path"]}).status_code == 401
+
+
+def test_plots_are_assigned_to_the_stage_that_writes_them():
+    from fluxpype.plumber.results import plot_stage
+
+    assert plot_stage("batches/b/imgs/world/0_narrow/cr1_f1_initial_narrow.png") == "world_plots"
+    assert plot_stage("batches/b/imgs/footpoints/cr1_f1_ou4_footpoints_topology.png") == "fieldmap"
+    assert plot_stage("batches/b/imgs/bmag/cr1_f1_radial_bmag.png") == "wind_plots"
+    assert plot_stage("batches/b/imgs/world/cr1_f1_fluxlight_world.png") == "fluxlight"
+    assert plot_stage("batches/b/data/cr1/some.png") is None

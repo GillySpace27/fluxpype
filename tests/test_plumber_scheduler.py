@@ -216,6 +216,16 @@ def test_retry_requeues_failed_tasks_and_keeps_the_old_run(make_scheduler):
         sched.retry_job(j2["id"])
 
 
+def test_a_failed_stage_is_a_failed_task_even_when_the_process_exits_zero(make_scheduler):
+    sched = make_scheduler()
+    job = sched.create_job("t_one", backend="fake", extra={"speed": "300", "scenario": "failure_swallowed"})
+    finish(sched, job["id"])
+    t = sched.store.get_task(job["tasks"][0]["id"])
+    assert t["exit_code"] == 0 and t["status"] == "failed"
+    assert sched.job_view(job["id"])["status"] == "failed"
+    assert json.loads(t["summary_json"])["status"] == "failed"
+
+
 def test_delete_job_requires_it_to_be_finished(make_scheduler):
     sched = make_scheduler()
     sched.set_queue(paused=True)

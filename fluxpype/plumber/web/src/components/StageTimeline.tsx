@@ -1,7 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { clock, duration } from "../lib/format";
 import { useNow } from "../lib/hooks";
-import type { Source, Stage, TaskState } from "../lib/types";
+import type { LogChunk, Source, Stage, TaskState } from "../lib/types";
 import { Badge, StatusIcon, Tip } from "./ui";
 import { AlertCircle } from "lucide-react";
 import { stageTip } from "./PipelineChips";
@@ -13,10 +15,33 @@ const SRC: Record<Source, { label: string; tone: "ok" | "info" | "neutral" | "ac
   none: { label: "", tone: "neutral" },
 };
 
+const CALC = /Calculated \w+: (\d+) of (\d+), [\d.]+\(s\) elapsed, ([\d.]+)\(s\) \[[\d.]+ mins\] remaining\.*/g;
+const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
+const NOISE = /^(Read '|\(in cleanup\))/; // per-world reads and Gnuplot teardown chatter, not progress
+
+/** What the task is doing now, from the log tail. The pipeline rewrites its progress line in place with \r, so the
+ * file holds every update on one line: split on \r too, and the last piece is the newest. */
+export function useProgress(task: TaskState) {
+  const running = task.status === "running";
+  const { data } = useQuery({
+    queryKey: ["progress", task.id, task.status],
+    queryFn: () => api.get<LogChunk>(`/api/tasks/${task.id}/log?limit=131072`),
+    refetchInterval: running ? 2000 : false,
+  });
+  const text = (data?.text ?? "").replace(ANSI, "");
+  const all = Array.from(text.matchAll(CALC));
+  const m = all[all.length - 1];
+  const wind = m ? { line: m[0].trim(), done: +m[1], total: +m[2], left: +m[3], frac: Math.min(+m[1] / Math.max(+m[2], 1), 1) } : null;
+  const tail = text.split(/[\r\n]+/).map((l) => l.trim()).filter((l) => l && !NOISE.test(l)).slice(-5);
+  return { wind, tail };
+}
+
 /** One row per stage; bars are positioned by when each stage ran, relative to the task. */
 export function StageTimeline({ task }: { task: TaskState }) {
   const running = task.status === "running";
   const now = useNow(running ? 1000 : 60000);
+  const { wind, tail } = useProgress(task);
+  const cur = running ? task.stages.find((s) => s.status === "running") : undefined;
   const timed = task.stages.filter((s) => s.started);
   const t0 = Math.min(task.started ?? Infinity, ...timed.map((s) => s.started as number));
   const end = task.ended ?? Math.max(now, ...timed.map((s) => (s.ended ?? s.started ?? 0) as number));
@@ -31,6 +56,33 @@ export function StageTimeline({ task }: { task: TaskState }) {
         <span>{isFinite(t0) ? clock(t0) : ""}</span>
         <span>{duration(total)}</span>
       </div>
+      {(wind || (cur && tail.length > 0)) && (
+        <div className="mt-2 space-y-2 border-t border-line/60 px-1.5 pt-3">
+          {cur && (
+            <p className="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+              <span className="label">Now running</span>
+              <span className="font-medium">{cur.label}</span>
+              <span className="num text-xs text-muted">{cur.started ? duration(now - cur.started) : ""}</span>
+            </p>
+          )}
+          {wind && (
+            <>
+              <p className="num flex flex-wrap items-baseline gap-x-3 text-xs text-muted">
+                <span className="text-[15px] font-semibold text-ink">{Math.round(wind.frac * 100)}%</span>
+                <span>{wind.done} of {wind.total} open fluxons</span>
+                {running && wind.frac < 1 && <span>done about {clock(now + wind.left)}</span>}
+              </p>
+              <div className="h-1.5 rounded bg-raised/70">
+                <div className={cn("h-full rounded bg-gradient-to-r from-run/70 to-run", running && wind.frac < 1 && "animate-pulse")} style={{ width: `${wind.frac * 100}%` }} />
+              </div>
+              <p className="num break-words font-mono text-[12px] text-ink/85">{wind.line}</p>
+            </>
+          )}
+          {cur && tail.length > 0 && (
+            <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-bg/50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-muted">{tail.join("\n")}</pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -457,6 +457,11 @@ class Scheduler:
             )
             self._cancel_at.pop(t["id"], None)
             final = self.task_state(t["id"], force_status=status)
+            if status == "ok" and any(s["status"] == "failed" for s in final["stages"]):
+                # the process exited 0 but a stage failed (the runner can swallow the error): never call that success
+                status = "failed"
+                self.store.update_task(t["id"], status=status)
+                final = self.task_state(t["id"], force_status=status)
             self.store.update_task(t["id"], summary_json=json.dumps(final))
             self.on_change("task_state", final)
             changed.add(t["job_id"])

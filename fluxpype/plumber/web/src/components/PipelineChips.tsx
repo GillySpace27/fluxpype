@@ -41,10 +41,19 @@ export function stageTip(s: Stage) {
 }
 
 /** The ten pipeline stages as chips. Filled when the state comes from events, outlined when it was inferred. */
-export function PipelineChips({ stages, className }: { stages: Stage[]; className?: string }) {
+export function PipelineChips({ stages, className, selected, onSelect }: { stages: Stage[]; className?: string; selected?: string; onSelect?: (id: string) => void }) {
+  // with onSelect the chips are radio buttons: one stage at a time, arrow keys move between them
+  const move = (e: React.KeyboardEvent, i: number) => {
+    const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!d || !onSelect) return;
+    e.preventDefault();
+    const j = (i + d + stages.length) % stages.length;
+    onSelect(stages[j].id);
+    (e.currentTarget.closest("[role=radiogroup]")?.querySelectorAll<HTMLElement>("[role=radio]")[j])?.focus();
+  };
   return (
-    <ol className={cn("grid grid-cols-5 gap-1.5 sm:grid-cols-10", className)} aria-label="Pipeline stages">
-      {stages.map((s) => {
+    <ol className={cn("grid grid-cols-5 gap-1.5 sm:grid-cols-10", className)} aria-label="Pipeline stages" role={onSelect ? "radiogroup" : undefined}>
+      {stages.map((s, i) => {
         const inferred = s.source !== "event" && s.source !== "none";
         const tone =
           s.status === "running"
@@ -60,11 +69,18 @@ export function PipelineChips({ stages, className }: { stages: Stage[]; classNam
           <li key={s.id}>
             <Tip label={stageTip(s)}>
               <div
+                role={onSelect ? "radio" : undefined}
+                aria-checked={onSelect ? s.id === selected : undefined}
+                tabIndex={onSelect ? (s.id === selected ? 0 : -1) : undefined}
+                onClick={onSelect && (() => onSelect(s.id))}
+                onKeyDown={onSelect && ((e) => (e.key === " " || e.key === "Enter" ? (e.preventDefault(), onSelect(s.id)) : move(e, i)))}
                 className={cn(
-                  "relative flex h-[26px] cursor-default items-center justify-center rounded-md border text-[10.5px] font-medium leading-none tracking-wide",
+                  "relative flex h-[26px] items-center justify-center rounded-md border text-[10.5px] font-medium leading-none tracking-wide",
+                  onSelect ? "cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent/70" : "cursor-default",
                   tone,
                   inferred && "border-solid",
                   s.status === "skipped" && "opacity-70",
+                  s.id === selected && "ring-2 ring-accent shadow-[0_0_0_3px_rgb(var(--accent)/0.18)]",
                 )}
               >
                 {SHORT[s.id] ?? s.label}
