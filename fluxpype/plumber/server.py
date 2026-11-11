@@ -646,7 +646,15 @@ def create_app(
             data_dir = data_dir or r["data_dir"]
             for prod in r["products"]:
                 if not prod["files"] and prod.get("stage_status") not in ("skipped", "pending", "running"):
-                    missing.append({"task_id": t["id"], "cr": t["cr"], "nflux": t["nflux"], "stage": prod["id"], "label": prod["label"]})
+                    missing.append(
+                        {
+                            "task_id": t["id"],
+                            "cr": t["cr"],
+                            "nflux": t["nflux"],
+                            "stage": prod["id"],
+                            "label": prod["label"],
+                        }
+                    )
                 for f in prod["files"]:
                     by_path.setdefault(f["path"], {**f, "stage": prod["id"], "tasks": []})["tasks"].append(t["id"])
             for f in r["plots"]:
