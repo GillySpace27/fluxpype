@@ -4,17 +4,26 @@ import type { TaskState } from "./types";
 
 type LogListener = (m: { task_id: string; start: number; offset: number; text: string }) => void;
 
+/** The latest request an AI agent made through the MCP server; `ts` is browser time. */
+export interface AgentPing {
+  ts: number;
+  tool: string;
+  count: number;
+}
+
 interface LiveCtx {
   connected: boolean;
+  agent: AgentPing | null;
   onLog: (fn: LogListener) => () => void;
 }
 
-const Ctx = createContext<LiveCtx>({ connected: false, onLog: () => () => {} });
+const Ctx = createContext<LiveCtx>({ connected: false, agent: null, onLog: () => () => {} });
 
 /** One WebSocket for the whole app: pushes update the query cache; polling is only the fallback. */
 export function LiveProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
+  const [agent, setAgent] = useState<AgentPing | null>(null);
   const listeners = useRef(new Set<LogListener>());
 
   useEffect(() => {
@@ -76,6 +85,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "log_append":
             listeners.current.forEach((fn) => fn(msg.data));
             break;
+          case "agent_activity":
+            setAgent({ ts: Date.now(), tool: msg.data.tool, count: msg.data.count });
+            break;
         }
       };
       ws.onclose = () => {
@@ -97,13 +109,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const value = useRef<LiveCtx>({
     connected: false,
+    agent: null,
     onLog: (fn) => {
       listeners.current.add(fn);
       return () => listeners.current.delete(fn);
     },
   });
   value.current.connected = connected;
-  return <Ctx.Provider value={{ connected, onLog: value.current.onLog }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ connected, agent, onLog: value.current.onLog }}>{children}</Ctx.Provider>;
 }
 
 export const useLive = () => useContext(Ctx);

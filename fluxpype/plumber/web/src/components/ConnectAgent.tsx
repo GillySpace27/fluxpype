@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Bot, Check, ChevronRight, Copy } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
+import { useStatus } from "../lib/hooks";
+import { useLive } from "../lib/live";
 import { Badge, Dialog, ErrorNote, Skeleton, useToast } from "./ui";
 
 interface AgentPrompt {
@@ -129,13 +131,46 @@ export function ConnectAgentDialog({ open, onOpenChange }: { open: boolean; onOp
   );
 }
 
-export function ConnectAgentButton({ className, label = "Connect agent" }: { className?: string; label?: string }) {
+/** An agent counts as connected while its last MCP request is this recent (the MCP link has no heartbeat). */
+const AGENT_FRESH_MS = 10 * 60_000;
+
+export function ConnectAgentButton({
+  className,
+  label = "Connect agent",
+  live,
+}: {
+  className?: string;
+  label?: string;
+  /** show "Agent connected" and flash on agent activity (the top bar); otherwise a plain button */
+  live?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const { agent } = useLive();
+  const { data: status, dataUpdatedAt } = useStatus();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const id = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(id);
+  }, [live]);
+
+  // last request time: a live push, or what /api/status said when it was fetched
+  const fromStatus = status?.agent ? dataUpdatedAt - status.agent.age_s * 1000 : 0;
+  const seen = Math.max(agent?.ts ?? 0, fromStatus);
+  const connected = !!live && seen > 0 && Math.max(now, agent?.ts ?? 0) - seen < AGENT_FRESH_MS;
+  const last = agent?.tool || status?.agent?.tool;
+
   return (
     <>
-      <button className={cn("btn btn-sm", className)} onClick={() => setOpen(true)}>
+      <button
+        className={cn("btn btn-sm relative", connected && "border-ok/50 text-ok", className)}
+        onClick={() => setOpen(true)}
+        title={connected ? `AI agent connected${last ? `; last call: ${last}` : ""}` : undefined}
+      >
+        {connected && agent && <span key={agent.ts} className="pointer-events-none absolute inset-0 rounded-[inherit] animate-agent-flash" aria-hidden />}
         <Bot className="h-3.5 w-3.5" />
-        <span className="hidden sm:inline">{label}</span>
+        <span className="hidden sm:inline">{connected ? "Agent connected" : label}</span>
+        {connected && <span className="sr-only">: {last}</span>}
       </button>
       <ConnectAgentDialog open={open} onOpenChange={setOpen} />
     </>

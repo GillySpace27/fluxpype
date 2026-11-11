@@ -5,6 +5,7 @@ so nothing here may print to stdout: diagnostics go to stderr.
 """
 
 import argparse
+import contextvars
 import functools
 import io
 import json
@@ -58,6 +59,8 @@ class PlumberError(Exception):
 
 
 # ---------------------------------------------------------------------------------------------- connection
+
+CURRENT_TOOL: "contextvars.ContextVar[str]" = contextvars.ContextVar("flux_mcp_tool", default="")
 
 
 def _detail(resp: "httpx.Response") -> str:
@@ -116,7 +119,9 @@ class PlumberClient:
         for attempt in (0, 1):
             http = self._client()
             try:
-                resp = http.request(method, path, params=params, json=body)
+                # tells Plumber an agent is acting, so the UI can show it (see "Agent connected")
+                headers = {"X-Flux-Client": "mcp", "X-Flux-Tool": CURRENT_TOOL.get()}
+                resp = http.request(method, path, params=params, json=body, headers=headers)
             except httpx.TransportError as e:
                 if attempt == 0 and self._resolver:
                     self._drop()
@@ -445,6 +450,7 @@ def build_server(client: PlumberClient) -> MCPServer:
         def register(fn):
             @functools.wraps(fn)
             async def guarded(*args, **kwargs):
+                CURRENT_TOOL.set(fn.__name__)
                 try:
                     return await fn(*args, **kwargs)
                 except ToolError:

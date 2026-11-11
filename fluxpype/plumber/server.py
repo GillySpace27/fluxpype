@@ -193,6 +193,7 @@ def create_app(
     allow_restart: bool = True,
 ) -> FastAPI:
     hub = Hub()
+    agent: Dict[str, Any] = {"ts": None, "tool": "", "count": 0}  # last MCP-agent request
     if updater is None:
         from .updates import Updater
 
@@ -263,6 +264,10 @@ def create_app(
                 return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+            if request.headers.get("x-flux-client") == "mcp":  # an AI agent via the MCP server
+                agent["ts"], agent["count"] = time.time(), agent["count"] + 1
+                agent["tool"] = request.headers.get("x-flux-tool", "")[:64]
+                hub.publish("agent_activity", {"tool": agent["tool"], "count": agent["count"]})
             return await call_next(request)
         if path in PUBLIC_FILES or path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
@@ -312,6 +317,9 @@ def create_app(
                 "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
                 "stages": [{"id": s, "label": l} for s, l in STAGES],
                 "forbidden_keys": sorted(config_io.FORBIDDEN_KEYS),
+                "agent": None
+                if agent["ts"] is None
+                else {"age_s": time.time() - agent["ts"], "tool": agent["tool"], "count": agent["count"]},
             }
         )
 

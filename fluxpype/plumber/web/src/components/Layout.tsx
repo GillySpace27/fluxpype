@@ -151,7 +151,7 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <UpdatePill />
             <StatusLight />
-            <ConnectAgentButton />
+            <ConnectAgentButton live />
             <QueuePill />
           </div>
         </div>

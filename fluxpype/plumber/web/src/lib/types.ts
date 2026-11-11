@@ -167,6 +167,8 @@ export interface StatusInfo {
   scenarios: string[];
   stages: { id: string; label: string }[];
   forbidden_keys: string[];
+  /** the last MCP-agent request Plumber saw, or null if none since it started */
+  agent?: { age_s: number; tool: string; count: number } | null;
 }
 
 export interface ProfileSummary {

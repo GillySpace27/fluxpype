@@ -196,6 +196,18 @@ def test_websocket_pushes_job_state(client):
         assert {"job_state", "task_state"} <= kinds
 
 
+def test_agent_requests_are_recorded_and_pushed(client):
+    assert client.get("/api/status", headers=H).json()["agent"] is None
+    client.cookies.set("flux_plumber", TOKEN)
+    with client.websocket_connect("/api/ws", headers={"Host": "localhost:8765"}) as ws:
+        assert ws.receive_json()["type"] == "hello"
+        client.get("/api/queue", headers={**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "get_job"})
+        msg = ws.receive_json()
+        assert msg["type"] == "agent_activity" and msg["data"] == {"tool": "get_job", "count": 1}
+    agent = client.get("/api/status", headers=H).json()["agent"]
+    assert agent["tool"] == "get_job" and agent["count"] == 1 and 0 <= agent["age_s"] < 30
+
+
 # ------------------------------------------------------------------ artifacts
 
 
