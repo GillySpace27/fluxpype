@@ -84,6 +84,7 @@ RE_STEP_STATS = re.compile(
 RE_CYCLE = re.compile(r"Cycle (\d+), Cumulative relaxation time: " + _NUM + r" seconds, (\d+) steps")
 RE_FIXES = re.compile(r"Cycle (\d+) :: Curvature changed (\d+) vertices, proximity changed (\d+) vertices")
 RE_TARGET = re.compile(r"Relaxing PFSS model for (\d+) steps to " + _NUM + r" stiffness")
+_NFLUX_IN_NAME = re.compile(r"_f(\d+)(?:_|\.|$)")
 RE_DONE = re.compile(r"Program Complete for CR(\d+) in ([\d.]+) Seconds")
 
 
@@ -354,6 +355,9 @@ class TaskMonitor:
                     continue
                 if started is not None and mt < started - 5:
                     continue  # left over from an earlier run
+                m = _NFLUX_IN_NAME.search(os.path.basename(path))
+                if m and m.group(1) != str(self.probe.nflux):
+                    continue  # another task's plot (same rotation, different fluxon count)
                 found.append({"path": path, "kind": "image", "t": mt, "source": "file"})
         self._artifact_cache, self._art_at = found, now
         return found

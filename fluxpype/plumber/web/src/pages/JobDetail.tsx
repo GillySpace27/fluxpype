@@ -1,14 +1,14 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban } from "lucide-react";
+import { ArrowLeft, Ban, PanelsTopLeft } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArtifactGrid } from "../components/ArtifactGrid";
 import { LogPane } from "../components/LogPane";
 import { PipelineChips } from "../components/PipelineChips";
+import { ResultsPane } from "../components/ResultsPane";
 import { RelaxCharts } from "../components/RelaxCharts";
 import { SourcesPanel } from "../components/SourcesPanel";
 import { StageTimeline } from "../components/StageTimeline";
-import { Badge, Banner, Card, EmptyState, ErrorNote, SectionTitle, Skeleton, StatusBadge, Tab, TabList, TabPanel, Tabs, useConfirm, useToast } from "../components/ui";
+import { Banner, Card, EmptyState, ErrorNote, SectionTitle, Skeleton, StatusBadge, Tab, TabList, TabPanel, Tabs, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
@@ -26,7 +26,8 @@ function Metric({ label, value, sub }: { label: string; value: React.ReactNode; 
   );
 }
 
-function TaskView({ row }: { row: TaskRow }) {
+/** One task: header with metrics and banners, then tabs. `results` adds the Results tab (the run view shows results in its own tab). */
+export function TaskView({ row, results = true, defaultTab = "progress" }: { row: TaskRow; results?: boolean; defaultTab?: string }) {
   const active = row.status === "running" || row.status === "pending";
   const { data: t, error, refetch } = useTask(row.id, true);
   const live = t ? t.status === "running" || t.status === "pending" : active;
@@ -92,13 +93,15 @@ function TaskView({ row }: { row: TaskRow }) {
         <Banner key={w} tone="warn">{w}</Banner>
       ))}
 
-      <Tabs defaultValue="progress">
+      <Tabs defaultValue={defaultTab}>
         <TabList>
           <Tab value="progress">Progress</Tab>
           <Tab value="log">Log</Tab>
-          <Tab value="artifacts">
-            Plots <Badge>{t.artifacts.length}</Badge>
-          </Tab>
+          {results && (
+            <Tab value="results">
+              Results
+            </Tab>
+          )}
           <Tab value="sources">Evidence</Tab>
         </TabList>
         <TabPanel value="progress" className="space-y-6 pt-5">
@@ -129,9 +132,11 @@ function TaskView({ row }: { row: TaskRow }) {
         <TabPanel value="log" className="pt-5">
           <LogPane taskId={t.id} active={live} />
         </TabPanel>
-        <TabPanel value="artifacts" className="pt-5">
-          <ArtifactGrid artifacts={t.artifacts} />
-        </TabPanel>
+        {results && (
+          <TabPanel value="results" className="pt-5">
+            <ResultsPane task={t} />
+          </TabPanel>
+        )}
         <TabPanel value="sources" className="pt-5">
           <SourcesPanel task={t} />
         </TabPanel>
@@ -176,7 +181,12 @@ export function JobDetail() {
               {job.extra.scenario && ` · scenario ${job.extra.scenario}`}
             </p>
           </div>
-          <JobActions job={job} onDeleted={() => nav("/jobs")} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to={`/run/${job.id}/progress${selected ? `?task=${selected.id}` : ""}`} className="btn btn-sm">
+              <PanelsTopLeft className="h-3.5 w-3.5" /> Open as run
+            </Link>
+            <JobActions job={job} onDeleted={() => nav("/jobs")} />
+          </div>
         </div>
       </div>
 
@@ -206,7 +216,7 @@ export function JobDetail() {
   );
 }
 
-function StatusDot({ status }: { status: string }) {
+export function StatusDot({ status }: { status: string }) {
   const c = status === "ok" ? "bg-ok" : status === "running" ? "bg-run animate-pulse" : ["failed", "timeout", "crashed"].includes(status) ? "bg-fail" : "bg-faint";
   return <span className={cn("h-1.5 w-1.5 rounded-full", c)} />;
 }

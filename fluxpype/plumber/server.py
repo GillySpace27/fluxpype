@@ -30,6 +30,9 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 APP_DOMAIN = "plumber.localhost"  # *.localhost always resolves to loopback (RFC 6761)
 PUBLIC_FILES = {"/manifest.webmanifest", "/sw.js", "/login", "/favicon.ico"}
 PUBLIC_PREFIXES = ("/assets/", "/icons/")
+# results product id -> pipeline stage id (monitor.STAGES)
+PRODUCT_STAGE = {"relaxed_world": "relax"}
+
 IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -556,6 +559,117 @@ def create_app(
             fail(e, 409)
         return reply({"deleted": job_id})
 
+    def job_or_404(job_id: str) -> Dict[str, Any]:
+        job = sched.store.get_job(job_id)
+        if not job:
+            raise HTTPException(404, "unknown job")
+        return job
+
+    def job_effective(job: Dict[str, Any]):
+        try:
+            return config_io.read_file(job["snapshot_path"]).effective(job["profile"])
+        except Exception as e:  # noqa: BLE001
+            fail(ValueError(f"this job's saved settings cannot be read: {e}"), 410)
+
+    def job_data_dir(job_id: str) -> str:
+        eff = job_effective(job_or_404(job_id))
+        return config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+
+    @app.get("/api/jobs/{job_id}/config")
+    def job_config(job_id: str):
+        """The settings this job ran with (its frozen snapshot), marked against the preset as it is now."""
+        job = job_or_404(job_id)
+        eff = job_effective(job)
+        try:
+            now = sched.parsed().effective(job["profile"]) if job["profile"] in sched.parsed().sections else None
+        except Exception:  # noqa: BLE001
+            now = None
+        entries = []
+        pinned = ("data_dir", "base_dir")  # Plumber writes these into every snapshot; a difference is not a user change
+        for key, e in eff.items():
+            current = now[key].value if now is not None and key in now else None
+            entries.append(
+                {
+                    "key": key,
+                    "value": e.value,
+                    "resolved": config_io.resolve(eff, key) if "${" in e.value else None,
+                    "source": "DEFAULT" if e.section == "DEFAULT" else "profile",
+                    "overrides_default": e.overrides_default,
+                    "comment": e.comment,
+                    "editable": key not in config_io.FORBIDDEN_KEYS,
+                    "overridden": key in (job.get("overrides") or {}),
+                    "preset_value": current,
+                    "differs_from_preset": now is not None and current != e.value and key not in pinned,
+                    "set_by_plumber": key in pinned,
+                }
+            )
+        return reply(
+            {
+                "job_id": job_id,
+                "profile": job["profile"],
+                "preset_exists": now is not None,
+                "overrides": job.get("overrides") or {},
+                "data_dir": config_io.resolved_path(eff, "data_dir", str(paths.checkout_root())),
+                "batch_name": config_io.resolve(eff, "batch_name"),
+                "entries": entries,
+            }
+        )
+
+    def results_for(t: Dict[str, Any]) -> Dict[str, Any]:
+        from .results import task_results
+
+        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"))
+        try:
+            stages = {s["id"]: s["status"] for s in sched.task_state(t["id"]).get("stages", [])}
+        except Exception:  # noqa: BLE001
+            stages = {}
+        for prod in out["products"]:
+            prod["stage_status"] = stages.get(PRODUCT_STAGE.get(prod["id"], prod["id"]))
+        return out
+
+    @app.get("/api/tasks/{task_id}/results")
+    def task_results_view(task_id: str):
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        return reply({"task_id": task_id, "job_id": t["job_id"], **results_for(t)})
+
+    @app.get("/api/jobs/{job_id}/files")
+    def job_files(job_id: str):
+        """Every file the job's tasks read or wrote (expected products plus plots), once each."""
+        job_or_404(job_id)
+        by_path: Dict[str, Dict[str, Any]] = {}
+        missing = []
+        data_dir = None
+        for t in sched.store.tasks_for_job(job_id):
+            r = results_for(t)
+            data_dir = data_dir or r["data_dir"]
+            for prod in r["products"]:
+                if not prod["files"] and prod.get("stage_status") not in ("skipped", "pending", "running"):
+                    missing.append(
+                        {
+                            "task_id": t["id"],
+                            "cr": t["cr"],
+                            "nflux": t["nflux"],
+                            "stage": prod["id"],
+                            "label": prod["label"],
+                        }
+                    )
+                for f in prod["files"]:
+                    by_path.setdefault(f["path"], {**f, "stage": prod["id"], "tasks": []})["tasks"].append(t["id"])
+            for f in r["plots"]:
+                by_path.setdefault(f["path"], {**f, "stage": "plots", "tasks": []})["tasks"].append(t["id"])
+        current = os.path.realpath(sched.data_dir()) if data_dir else None
+        return reply(
+            {
+                "job_id": job_id,
+                "data_dir": data_dir,
+                "is_current_data_dir": bool(data_dir) and os.path.realpath(data_dir) == current,
+                "files": sorted(by_path.values(), key=lambda f: f["path"]),
+                "missing": missing,
+            }
+        )
+
     @app.get("/api/tasks/{task_id}")
     def task(task_id: str):
         try:
@@ -815,21 +929,17 @@ def create_app(
         local = next((b for b in sched.backends.values() if getattr(b, "kind", "") == "local"), None)
         return getattr(local, "python", None) or sys.executable
 
-    @app.get("/api/cache/preview")
-    def cache_preview(path: str):
+    def preview_reply(full: str, rel: str):
         from . import preview
 
-        full = cache_file(path)
         try:
-            return reply(preview.describe(full, path))
+            return reply(preview.describe(full, rel))
         except OSError as e:
             fail(e, 500)
 
-    @app.get("/api/cache/file")
-    def cache_raw(path: str, download: bool = False):
+    def raw_reply(full: str, download: bool):
         from . import preview
 
-        full = cache_file(path)
         mt = preview.media_type(full)
         inline = not download and mt != "application/octet-stream"
         headers = {"Cache-Control": "private, max-age=30", "X-Content-Type-Options": "nosniff"}
@@ -843,29 +953,70 @@ def create_app(
             content_disposition_type="inline" if inline else "attachment",
         )
 
-    @app.get("/api/cache/render")
-    def cache_render(path: str):
+    def render_reply(full: str, png_url: str):
         from . import preview
 
-        full = cache_file(path)
         if preview.kind_of(full) != "fits":
             fail(ValueError("only FITS files are rendered"), 415)
         try:
             out = preview.render_fits(full, str(sched.home), render_python())
         except preview.RenderError as e:
             fail(e, 422)
-        return reply({"stats": out["stats"], "image": f"/api/cache/render.png?path={quote(path)}"})
+        return reply({"stats": out["stats"], "image": png_url})
 
-    @app.get("/api/cache/render.png")
-    def cache_render_png(path: str):
+    def render_png(full: str):
         from . import preview
 
-        full = cache_file(path)
         try:
             out = preview.render_fits(full, str(sched.home), render_python())
         except preview.RenderError as e:
             fail(e, 422)
         return FileResponse(out["png"], media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+    @app.get("/api/cache/preview")
+    def cache_preview(path: str):
+        return preview_reply(cache_file(path), path)
+
+    @app.get("/api/cache/file")
+    def cache_raw(path: str, download: bool = False):
+        return raw_reply(cache_file(path), download)
+
+    @app.get("/api/cache/render")
+    def cache_render(path: str):
+        return render_reply(cache_file(path), f"/api/cache/render.png?path={quote(path)}")
+
+    @app.get("/api/cache/render.png")
+    def cache_render_png(path: str):
+        return render_png(cache_file(path))
+
+    # job-scoped twins: a job's snapshot can pin a data folder other than the current one
+    def job_file(job_id: str, rel: str) -> str:
+        from .cache import _confine
+
+        data_dir = job_data_dir(job_id)
+        try:
+            full = _confine(data_dir, rel)
+        except CacheError as e:
+            fail(e, 403)
+        if not os.path.isfile(full):
+            raise HTTPException(404, "no such file")
+        return full
+
+    @app.get("/api/jobs/{job_id}/data/preview")
+    def job_preview(job_id: str, path: str):
+        return preview_reply(job_file(job_id, path), path)
+
+    @app.get("/api/jobs/{job_id}/data/file")
+    def job_raw(job_id: str, path: str, download: bool = False):
+        return raw_reply(job_file(job_id, path), download)
+
+    @app.get("/api/jobs/{job_id}/data/render")
+    def job_render(job_id: str, path: str):
+        return render_reply(job_file(job_id, path), f"/api/jobs/{quote(job_id)}/data/render.png?path={quote(path)}")
+
+    @app.get("/api/jobs/{job_id}/data/render.png")
+    def job_render_png(job_id: str, path: str):
+        return render_png(job_file(job_id, path))
 
     @app.get("/api/artifacts")
     def artifact(path: str):

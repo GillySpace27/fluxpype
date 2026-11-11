@@ -9,16 +9,18 @@ import type { CacheRecord, FilePreview, FitsCard, FitsRender, PresetScope } from
 import { Badge, Dialog, ErrorNote, Skeleton, Tip, useToast } from "./ui";
 
 const q = (path: string) => encodeURIComponent(path);
-export const fileUrl = (path: string, download = false) => `/api/cache/file?path=${q(path)}${download ? "&download=1" : ""}`;
+/** Where the viewer reads files: the current data folder (`/api/cache`) or one job's own folder (`/api/jobs/<id>/data`). */
+export const CACHE_BASE = "/api/cache";
+export const fileUrl = (path: string, download = false, base = CACHE_BASE) => `${base}/file?path=${q(path)}${download ? "&download=1" : ""}`;
 
 function errText(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-function FitsImage({ path }: { path: string }) {
+function FitsImage({ path, base }: { path: string; base: string }) {
   const { data, error, isLoading } = useQuery({
-    queryKey: ["fits-render", path],
-    queryFn: () => api.get<FitsRender>(`/api/cache/render?path=${q(path)}`),
+    queryKey: ["fits-render", base, path],
+    queryFn: () => api.get<FitsRender>(`${base}/render?path=${q(path)}`),
     staleTime: Infinity,
     retry: false,
   });
@@ -72,12 +74,12 @@ function HeaderTable({ cards }: { cards: FitsCard[] }) {
   );
 }
 
-function FitsView({ p }: { p: FilePreview }) {
+function FitsView({ p, base }: { p: FilePreview; base: string }) {
   const hdus = p.hdus ?? [];
   const [hdu, setHdu] = useState(0);
   return (
     <div className="space-y-4">
-      {p.renderable ? <FitsImage path={p.path} /> : <p className="text-[13px] text-muted">No 2-D image in the first HDUs.</p>}
+      {p.renderable ? <FitsImage path={p.path} base={base} /> : <p className="text-[13px] text-muted">No 2-D image in the first HDUs.</p>}
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-1.5">
           {hdus.map((h, i) => (
@@ -116,15 +118,15 @@ function TextView({ p }: { p: FilePreview }) {
   );
 }
 
-function Body({ p }: { p: FilePreview }) {
+function Body({ p, base }: { p: FilePreview; base: string }) {
   if (p.view === "image")
     return (
-      <a href={fileUrl(p.path)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-line bg-[repeating-conic-gradient(rgb(128_128_128/.12)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
-        <img src={fileUrl(p.path)} alt={p.name} className="mx-auto max-h-[75vh] w-full object-contain" />
+      <a href={fileUrl(p.path, false, base)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-line bg-[repeating-conic-gradient(rgb(128_128_128/.12)_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]">
+        <img src={fileUrl(p.path, false, base)} alt={p.name} className="mx-auto max-h-[75vh] w-full object-contain" />
       </a>
     );
-  if (p.view === "pdf") return <iframe src={fileUrl(p.path)} title={p.name} className="h-[75vh] w-full rounded-xl border border-line bg-white" />;
-  if (p.view === "fits") return <FitsView p={p} />;
+  if (p.view === "pdf") return <iframe src={fileUrl(p.path, false, base)} title={p.name} className="h-[75vh] w-full rounded-xl border border-line bg-white" />;
+  if (p.view === "fits") return <FitsView p={p} base={base} />;
   if (p.view === "text") return <TextView p={p} />;
   return <p className="rounded-xl border border-line bg-bg/40 px-3 py-6 text-center text-[13px] text-muted">{p.note ?? "No preview for this file."}</p>;
 }
@@ -162,6 +164,8 @@ export function FileViewer({
   mode = "popup",
   onMode,
   className,
+  base = CACHE_BASE,
+  extraMeta,
 }: {
   records: CacheRecord[];
   index: number;
@@ -172,12 +176,16 @@ export function FileViewer({
   mode?: ViewerMode;
   onMode?: (m: ViewerMode) => void;
   className?: string;
+  /** API prefix for preview, file and render; defaults to the current data folder. */
+  base?: string;
+  /** Extra tags shown with the file details (for example "made by this run"). */
+  extraMeta?: (r: CacheRecord) => React.ReactNode;
 }) {
   const r = records[index];
   const toast = useToast();
   const { data, error, refetch } = useQuery({
-    queryKey: ["preview", r?.path, r?.mtime],
-    queryFn: () => api.get<FilePreview>(`/api/cache/preview?path=${q(r!.path)}`),
+    queryKey: ["preview", base, r?.path, r?.mtime],
+    queryFn: () => api.get<FilePreview>(`${base}/preview?path=${q(r!.path)}`),
     enabled: !!r,
     staleTime: 60_000,
   });
@@ -213,6 +221,7 @@ export function FileViewer({
       {r.batch && <span>batch {r.batch}</span>}
       <span className="num">{bytes(r.size)}</span>
       <span>modified {ago(r.mtime)}</span>
+      {extraMeta?.(r)}
       {users.length > 0 && (
         <span className="flex flex-wrap items-center gap-1">
           used by
@@ -248,16 +257,16 @@ export function FileViewer({
         <Copy className="h-3.5 w-3.5" /> Copy path
       </button>
       {(data?.view === "image" || data?.view === "pdf") && (
-        <a className="btn btn-sm" href={fileUrl(r.path)} target="_blank" rel="noreferrer">
+        <a className="btn btn-sm" href={fileUrl(r.path, false, base)} target="_blank" rel="noreferrer">
           <ExternalLink className="h-3.5 w-3.5" /> Open
         </a>
       )}
-      <a className="btn btn-sm" href={fileUrl(r.path, true)}>
+      <a className="btn btn-sm" href={fileUrl(r.path, true, base)}>
         <Download className="h-3.5 w-3.5" /> Download
       </a>
     </>
   );
-  const body = error ? <ErrorNote error={error} retry={() => refetch()} /> : !data ? <Skeleton className="h-72" /> : <Body p={data} />;
+  const body = error ? <ErrorNote error={error} retry={() => refetch()} /> : !data ? <Skeleton className="h-72" /> : <Body p={data} base={base} />;
   const modeButton = onMode && (
     <Tip label={mode === "inline" ? "Open previews in a panel over the page" : "Show previews beside the list"}>
       <button className="btn btn-ghost btn-icon" aria-label={mode === "inline" ? "Pop out" : "Dock beside the list"} onClick={() => onMode(mode === "inline" ? "popup" : "inline")}>

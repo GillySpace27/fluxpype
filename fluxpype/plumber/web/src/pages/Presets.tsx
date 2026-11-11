@@ -8,7 +8,6 @@ import {
   Download,
   Eye,
   EyeOff,
-  FlaskConical,
   Layers,
   MoreHorizontal,
   Pencil,
@@ -25,14 +24,15 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { Badge, Banner, Card, Checkbox, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, Tip, useConfirm, useToast } from "../components/ui";
+import { Badge, Banner, Card, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, Tip, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { instOf } from "../lib/format";
 import { fuzzyMatch, type Field, type Match } from "../lib/fuzzy";
 import { DataFolderBanner } from "../components/DataFolder";
-import { useHealth, useProfile, useProfiles, useStatus } from "../lib/hooks";
-import type { Job, PresetCache, ProfileDetail, ProfileEntry, ProfileSummary } from "../lib/types";
+import { RunForm, changedOverrides, emptyDraft, jobBody, pickedTasks, type RunDraft } from "../components/RunForm";
+import { useProfile, useProfiles, useStatus } from "../lib/hooks";
+import type { Job, PresetCache, ProfileDetail, ProfileSummary } from "../lib/types";
 
 const CACHE_KINDS: [keyof PresetCache["counts"], string, string][] = [
   ["magnetogram", "Mag", "Magnetograms"],
@@ -42,8 +42,6 @@ const CACHE_KINDS: [keyof PresetCache["counts"], string, string][] = [
   ["relaxed_world", "Relax", "Relaxed worlds"],
 ];
 
-/** The knobs worth changing per run, shown first in the run drawer. */
-const COMMON = ["rotations", "fluxon_count", "adapts", "flow_method", "max_cycles", "relax_threshold", "do_steps", "light", "do_wind_calc"];
 
 const enc = encodeURIComponent;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -300,36 +298,18 @@ function EditDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; ope
 /* ------------------------------------------------------------------ run drawer */
 function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data: status } = useStatus();
-  const { data: health } = useHealth();
   const nav = useNavigate();
   const qc = useQueryClient();
   const toast = useToast();
   const inval = useInvalidatePresets();
-  const [overrides, setOverrides] = useState<Record<string, string>>({});
-  const [picked, setPicked] = useState<Set<number>>(() => new Set(detail.tasks.map((_, i) => i)));
-  const [scenario, setScenario] = useState("ok");
-  const [speed, setSpeed] = useState("20");
-  const [showAll, setShowAll] = useState(false);
+  const [draft, setDraft] = useState<RunDraft>(emptyDraft);
   const [saveAs, setSaveAs] = useState(false);
-
   const sim = !!status?.sandboxed;
-  const backend = health?.backends.find((b) => b.active);
-  const editable = detail.entries.filter((e) => e.editable);
-  const common = editable.filter((e) => COMMON.includes(e.key));
-  const rest = editable.filter((e) => !COMMON.includes(e.key));
-  const changed = Object.entries(overrides).filter(([k, v]) => v !== detail.entries.find((e) => e.key === k)?.value);
-  const allPicked = picked.size === detail.tasks.length;
+  const changed = changedOverrides(detail, draft);
+  const nTasks = pickedTasks(detail, draft).length;
 
   const run = useMutation({
-    mutationFn: () => {
-      const body: Record<string, unknown> = { profile: detail.name, overrides: Object.fromEntries(changed) };
-      if (!allPicked) body.tasks = [...picked].sort((a, b) => a - b).map((i) => [detail.tasks[i].cr, detail.tasks[i].nflux, detail.tasks[i].adapt, detail.tasks[i].method]);
-      if (sim) {
-        body.scenario = scenario;
-        body.speed = Number(speed) || 20;
-      }
-      return api.post<Job>("/api/jobs", body);
-    },
+    mutationFn: () => api.post<Job>("/api/jobs", jobBody(detail, draft, sim)),
     onSuccess: (job) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["overview"] });
@@ -339,17 +319,6 @@ function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open
     },
     onError: (e) => toast("error", errText(e)),
   });
-
-  const field = (e: ProfileEntry) => (
-    <label key={e.key} className="block">
-      <span className="flex items-baseline justify-between text-xs">
-        <span className="font-mono text-ink/90">{e.key}</span>
-        {overrides[e.key] !== undefined && overrides[e.key] !== e.value && <span className="text-accent">changed</span>}
-      </span>
-      <input className="input mt-1 font-mono" value={overrides[e.key] ?? e.value} onChange={(ev) => setOverrides({ ...overrides, [e.key]: ev.target.value })} spellCheck={false} />
-      {e.comment && <span className="mt-1 block text-[11px] leading-snug text-faint">{e.comment}</span>}
-    </label>
-  );
 
   return (
     <Dialog
@@ -361,7 +330,7 @@ function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open
       footer={
         <>
           <span className="mr-auto text-xs text-muted">
-            {picked.size} task{picked.size === 1 ? "" : "s"}
+            {nTasks} task{nTasks === 1 ? "" : "s"}
             {changed.length > 0 && ` · ${changed.length} change${changed.length === 1 ? "" : "s"}`}
           </span>
           {changed.length > 0 && (
@@ -369,83 +338,13 @@ function RunDrawer({ detail, open, onOpenChange }: { detail: ProfileDetail; open
               <Save className="h-3.5 w-3.5" /> Save as preset
             </button>
           )}
-          <button className="btn btn-primary" disabled={picked.size === 0 || run.isPending} onClick={() => run.mutate()}>
+          <button className="btn btn-primary" disabled={nTasks === 0 || run.isPending} onClick={() => run.mutate()}>
             <Play className="h-3.5 w-3.5" /> {run.isPending ? "Starting..." : "Start run"}
           </button>
         </>
       }
     >
-      <div className="space-y-6">
-        {backend && (
-          <div className={cn("flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-[13px]", sim ? "border-accent/40 bg-accent/10" : "border-line bg-raised/50")}>
-            {sim ? <FlaskConical className="h-4 w-4 text-accent" /> : <Layers className="h-4 w-4 text-muted" />}
-            <span>
-              Runs on <span className="font-semibold">{backend.label}</span>
-              {sim ? ": simulated, results go to the sandbox." : "."}
-            </span>
-            <span className="ml-auto text-[11px] text-faint">change it in the top bar</span>
-          </div>
-        )}
-        {sim && (
-          <section className="grid grid-cols-[1fr_96px] gap-3">
-            <label className="block text-xs">
-              <span className="label">Scenario</span>
-              <select className="input mt-1" value={scenario} onChange={(e) => setScenario(e.target.value)}>
-                {(status?.scenarios ?? ["ok"]).map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-xs">
-              <span className="label">Speed x</span>
-              <input className="input num mt-1" value={speed} onChange={(e) => setSpeed(e.target.value)} inputMode="decimal" />
-            </label>
-          </section>
-        )}
-
-        <section>
-          <div className="mb-2 flex items-center justify-between">
-            <p className="label">Tasks</p>
-            <button className="text-xs text-muted hover:text-ink" onClick={() => setPicked(allPicked ? new Set() : new Set(detail.tasks.map((_, i) => i)))}>
-              {allPicked ? "Select none" : "Select all"}
-            </button>
-          </div>
-          <div className="max-h-56 divide-y divide-line/50 overflow-y-auto rounded-lg border border-line">
-            {detail.tasks.map((t, i) => (
-              <div
-                key={i}
-                role="button"
-                tabIndex={0}
-                onClick={() => setPicked((p) => (p.has(i) ? new Set([...p].filter((x) => x !== i)) : new Set(p).add(i)))}
-                onKeyDown={(ev) => ev.key === " " && ev.preventDefault()}
-                className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[13px] hover:bg-raised/50"
-              >
-                <Checkbox checked={picked.has(i)} label={`CR ${t.cr}`} onChange={() => setPicked((p) => (p.has(i) ? new Set([...p].filter((x) => x !== i)) : new Set(p).add(i)))} />
-                <span className="flex-1">
-                  CR {t.cr} <span className="text-muted">· {t.nflux} · {instOf(t.adapt)} · {t.method}</span>
-                </span>
-                {t.cache.relaxed_world && <Badge tone="ok">cached</Badge>}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="space-y-3">
-          <p className="label">Settings for this run</p>
-          {common.map(field)}
-          {rest.length > 0 && (
-            <>
-              <button className="flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => setShowAll(!showAll)}>
-                <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", showAll && "rotate-90")} />
-                {showAll ? "Hide" : "Show"} {rest.length} more settings
-              </button>
-              {showAll && <div className="space-y-3">{rest.map(field)}</div>}
-            </>
-          )}
-        </section>
-      </div>
+      <RunForm detail={detail} draft={draft} onChange={setDraft} />
       {saveAs && (
         <NameDialog
           open={saveAs}

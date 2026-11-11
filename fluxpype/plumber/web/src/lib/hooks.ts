@@ -7,12 +7,15 @@ import type {
   DataDirReport,
   HealthReport,
   Job,
+  JobConfig,
+  JobFiles,
   Overview,
   ProfileDetail,
   ProfileSummary,
   QueueState,
   RelaxSeries,
   StatusInfo,
+  TaskResults,
   TaskState,
   TrashItem,
 } from "./types";
@@ -111,3 +114,30 @@ export function useWide(query = "(min-width: 1024px)"): boolean {
   }, [query]);
   return wide;
 }
+
+/** What one task produced; refreshed while it runs. */
+export const useTaskResults = (id: string | undefined, active: boolean) =>
+  useQuery({
+    queryKey: ["results", id],
+    queryFn: () => api.get<TaskResults>(`/api/tasks/${id}/results`),
+    enabled: !!id,
+    refetchInterval: active ? 5000 : false,
+    placeholderData: (prev) => prev,
+  });
+
+/** The settings a job ran with (its frozen snapshot). */
+export const useJobConfig = (id: string | undefined) =>
+  useQuery({ queryKey: ["job-config", id], queryFn: () => api.get<JobConfig>(`/api/jobs/${id}/config`), enabled: !!id, staleTime: Infinity });
+
+/** Every file a job's tasks read or wrote. */
+export const useJobFiles = (id: string | undefined, active: boolean) =>
+  useQuery({
+    queryKey: ["job-files", id],
+    queryFn: () => api.get<JobFiles>(`/api/jobs/${id}/files`),
+    enabled: !!id,
+    refetchInterval: active ? 6000 : false,
+    placeholderData: (prev) => prev,
+  });
+
+/** API prefix for the file viewer when it reads a job's own data folder. */
+export const jobDataBase = (jobId: string) => `/api/jobs/${encodeURIComponent(jobId)}/data`;
