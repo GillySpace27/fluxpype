@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from .cache import classify
 from .monitor import ProbeContext
+from .plotcatalog import PLOTS
 
 # stage id, label, key in ProbeContext.patterns(), most files to list
 PRODUCTS = [
@@ -101,10 +102,37 @@ def _expand(patterns: List[str]) -> List[str]:
     return sorted(set(out))
 
 
+def plot_catalog(ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float]) -> List[Dict[str, Any]]:
+    """Every plot the pipeline defines, each with the files this task's folders hold for it (none: a placeholder)."""
+    out = []
+    for e in PLOTS:
+        files, n = [], 0
+        if ctx:
+            batch = os.path.join(ctx.data_dir, "batches", ctx.batch)
+            pat = e["pattern"].replace("{cr}", str(ctx.cr)).replace("{nflux}", str(ctx.nflux))
+            top = os.path.realpath(ctx.data_dir) + os.sep
+            hits = [
+                p
+                for p in glob.glob(os.path.normpath(os.path.join(batch, pat)))
+                if os.path.isfile(p) and os.path.realpath(p).startswith(top)
+            ]
+            hits.sort(key=os.path.getmtime, reverse=True)
+            n = len(hits)
+            files = [f for f in (_file(p, ctx.data_dir, started, ended) for p in hits[:8]) if f]
+        out.append({**e, "files": files, "n_files": n})
+    return out
+
+
 def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float]) -> Dict[str, Any]:
     """Products by stage plus the other plots for one task, with paths relative to ctx.data_dir."""
     if ctx is None:
-        return {"data_dir": None, "products": [], "plots": [], "headline": None}
+        return {
+            "data_dir": None,
+            "products": [],
+            "plots": [],
+            "headline": None,
+            "catalog": plot_catalog(None, None, None),
+        }
     root = ctx.data_dir
     pats = ctx.patterns()
     seen = set()
@@ -141,4 +169,10 @@ def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: O
     images += [f for f in plots if f["name"].lower().endswith((".png", ".jpg", ".jpeg"))]
     if images:
         headline = images[0]["path"]
-    return {"data_dir": root, "products": products, "plots": plots[:200], "headline": headline}
+    return {
+        "data_dir": root,
+        "products": products,
+        "plots": plots[:200],
+        "headline": headline,
+        "catalog": plot_catalog(ctx, started, ended),
+    }

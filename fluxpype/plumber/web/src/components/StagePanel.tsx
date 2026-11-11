@@ -7,6 +7,7 @@ import { jobDataBase, useTaskResults } from "../lib/hooks";
 import type { CacheRecord, ResultFile, TaskState } from "../lib/types";
 import { FileViewer, fileUrl } from "./FileViewer";
 import { FileIcons, FileRows, ViewSwitch, useFileView } from "./FileBrowser";
+import { PlotCatalog } from "./PlotCatalog";
 import { OriginTag, RelaxViews } from "./ResultsPane";
 import { useProgress } from "./StageTimeline";
 import { Badge, Card, StatusIcon } from "./ui";
@@ -139,11 +140,15 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
   const [older, setOlder] = useState(false);
   const [fmode, setFmode, fsize, setFsize] = useFileView("stage");
 
+  const cat = useMemo(() => (data?.catalog ?? []).filter((c) => c.stage === stageId), [data, stageId]);
   const all: ResultFile[] = useMemo(() => {
     if (!data) return [];
     const pid = PRODUCT[stageId] ?? stageId;
-    return [...data.products.filter((p) => p.id === pid).flatMap((p) => p.files), ...data.plots.filter((p) => p.stage === stageId)];
-  }, [data, stageId]);
+    const own = [...data.products.filter((p) => p.id === pid).flatMap((p) => p.files), ...data.plots.filter((p) => p.stage === stageId)];
+    const seen = new Set(own.map((f) => f.path));
+    // the catalogue's files join the list so the viewer can step through them too
+    return [...own, ...cat.flatMap((c) => c.files).filter((f) => !seen.has(f.path) && seen.add(f.path))];
+  }, [data, stageId, cat]);
   // old FLUXlight images from earlier runs would pass for this run's result: show only what this run made unless asked
   const files = stageId === "fluxlight" && !older ? all.filter((f) => f.origin === "made") : all;
   const hidden = all.length - files.length;
@@ -153,9 +158,12 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
   const floc = stageId === "footpoints" ? files.find((f) => /^floc_.*\.dat$/i.test(f.name)) : undefined;
   const { data: pts } = useFootpoints(floc, base);
   // the world plots stage shows its images in RelaxViews above, so only its other files are listed here
-  const listed = stageId === "world_plots" ? files.filter((f) => !/\.(png|jpe?g|svg)$/i.test(f.name)) : files;
+  // files the plot catalogue shows are not listed a second time
+  const claimed = new Set(cat.flatMap((c) => c.files.map((f) => f.path)));
+  const unclaimed = files.filter((f) => !claimed.has(f.path));
+  const listed = stageId === "world_plots" ? unclaimed.filter((f) => !/\.(png|jpe?g|svg)$/i.test(f.name)) : unclaimed;
   const listProps = { records: listed, active: open != null ? listed.indexOf(files[open]) : null, onOpen: (i: number) => setOpen(files.indexOf(listed[i])), tag: (f: ResultFile) => <OriginTag origin={f.origin} /> };
-  const show = (f: ResultFile) => setOpen(files.indexOf(f));
+  const show = (f: ResultFile) => setOpen(files.findIndex((x) => x.path === f.path));
 
   return (
     <section className="space-y-4" aria-label={`${stage?.label ?? stageId} stage`}>
@@ -224,6 +232,7 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
             {listed.length > 0 && (fmode === "icons" ? <FileIcons {...listProps} base={base} size={fsize} /> : <FileRows {...listProps} />)}
           </div>
       )}
+      <PlotCatalog entries={cat} base={base} visible={(f) => stageId !== "fluxlight" || older || f.origin === "made"} onOpen={show} />
       {hidden > 0 && (
         <p className="px-1 text-xs text-muted">
           {hidden} older image{hidden === 1 ? "" : "s"} from earlier runs hidden (this run made none).{" "}

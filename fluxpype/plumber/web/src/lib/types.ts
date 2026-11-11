@@ -416,12 +416,29 @@ export interface ResultProduct {
   stage_status?: StageStatus | null;
 }
 
+/** One plot the pipeline defines (see plumber/plotcatalog.py), with the files this task's folders hold for it. */
+export interface CatalogPlot {
+  id: string;
+  stage: string;
+  title: string;
+  pattern: string;
+  writer: string;
+  call: string | null;
+  gate: string | null;
+  summary: string;
+  /** defined in the code but not made by the current pipeline (call commented out, unreachable, or manual only) */
+  legacy: boolean;
+  files: ResultFile[];
+  n_files: number;
+}
+
 export interface TaskResults {
   task_id: string;
   job_id: string;
   data_dir: string | null;
   products: ResultProduct[];
   plots: ResultFile[];
+  catalog: CatalogPlot[];
   headline: string | null;
 }
 

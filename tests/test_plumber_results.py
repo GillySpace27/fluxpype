@@ -62,7 +62,30 @@ def test_task_results_groups_products_and_tags_reuse(tmp_path):
 
 
 def test_task_results_without_context():
-    assert task_results(None, None, None)["products"] == []
+    r = task_results(None, None, None)
+    assert r["products"] == [] and r["catalog"]  # the catalogue is still listed, all placeholders
+    assert all(c["files"] == [] for c in r["catalog"])
+
+
+def test_plot_catalog_lists_every_defined_plot_and_finds_files(tmp_path):
+    from fluxpype.plumber.monitor import STAGES
+    from fluxpype.plumber.plotcatalog import PLOTS
+
+    assert len({c["id"] for c in PLOTS}) == len(PLOTS)
+    assert {c["stage"] for c in PLOTS} <= {s[0] for s in STAGES}
+    assert any(c["legacy"] for c in PLOTS) and any(not c["legacy"] for c in PLOTS)
+    d = str(tmp_path)
+    b = os.path.join(d, "batches", "B")
+    t0 = time.time()
+    touch(os.path.join(b, "imgs", "bmag", "cr2225_f500_radial_bmag.png"), t0 + 5)
+    touch(os.path.join(b, "imgs", "bmag", "cr2225_f1000_radial_bmag.png"), t0 + 5)  # other fluxon count
+    touch(os.path.join(b, "imgs", "footpoints", "cr2225_f500_ou54_footpoints_topology.png"), t0 + 5)
+    ctx = ProbeContext(data_dir=d, batch="B", cr="2225", nflux="500", adapt="0", inst="hmi")
+    cat = {c["id"]: c for c in task_results(ctx, t0, t0 + 60)["catalog"]}
+    assert len(cat) == len(PLOTS)
+    assert [f["name"] for f in cat["bmag_scatter"]["files"]] == ["cr2225_f500_radial_bmag.png"]
+    assert cat["fieldmap_topology"]["n_files"] == 1 and cat["fieldmap_topology"]["files"][0]["origin"] == "made"
+    assert cat["wind_profiles_lines"]["files"] == [] and cat["wind_profiles_lines"]["n_files"] == 0
 
 
 # ------------------------------------------------------------------ API
