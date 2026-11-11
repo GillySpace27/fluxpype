@@ -99,3 +99,15 @@ export const useCache = () => useQuery({ queryKey: ["cache"], queryFn: () => api
 
 export const useTrash = () =>
   useQuery({ queryKey: ["trash"], queryFn: () => api.get<{ items: TrashItem[]; count: number; size: number }>("/api/cache/trash") });
+
+/** True on screens wide enough for a list and a preview side by side (Tailwind lg). */
+export function useWide(query = "(min-width: 1024px)"): boolean {
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && window.matchMedia(query).matches);
+  useEffect(() => {
+    const m = window.matchMedia(query);
+    const on = () => setWide(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, [query]);
+  return wide;
+}

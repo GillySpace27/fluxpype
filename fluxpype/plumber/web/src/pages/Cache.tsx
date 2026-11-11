@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Database, FlaskConical, Layers, RotateCcw, Search, Trash2, X } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Card, Checkbox, Dialog, EmptyState, ErrorNote, PageHeader, Skeleton, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -9,7 +9,8 @@ import { ago, bytes, kindLabel } from "../lib/format";
 import { useCache, useProfile, useStatus, useTrash } from "../lib/hooks";
 import type { CacheRecord, PresetScope } from "../lib/types";
 import { DataFolderBanner } from "../components/DataFolder";
-import { FileViewer } from "../components/FileViewer";
+import { FileViewer, useViewerMode } from "../components/FileViewer";
+import { useWide } from "../lib/hooks";
 
 const UNUSED = "__unused__";
 
@@ -110,6 +111,11 @@ export function CachePage() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [trashOpen, setTrashOpen] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
+  const [viewerMode, setViewerMode] = useViewerMode();
+  const wide = useWide();
+  useEffect(() => {
+    if (viewing !== null) document.querySelector(`[data-row="${viewing}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [viewing]);
   const [limit, setLimit] = useState(LIMIT);
   const [params, setParams] = useSearchParams();
   const presetName = params.get("preset") ?? undefined;
@@ -159,6 +165,24 @@ export function CachePage() {
   });
 
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
+  const viewer =
+    viewing !== null && data && rows[viewing] ? (
+      <FileViewer
+        records={rows}
+        index={viewing}
+        onIndex={(i) => {
+          setViewing(i);
+          if (i >= limit) setLimit(i + 1);
+        }}
+        onClose={() => setViewing(null)}
+        dataDir={data.data_dir}
+        usedBy={usedByOf}
+        mode={wide ? viewerMode : "popup"}
+        onMode={wide ? setViewerMode : undefined}
+        className="lg:sticky lg:top-4"
+      />
+    ) : null;
+  const inlineOpen = !!viewer && wide && viewerMode === "inline";
   const toggle = (r: CacheRecord) => setSel((s) => { const n = new Set(s); n.has(r.id) ? n.delete(r.id) : n.add(r.id); return n; });
   const allShown = shown.length > 0 && shown.every((r) => sel.has(r.id));
 
@@ -218,7 +242,8 @@ export function CachePage() {
               </button>
             </div>
           )}
-          <Card>
+          <div className={cn(inlineOpen && "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")}>
+          <Card className="min-w-0">
             <div className="flex flex-wrap items-center gap-3 border-b hair p-3">
               <div className="relative min-w-[180px] flex-1">
                 <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-faint" />
@@ -245,25 +270,27 @@ export function CachePage() {
               </button>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-[13px]">
+              <table className={cn("w-full text-[13px]", !inlineOpen && "min-w-[760px]")}>
                 <thead>
                   <tr className="border-b hair text-left">
                     <th className="w-10 px-3 py-2"><Checkbox checked={allShown} indeterminate={!allShown && sel.size > 0} label="Select all" onChange={() => setSel(allShown ? new Set() : new Set(shown.map((r) => r.id)))} /></th>
-                    {["File", "Type", "Rotation", "Used by", "Size", "Modified"].map((h) => <th key={h} className="label px-3 py-2 font-medium">{h}</th>)}
+                    {(inlineOpen ? ["File", "Type", "Rotation", "Size"] : ["File", "Type", "Rotation", "Used by", "Size", "Modified"]).map((h) => <th key={h} className="label px-3 py-2 font-medium">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {shown.map((r, i) => (
-                    <tr key={r.id} onClick={() => setViewing(i)} title="Preview" className={cn("cursor-pointer border-b border-line/40 last:border-0 hover:bg-raised/40", sel.has(r.id) && "bg-accent/5", viewing === i && "bg-raised/60")}>
+                    <tr key={r.id} data-row={i} onClick={() => setViewing(i)} title="Preview" className={cn("cursor-pointer border-b border-line/40 last:border-0 hover:bg-raised/40", sel.has(r.id) && "bg-accent/5", viewing === i && "bg-accent/10 shadow-[inset_2px_0_0_rgb(var(--accent))]")}>
                       <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}><Checkbox checked={sel.has(r.id)} label={r.name} onChange={() => toggle(r)} /></td>
-                      <td className="max-w-[360px] truncate px-3 py-2 font-mono text-xs" title={r.path}>{r.name}</td>
+                      <td className={cn("truncate px-3 py-2 font-mono text-xs", inlineOpen ? "max-w-[220px]" : "max-w-[360px]")} title={r.path}>{r.name}</td>
                       <td className="px-3 py-2"><Badge>{kindLabel[r.kind] ?? r.kind}</Badge></td>
                       <td className="num px-3 py-2 text-muted">{r.cr ? `CR ${r.cr}` : "-"}</td>
-                      <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                        <UsedBy presets={users.get(r.id) ?? []} />
-                      </td>
+                      {!inlineOpen && (
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <UsedBy presets={users.get(r.id) ?? []} />
+                        </td>
+                      )}
                       <td className="num px-3 py-2">{bytes(r.size)}</td>
-                      <td className="px-3 py-2 text-muted">{ago(r.mtime)}</td>
+                      {!inlineOpen && <td className="px-3 py-2 text-muted">{ago(r.mtime)}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -276,22 +303,12 @@ export function CachePage() {
               </div>
             )}
           </Card>
+          {inlineOpen && viewer}
+          </div>
         </>
       )}
       {trashOpen && <TrashDialog open={trashOpen} onOpenChange={setTrashOpen} />}
-      {viewing !== null && data && rows[viewing] && (
-        <FileViewer
-          records={rows}
-          index={viewing}
-          onIndex={(i) => {
-            setViewing(i);
-            if (i >= limit) setLimit(i + 1);
-          }}
-          onClose={() => setViewing(null)}
-          dataDir={data.data_dir}
-          usedBy={usedByOf}
-        />
-      )}
+      {viewing !== null && !inlineOpen && viewer}
       {node}
     </div>
   );
