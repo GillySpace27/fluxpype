@@ -2,10 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleDashed, Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/cn";
-import { ago, bytes, duration } from "../lib/format";
+import { duration } from "../lib/format";
 import { jobDataBase, useTaskResults } from "../lib/hooks";
 import type { CacheRecord, ResultFile, TaskState } from "../lib/types";
 import { FileViewer, fileUrl } from "./FileViewer";
+import { FileIcons, FileRows, ViewSwitch, useFileView } from "./FileBrowser";
 import { OriginTag, RelaxViews } from "./ResultsPane";
 import { useProgress } from "./StageTimeline";
 import { Badge, Card, StatusIcon } from "./ui";
@@ -24,7 +25,6 @@ const ABOUT: Record<string, string> = {
   fluxlight: "Renders FLUXlight images from the relaxed world.",
 };
 const PRODUCT: Record<string, string> = { relax: "relaxed_world" }; // stage id -> results product id (the rest match)
-const IMG = /\.(png|jpe?g|svg)$/i;
 const EMPTY: Record<string, string> = {
   pending: "Not reached yet.",
   running: "In progress; files appear here as the stage writes them.",
@@ -137,6 +137,7 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
   const base = jobDataBase(task.job_id);
   const [open, setOpen] = useState<number | null>(null);
   const [older, setOlder] = useState(false);
+  const [fmode, setFmode, fsize, setFsize] = useFileView("stage");
 
   const all: ResultFile[] = useMemo(() => {
     if (!data) return [];
@@ -151,8 +152,9 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
   const fits = stageId === "magnetogram" ? files.find((f) => /\.fits?$/i.test(f.name)) : undefined;
   const floc = stageId === "footpoints" ? files.find((f) => /^floc_.*\.dat$/i.test(f.name)) : undefined;
   const { data: pts } = useFootpoints(floc, base);
-  const images = files.filter((f) => IMG.test(f.name));
-  const others = files.filter((f) => !IMG.test(f.name));
+  // the world plots stage shows its images in RelaxViews above, so only its other files are listed here
+  const listed = stageId === "world_plots" ? files.filter((f) => !/\.(png|jpe?g|svg)$/i.test(f.name)) : files;
+  const listProps = { records: listed, active: open != null ? listed.indexOf(files[open]) : null, onOpen: (i: number) => setOpen(files.indexOf(listed[i])), tag: (f: ResultFile) => <OriginTag origin={f.origin} /> };
   const show = (f: ResultFile) => setOpen(files.indexOf(f));
 
   return (
@@ -214,32 +216,12 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
         )
       ) : (
           <div className="space-y-3">
-            {images.length > 0 && stageId !== "world_plots" && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                {images.map((f) => (
-                  <button key={f.path} onClick={() => show(f)} className="group overflow-hidden rounded-xl border border-line/80 bg-bg/50 text-left transition-colors hover:border-accent/50">
-                    <div className="grid aspect-[4/3] place-items-center overflow-hidden bg-black/40">
-                      <img src={fileUrl(f.path, false, base)} alt={f.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                    </div>
-                    <div className="space-y-1 px-2.5 py-2">
-                      <p className="truncate text-xs text-muted" title={f.path}>{f.name}</p>
-                      <OriginTag origin={f.origin} />
-                    </div>
-                  </button>
-                ))}
+            {listed.length > 0 && (
+              <div className="flex justify-end">
+                <ViewSwitch mode={fmode} onMode={setFmode} size={fsize} onSize={setFsize} />
               </div>
             )}
-            {others.length > 0 && (
-              <Card className="divide-y divide-line/60 p-1">
-                {others.map((f) => (
-                  <button key={f.path} onClick={() => show(f)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-3 py-1.5 text-left hover:bg-raised/60">
-                    <span className="min-w-0 truncate font-mono text-[12px]" title={f.path}>{f.name}</span>
-                    <OriginTag origin={f.origin} />
-                    <span className="num ml-auto text-[11.5px] text-faint">{bytes(f.size)} · {ago(f.mtime)}</span>
-                  </button>
-                ))}
-              </Card>
-            )}
+            {listed.length > 0 && (fmode === "icons" ? <FileIcons {...listProps} base={base} size={fsize} /> : <FileRows {...listProps} />)}
           </div>
       )}
       {hidden > 0 && (

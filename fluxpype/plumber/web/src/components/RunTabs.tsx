@@ -2,6 +2,7 @@ import type { CacheRecord, Job, JobFile, TaskRow } from "../lib/types";
 import { Badge, Banner, Card, Checkbox, EmptyState, ErrorNote, Skeleton, Switch, useConfirm, useToast } from "./ui";
 import { CircleDashed, Copy, FileX2, FolderOpen, Search, Trash2 } from "lucide-react";
 import { FileViewer, useViewerMode } from "./FileViewer";
+import { FileIcons, ViewSwitch, useFileView } from "./FileBrowser";
 import { Link } from "react-router-dom";
 import { OriginTag } from "./ResultsPane";
 import { ago, bytes, kindLabel } from "../lib/format";
@@ -118,6 +119,7 @@ export function RunFiles({ job, task }: { job: Job; task?: TaskRow }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<number | null>(null);
   const [mode, setMode] = useViewerMode();
+  const [fmode, setFmode, fsize, setFsize] = useFileView("runFiles");
   const wide = useWide();
   const rows: JobFile[] = useMemo(() => (data?.files ?? []).filter((f) => !onlyTask || !task || f.tasks.includes(task.id)), [data, onlyTask, task]);
   const missing = (data?.missing ?? []).filter((m) => !onlyTask || !task || m.task_id === task.id);
@@ -174,6 +176,12 @@ export function RunFiles({ job, task }: { job: Job; task?: TaskRow }) {
           </span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {fmode === "icons" && rows.length > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              <Checkbox checked={allSel} label="Select all" onChange={() => setSel(allSel ? new Set() : new Set(rows.map((f) => f.path)))} /> All
+            </span>
+          )}
+          <ViewSwitch mode={fmode} onMode={setFmode} size={fsize} onSize={setFsize} />
           {sel.size > 0 && (
             <button
               className="btn btn-sm btn-danger"
@@ -211,6 +219,21 @@ export function RunFiles({ job, task }: { job: Job; task?: TaskRow }) {
         </Card>
       )}
       <div className={cn(inline && "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]")}>
+        {fmode === "icons" ? (
+          <div>
+            <FileIcons
+              records={rows}
+              base={jobDataBase(job.id)}
+              size={fsize}
+              active={open}
+              onOpen={setOpen}
+              selected={sel}
+              onToggle={(f) => setSel((s) => { const n = new Set(s); n.has(f.path) ? n.delete(f.path) : n.add(f.path); return n; })}
+              tag={(f) => <OriginTag origin={f.origin} />}
+            />
+            {rows.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted">No files yet.</p>}
+          </div>
+        ) : (
         <Card className="overflow-x-auto">
           <table className={cn("w-full text-[13px]", !inline && "min-w-[680px]")}>
             <thead className="border-b hair bg-raised/40 text-left">
@@ -257,6 +280,7 @@ export function RunFiles({ job, task }: { job: Job; task?: TaskRow }) {
           </table>
           {rows.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted">No files yet.</p>}
         </Card>
+        )}
         {inline && viewer}
       </div>
       {open != null && !inline && viewer}

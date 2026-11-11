@@ -6,6 +6,7 @@ import { ago, bytes, duration, int, num } from "../lib/format";
 import { jobDataBase, useTaskResults, useWide } from "../lib/hooks";
 import type { CacheRecord, ResultFile, TaskState } from "../lib/types";
 import { FileViewer, fileUrl, useViewerMode } from "./FileViewer";
+import { FileIcons, FileRows, ViewSwitch, useFileView } from "./FileBrowser";
 import { Badge, Card, EmptyState, ErrorNote, SectionTitle, Skeleton } from "./ui";
 
 /** Why a product has no file, from its stage's status. */
@@ -16,8 +17,6 @@ const EMPTY: Record<string, string> = {
   failed: "stage failed",
   ok: "missing (the stage finished but no file matches)",
 };
-
-const IMG = /\.(png|jpe?g|svg)$/i;
 
 /** Where a file came from, judged by its clock against the task's run window. */
 export function OriginTag({ origin }: { origin: ResultFile["origin"] | undefined }) {
@@ -52,6 +51,7 @@ export function ResultsPane({ task }: { task: TaskState }) {
   const { data, error, refetch } = useTaskResults(task.id, live);
   const [open, setOpen] = useState<number | null>(null);
   const [mode, setMode] = useViewerMode();
+  const [fmode, setFmode, fsize, setFsize] = useFileView("results");
   const wide = useWide();
   const base = jobDataBase(task.job_id);
 
@@ -163,33 +163,23 @@ export function ResultsPane({ task }: { task: TaskState }) {
           title="Plots"
           hint="Other images and PDFs under this rotation's batch folder for this fluxon count."
           right={
-            <Link to={`/cache?cr=${task.cr}`} className="inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
-              <Database className="h-3.5 w-3.5" /> All files for CR {task.cr}
-            </Link>
+            <div className="flex items-center gap-3">
+              <ViewSwitch mode={fmode} onMode={setFmode} size={fsize} onSize={setFsize} />
+              <Link to={`/cache?cr=${task.cr}`} className="inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
+                <Database className="h-3.5 w-3.5" /> All files for CR {task.cr}
+              </Link>
+            </div>
           }
         />
         {data.plots.length === 0 ? (
           <EmptyState icon={<ImageOff className="h-5 w-5" />} title="No plots" body="Plots show up here as the pipeline writes them." />
         ) : (
-          <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3", !inline && "xl:grid-cols-4")}>
-            {data.plots.map((f) => (
-              <button key={f.path} onClick={() => show(f.path)} className={cn("group overflow-hidden rounded-xl border bg-bg/50 text-left transition-colors hover:border-accent/50", open != null && flat[open]?.path === f.path ? "border-accent/60" : "border-line/80")}>
-                <div className="grid aspect-[4/3] place-items-center overflow-hidden bg-black/40">
-                  {IMG.test(f.name) ? (
-                    <img src={fileUrl(f.path, false, base)} alt={f.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                  ) : (
-                    <span className="text-xs text-muted">PDF</span>
-                  )}
-                </div>
-                <div className="space-y-1 px-2.5 py-2">
-                  <p className="truncate text-xs text-muted" title={f.path}>
-                    {f.name}
-                  </p>
-                  <OriginTag origin={f.origin} />
-                </div>
-              </button>
-            ))}
-          </div>
+          (() => {
+            const act = open != null ? data.plots.findIndex((p) => p.path === flat[open]?.path) : -1;
+            // act is -1 while a product is open: no tile highlighted, arrow keys stay with the viewer
+            const props = { records: data.plots, active: open != null ? act : null, onOpen: (i: number) => show(data.plots[i].path), tag: (f: ResultFile) => <OriginTag origin={f.origin} /> };
+            return fmode === "icons" ? <FileIcons {...props} base={base} size={fsize} /> : <FileRows {...props} />;
+          })()
         )}
       </section>
     </div>

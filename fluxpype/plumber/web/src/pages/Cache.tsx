@@ -10,6 +10,7 @@ import { useCache, useProfile, useStatus, useTrash } from "../lib/hooks";
 import type { CacheRecord, PresetScope } from "../lib/types";
 import { DataFolderBanner } from "../components/DataFolder";
 import { FileViewer, useViewerMode } from "../components/FileViewer";
+import { FileIcons, ViewSwitch, useFileView } from "../components/FileBrowser";
 import { useWide } from "../lib/hooks";
 
 const UNUSED = "__unused__";
@@ -112,6 +113,7 @@ export function CachePage() {
   const [trashOpen, setTrashOpen] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
   const [viewerMode, setViewerMode] = useViewerMode();
+  const [fmode, setFmode, fsize, setFsize] = useFileView("cache");
   const wide = useWide();
   useEffect(() => {
     if (viewing !== null) document.querySelector(`[data-row="${viewing}"]`)?.scrollIntoView({ block: "nearest" });
@@ -264,11 +266,25 @@ export function CachePage() {
                 </optgroup>
               </select>
               <span className="num text-xs text-muted">Click a file to preview it · {rows.length} of {data.total_count} files · {bytes(data.total_size)} total</span>
+              <div className="flex items-center gap-2">
+              {fmode === "icons" && (
+                <span className="flex items-center gap-1.5 text-xs text-muted">
+                  <Checkbox checked={allShown} indeterminate={!allShown && sel.size > 0} label="Select all" onChange={() => setSel(allShown ? new Set() : new Set(shown.map((r) => r.id)))} /> All
+                </span>
+              )}
+              <ViewSwitch mode={fmode} onMode={setFmode} size={fsize} onSize={setFsize} />
+              </div>
               <button className="btn btn-danger btn-sm" disabled={!sel.size}
                 onClick={async () => { if (await ask({ title: `Move ${sel.size} item(s) to the trash?`, body: `${bytes(selSize)} will be moved aside. Nothing is deleted until you empty the trash, and you can restore it first.`, confirm: "Move to trash", danger: true })) trash.mutate([...sel].map((id) => byId.get(id)!.path)); }}>
                 <Trash2 className="h-3.5 w-3.5" /> Trash {sel.size || ""}
               </button>
             </div>
+            {fmode === "icons" ? (
+              <div className="p-3">
+                <FileIcons records={shown} size={fsize} active={viewing} onOpen={setViewing} idOf={(r) => r.id} selected={sel} onToggle={toggle} tag={(r) => <Badge>{kindLabel[r.kind] ?? r.kind}{r.cr ? ` · CR ${r.cr}` : ""}</Badge>} />
+                {rows.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-muted">No files match this filter.</p>}
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className={cn("w-full text-[13px]", !inlineOpen && "min-w-[760px]")}>
                 <thead>
@@ -297,6 +313,7 @@ export function CachePage() {
               </table>
               {rows.length === 0 && <p className="px-4 py-8 text-center text-[13px] text-muted">No files match this filter.</p>}
             </div>
+            )}
             {rows.length > shown.length && (
               <div className="border-t hair p-3 text-center">
                 <button className="btn btn-sm" onClick={() => setLimit(limit + LIMIT)}>Show {Math.min(LIMIT, rows.length - shown.length)} more</button>
