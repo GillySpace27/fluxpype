@@ -13,6 +13,8 @@ from fluxpype.science.thomson_scattering_flux import simulate_thomson_scattering
 from sunkit_image.radial import rhef
 from sunpy.map import Map
 
+from fluxpype.events import emit as emit_event
+
 
 def keynote_figs():
     matplotlib.rcParams["lines.color"] = "white"
@@ -231,6 +233,7 @@ def quadplot(results, save=True):
         lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}.png"
         print(lightpath)
         plt.savefig(lightpath)
+        emit_event("artifact", path=str(lightpath), kind="image")
         plt.close(fig)
     else:
         plt.show()
@@ -296,6 +299,7 @@ def triplot(results, fov_crop=None, save=True):
         lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}_{fov_crop}_{results["influence_length"].to_value()}.png"
         print(lightpath)
         plt.savefig(lightpath, dpi=250)
+        emit_event("artifact", path=str(lightpath), kind="image")
         plt.close(fig)
     else:
         plt.show()

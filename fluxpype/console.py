@@ -5,6 +5,7 @@ Provides Rich-colored output to the terminal and a plain-text log file
 for each run. All output (Python and subprocess) is teed to both.
 """
 
+import os
 import re
 from contextlib import contextmanager
 from datetime import datetime
@@ -31,6 +32,7 @@ def init_log(batch_name: str = "run") -> Path:
 
     Creates fluxpype/logs/ if needed and opens a timestamped log file.
     Format: fluxpype_YYYY-MM-DD_HH-MM-SS_{batch_name}.log
+    (unless FLUXPYPE_LOG_FILE is set, which is then opened in append mode instead).
 
     Returns
     -------
@@ -40,6 +42,14 @@ def init_log(batch_name: str = "run") -> Path:
     global _log_file
     if _log_file is not None:
         return Path(_log_file.name)
+
+    # FLUXPYPE_LOG_FILE (set by flux-plumb) names the log explicitly; append, never clobber
+    override = os.environ.get("FLUXPYPE_LOG_FILE")
+    if override:
+        log_path = Path(override).expanduser()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        _log_file = open(log_path, "a", encoding="utf-8")
+        return log_path
 
     # logs dir: fluxpype/logs (project root)
     package_dir = Path(__file__).parent

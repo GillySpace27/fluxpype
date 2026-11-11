@@ -60,6 +60,7 @@ use lib "$FindBin::Bin/../plotting";  # Adds the neighbor's directory
 use lib "$FindBin::Bin/../..";  # Adds the grandparent directory
 
 
+BEGIN { eval { require fluxpype::events; fluxpype::events->import; 1 } or eval 'sub emit_event {} sub stage_start {} sub stage_end {} sub stage_skipped {} sub stage_detail {} 1'; }  # progress events (no-op unless FLUXPYPE_EVENTS)
 use Term::ANSIColor;
 print color("magenta");
 
@@ -220,6 +221,7 @@ my $very_beginning = clock_gettime();
 print color("reset");
 print "\n\n\n";
 #### BEGIN ##################################################################
+stage_skipped("wind_only", qw(magnetogram footpoints pfss world relax world_plots fieldmap)) if $wind_only;
 if (1-$wind_only){
 
 #######################################################################################################
@@ -235,7 +237,9 @@ if (1-$wind_only){
     # print $mag_command . "\n\n\n";
 
 
+    stage_start("magnetogram");
     system($mag_command) == 0 or die "get_magnetograms.py failed (status $?)\n";
+    stage_end("magnetogram");
 
 #######################################################################################################
 ## Process the Magnetogram ## Find the Root Points ####################################################
@@ -247,8 +251,11 @@ if (1-$wind_only){
     $configs{force_process_magnetogram} = $force_process_magnetogram;
 
     # Retrieve the Footpoints using the Hilbert method
+    stage_start("footpoints");
     my $N_actual =
       get_hilbert_footpoints::get_hilbert_footpoints( %configs );
+    stage_end("footpoints");
+    emit_event("metric", { name => "n_actual", value => $N_actual, unit => "fluxons" });
 
 #######################################################################################################
 ## Run the Python PFSS Code ## Trace the Footpoints into the Corona ###################################
@@ -265,8 +272,10 @@ if (1-$wind_only){
     # print "Running the following command: \n $pfss_command";
 
     # print $pfss_command;
+    stage_start("pfss");
     system($pfss_command) == 0
       or die "get_pfss.py failed (status $?)\n";
+    stage_end("pfss");
 
     # print "3  " . $configs{'magpath'} . "\n\n";
 
@@ -275,11 +284,13 @@ if (1-$wind_only){
 #######################################################################################################
     my $force_make_world = 0;
 
+    stage_start("world");
     ( $open_file, $closed_file, $world_out_path ) = make_world_from_pfss(
         $datdir,           $batch_name, $CR,               $reduction,
         $n_fluxons_wanted, $adapt,      $force_make_world, $lim,
         $lim2,             \%configs,
     );
+    stage_end("world");
 #######################################################################################################
 ## Relax the initial world state ##Use the FLUX Code ##################################################
 #######################################################################################################
@@ -293,6 +304,7 @@ if (1-$wind_only){
       $world_out_dir . 'cr' . $CR . "_f$n_fluxons_wanted\_$inst.flux";
     our $this_world_orig;
 
+    stage_start("relax");
     ($this_world_orig, $this_world_relaxed, my $stepnum ) =
       relax_pfss_world(
         $world_out_dir, $full_world_path,  $do_relax,
@@ -300,11 +312,13 @@ if (1-$wind_only){
         $logfile,       $n_fluxons_wanted, $N_actual,
         $datdir,        $batch_name,       $CR
       );
+    stage_end("relax");
 
 #######################################################################################################
 ## Plot the world states  #############################################################################
 #######################################################################################################
 
+    stage_start("world_plots");
     plot_worlds(
         $this_world_orig,  $this_world_relaxed, $do_interactive,
         $do_png,           $full_world_path,    $datdir,
@@ -312,6 +326,7 @@ if (1-$wind_only){
         $n_fluxons_wanted, $lim,                $lim2,
         $stepnum
     );
+    stage_end("world_plots");
 
 
 
@@ -320,7 +335,9 @@ my $fmap_command =
 "python $FindBin::RealBin/../plotting/plot_fieldmap.py --cr $CR --open $open_file"
   . " --closed $closed_file --nwant $n_fluxons_wanted --adapt $adapt";
 #   print $fmap_command;
+stage_start("fieldmap");
 system($fmap_command) == 0 or die "plot_fieldmap.py failed (status $?)\n";
+stage_end("fieldmap");
 
 
 }  # End of the if (0) block
@@ -339,6 +356,7 @@ if (1){
 
 
 
+  stage_start("wind");
   ($this_world_relaxed, $this_world_orig, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
   our $use_world = 0;
@@ -356,6 +374,7 @@ if (1){
 
   ( $out_b, $out_fr, $out_wind, $out_b_all ) =
     get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
+  stage_end("wind");
 
 
 }
@@ -436,7 +455,9 @@ sub run_all_plots {
 
 # Execute all plotting commands
 if (1){
+stage_start("wind_plots");
 run_all_plots();
+stage_end("wind_plots");
 }
 
   print color("bright_cyan");
@@ -451,8 +472,11 @@ run_all_plots();
 
 if ($configs{light}){
   our $sci_dir;
+  stage_start("fluxlight");
   run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
+  stage_end("fluxlight");
 }
+stage_skipped("light=0", "fluxlight") unless $configs{light};
 
 
 

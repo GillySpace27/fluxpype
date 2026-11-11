@@ -21,12 +21,18 @@ import subprocess
 import os
 import sys
 import argparse
+import json
 import logging
+import queue
+import signal
+import socket
+import threading
+import time
 from tqdm import tqdm
 from rich.panel import Panel
 from rich.console import Console
-import timeout_decorator
 
+from fluxpype.events import emit as emit_event
 from fluxpype.console import (
     init_log,
     close_log,
@@ -35,7 +41,15 @@ from fluxpype.console import (
     write_to_log,
 )
 
-os.nice(16)
+# Capabilities advertised by `flux-config-run --capabilities` (the plumber probes this
+# before submitting, so an older install cannot silently run a whole profile).
+FEATURES = ["only", "events", "config_file", "log_file", "task_timeout"]
+
+# Default per-task wall-clock limit in seconds; override with FLUXPYPE_TASK_TIMEOUT.
+DEFAULT_TASK_TIMEOUT = 2000
+
+# Exit code used when a task hit its time limit (same as coreutils `timeout`).
+EXIT_TIMEOUT = 124
 
 # Repo checkout holding the fluxpype package; children run from here so relative paths resolve.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -146,8 +160,91 @@ def _check_pdl_available():
     return False, msg
 
 
-@timeout_decorator.timeout(2000)
+class TaskTimeout(Exception):
+    """A pipeline task exceeded its wall-clock limit and was killed."""
+
+
+def _task_timeout():
+    """Per-task time limit in seconds (FLUXPYPE_TASK_TIMEOUT, default 2000)."""
+    try:
+        value = float(os.environ.get("FLUXPYPE_TASK_TIMEOUT", DEFAULT_TASK_TIMEOUT))
+    except ValueError:
+        return float(DEFAULT_TASK_TIMEOUT)
+    return value if value > 0 else float(DEFAULT_TASK_TIMEOUT)
+
+
+def _fluxpype_sha():
+    """Best-effort git sha of the checkout, None on any failure."""
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=5
+        )
+        return r.stdout.strip() or None if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _kill_group(pgid, grace=10.0, proc=None):
+    """SIGTERM a process group, wait up to `grace` seconds, then SIGKILL it."""
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if proc is not None:
+            if proc.poll() is not None:
+                break
+        else:
+            try:
+                os.killpg(pgid, 0)
+            except ProcessLookupError:
+                return
+        time.sleep(0.1)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def run_pdl_script(rotation, fluxon_count, adaptation, method):
+    """
+    Run one pipeline task and report it as `run.start` / `run.end` events.
+
+    Thin wrapper around :func:`_run_pdl_script`; the events are no-ops unless
+    FLUXPYPE_EVENTS is set.
+    """
+    from fluxpype.pipe_helper import configurations
+
+    profile = os.environ.get("FLUXPYPE_CONFIG")
+    if profile is None and os.environ.get("FLUXPYPE_EVENTS"):
+        profile = configurations(debug=False).get("config_name")
+    emit_event(
+        "run.start",
+        cr=str(rotation),
+        nflux=str(fluxon_count),
+        adapt=str(adaptation),
+        method=str(method),
+        profile=profile,
+        host=socket.gethostname(),
+        fluxpype_sha=_fluxpype_sha() if os.environ.get("FLUXPYPE_EVENTS") else None,
+    )
+    t0 = time.time()
+    try:
+        _run_pdl_script(rotation, fluxon_count, adaptation, method)
+    except TaskTimeout:
+        emit_event("run.end", status="timeout", exit_code=EXIT_TIMEOUT, elapsed_s=round(time.time() - t0, 2))
+        raise
+    except Exception as e:
+        code = getattr(e, "returncode", None)
+        emit_event(
+            "run.end", status="failed", exit_code=code if code is not None else 1, elapsed_s=round(time.time() - t0, 2)
+        )
+        raise
+    emit_event("run.end", status="ok", exit_code=0, elapsed_s=round(time.time() - t0, 2))
+
+
+def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     """
     Executes the specified PDL script with given parameters.
     Streams all output (Perl and Python subprocesses) to console and log.
@@ -223,6 +320,8 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
 
     emit(f"\nExecuting: {' '.join(command)}\n", style="dim")
 
+    # Own session so a timeout (or a cancel from the plumber) can kill Perl and every
+    # forked Flux daughter together.
     proc = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -231,12 +330,45 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
         bufsize=1,
         env=env,
         cwd=REPO_ROOT,
+        start_new_session=True,
     )
+    pgid = proc.pid
+    lines = queue.Queue()
+
+    def _reader():
+        try:
+            for line in proc.stdout:
+                lines.put(line)
+        finally:
+            lines.put(None)
+
+    threading.Thread(target=_reader, daemon=True).start()
+
     out_lines = []
-    for line in proc.stdout:
-        out_lines.append(line)
-        emit_raw(line)
-    proc.wait()
+    deadline = time.monotonic() + _task_timeout()
+    timed_out = False
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                timed_out = True
+                break
+            try:
+                line = lines.get(timeout=min(remaining, 1.0))
+            except queue.Empty:
+                continue
+            if line is None:
+                break
+            out_lines.append(line)
+            emit_raw(line)
+        if timed_out:
+            _kill_group(pgid, proc=proc)
+            proc.wait()
+            raise TaskTimeout(f"timed out after {_task_timeout():g} s")
+        proc.wait()
+    finally:
+        # also reached on Ctrl-C or SIGTERM of this process: never orphan Flux daughters
+        _kill_group(pgid, grace=0.5, proc=proc) if proc.poll() is None else _reap_group(pgid)
     if proc.returncode != 0:
         emit(f"PDL script failed with exit code {proc.returncode}", style="red")
         out_text = "".join(out_lines)
@@ -247,6 +379,14 @@ def run_pdl_script(rotation, fluxon_count, adaptation, method):
                 style="yellow",
             )
         raise subprocess.CalledProcessError(proc.returncode, command)
+
+
+def _reap_group(pgid):
+    """Kill stragglers left in a finished task's process group (forked daughters)."""
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 def view():
     # Import configurations
@@ -354,22 +494,88 @@ def open_path_linux(path):
     subprocess.call(["xdg-open", path])
 
 
+def _capabilities():
+    """The JSON document printed by `--capabilities`."""
+    try:
+        from importlib.metadata import version
+
+        ver = version("fluxpype")
+    except Exception:
+        ver = "unknown"
+    return {"version": ver, "features": list(FEATURES)}
+
+
+def _parse_only(text):
+    """Split `CR,NFLUX,ADAPT,METHOD` into four stripped strings."""
+    parts = [p.strip() for p in str(text).split(",")]
+    if len(parts) != 4 or not all(parts):
+        raise ValueError(f"--only expects CR,NFLUX,ADAPT,METHOD (got {text!r})")
+    return parts
+
+
+def select_tasks(configs, only=None):
+    """
+    Expand a profile into its (adapt, rotation, fluxon_count, method) task list,
+    in the order the runner executes them. With `only`, return just that task
+    (validated against the profile's lists).
+    """
+    tasks = [
+        (adaptation, rotation, fluxon_count, method)
+        for adaptation in configs["adapts"]
+        for rotation in configs["rotations"]
+        for fluxon_count in configs["fluxon_count"]
+        for method in configs["flow_method"]
+    ]
+    if only is None:
+        return tasks
+    cr, nflux, adapt, method = _parse_only(only)
+    wanted = (adapt.casefold(), cr, nflux, method.casefold())
+    for task in tasks:
+        if (str(task[0]).casefold(), str(task[1]), str(task[2]), str(task[3]).casefold()) == wanted:
+            return [task]
+    raise ValueError(f"--only {only!r} is not in this profile's task list")
+
+
+def _raise_on_sigterm(signum, frame):
+    # lets the `finally` blocks run, so a cancelled task never orphans Perl or Flux daughters
+    raise SystemExit(128 + signum)
+
+
 def run(argv=None):
     """
     Executes the PDL script for all combinations of configurations.
     Initializes a log file and tees all output (Python + Perl) to it.
 
     Exits nonzero if any job failed or timed out, so shells, batch scripts
-    and grid schedulers can tell a failed run from a good one.
+    and grid schedulers can tell a failed run from a good one: 1 for failures,
+    124 when the only failures were timeouts.
     """
     parser = argparse.ArgumentParser(prog="flux-config-run")
     parser.add_argument(
         "--config", help="config.ini profile to run (overrides config_name in the file)"
     )
+    parser.add_argument(
+        "--only",
+        metavar="CR,NFLUX,ADAPT,METHOD",
+        help="run exactly this one task of the profile",
+    )
+    parser.add_argument(
+        "--capabilities", action="store_true", help="print supported features as JSON and exit"
+    )
     args, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
+    if args.capabilities:
+        print(json.dumps(_capabilities()))
+        return
     if args.config:
         # every subprocess (Python and Perl) re-reads config.ini; this is how they agree
         os.environ["FLUXPYPE_CONFIG"] = args.config
+
+    try:
+        os.nice(16)
+    except OSError:
+        pass
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGTERM, _raise_on_sigterm)
 
     from fluxpype.pipe_helper import configurations
     configs = configurations(debug=False)
@@ -384,32 +590,30 @@ def run(argv=None):
     display_splash_screen(configs, log_path=log_path)
     validate_configurations(configs)
 
-    total_jobs = (
-        len(configs["rotations"])
-        * len(configs["fluxon_count"])
-        * len(configs["adapts"])
-        * len(configs["flow_method"])
-    )
+    try:
+        tasks = select_tasks(configs, args.only)
+    except ValueError as e:
+        emit(f"Error: {e}", style="red")
+        close_log()
+        sys.exit(2)
+    total_jobs = len(tasks)
     try:
         with tqdm(
             total=total_jobs, unit="runs", colour="green", desc="Processing"
         ) as progress_bar:
-            for adaptation in configs["adapts"]:
-                for rotation in configs["rotations"]:
-                    for fluxon_count in configs["fluxon_count"]:
-                        for method in configs["flow_method"]:
-                            job = f"Rotation {rotation}, Fluxon {fluxon_count}, Adapt {adaptation}, Method {method}"
-                            progress_bar.set_description(job)
-                            try:
-                                run_pdl_script(rotation, fluxon_count, adaptation, method)
-                            except timeout_decorator.TimeoutError:
-                                timeout_count += 1
-                                failures.append(f"{job}: timeout")
-                                emit(f"Timeout: {job}", style="yellow")
-                            except Exception as e:
-                                failures.append(f"{job}: {e}")
-                                emit(f"Error: {job}: {e}", style="red")
-                            progress_bar.update(1)
+            for adaptation, rotation, fluxon_count, method in tasks:
+                job = f"Rotation {rotation}, Fluxon {fluxon_count}, Adapt {adaptation}, Method {method}"
+                progress_bar.set_description(job)
+                try:
+                    run_pdl_script(rotation, fluxon_count, adaptation, method)
+                except TaskTimeout:
+                    timeout_count += 1
+                    failures.append(f"{job}: timeout")
+                    emit(f"Timeout: {job}", style="yellow")
+                except Exception as e:
+                    failures.append(f"{job}: {e}")
+                    emit(f"Error: {job}: {e}", style="red")
+                progress_bar.update(1)
         emit(f"Total timeouts: {timeout_count}", style="bold")
         if failures:
             emit(f"FAILED {len(failures)} of {total_jobs} jobs:", style="bold red")
@@ -420,7 +624,7 @@ def run(argv=None):
     finally:
         close_log()
     if failures:
-        sys.exit(1)
+        sys.exit(EXIT_TIMEOUT if timeout_count == len(failures) else 1)
 
 
 if __name__ == "__main__":

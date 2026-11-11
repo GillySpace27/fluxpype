@@ -1,0 +1,164 @@
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ tokens (space separated RGB) */
+:root,
+[data-theme="dark"] {
+  --bg: 10 12 17;
+  --surface: 17 20 27;
+  --raised: 23 27 36;
+  --line: 36 41 54;
+  --ink: 232 234 240;
+  --muted: 147 155 173;
+  --faint: 96 105 126;
+  --accent: 255 159 67;
+  --accent-ink: 24 14 4;
+  --run: 245 185 66;
+  --ok: 52 211 153;
+  --fail: 251 113 133;
+  --info: 167 139 250;
+  --skip: 100 116 139;
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --bg: 245 246 249;
+  --surface: 255 255 255;
+  --raised: 243 244 248;
+  --line: 224 228 237;
+  --ink: 20 24 36;
+  --muted: 95 104 124;
+  --faint: 139 147 165;
+  --accent: 224 112 20;
+  --accent-ink: 255 255 255;
+  --run: 196 130 8;
+  --ok: 5 150 105;
+  --fail: 225 29 72;
+  --info: 109 78 220;
+  --skip: 100 116 139;
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    font-size: 14px;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: "cv11", "ss03", "tnum";
+    letter-spacing: -0.003em;
+    min-height: 100vh;
+    background-image: radial-gradient(900px 420px at 12% -8%, rgb(var(--accent) / 0.07), transparent 70%),
+      radial-gradient(700px 400px at 100% 0%, rgb(var(--info) / 0.05), transparent 70%);
+    background-attachment: fixed;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-semibold tracking-tight;
+  }
+  ::selection {
+    background: rgb(var(--accent) / 0.3);
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent/60 ring-offset-0;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line)) transparent;
+  }
+  code,
+  kbd,
+  pre {
+    @apply font-mono;
+  }
+}
+
+@layer components {
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum", "zero";
+  }
+  .card {
+    @apply rounded-xl border border-line/80 bg-surface shadow-card;
+  }
+  .label {
+    @apply text-[11px] font-medium uppercase tracking-[0.08em] text-faint;
+  }
+  .hair {
+    @apply border-line/70;
+  }
+  .btn {
+    @apply inline-flex h-8 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-line bg-raised px-3 text-[13px] font-medium text-ink transition-colors hover:border-faint/60 hover:bg-raised/60 disabled:pointer-events-none disabled:opacity-45;
+  }
+  .btn-primary {
+    @apply border-transparent bg-accent text-accent-ink hover:bg-accent/90 hover:border-transparent;
+    box-shadow: 0 6px 18px -8px rgb(var(--accent) / 0.7);
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-muted hover:bg-raised hover:text-ink;
+  }
+  .btn-danger {
+    @apply border-fail/30 bg-fail/10 text-fail hover:bg-fail/15 hover:border-fail/50;
+  }
+  .btn-icon {
+    @apply w-8 px-0;
+  }
+  .btn-sm {
+    @apply h-7 px-2.5 text-xs;
+  }
+  .input {
+    @apply h-8 w-full rounded-lg border border-line bg-bg/60 px-2.5 text-[13px] text-ink placeholder:text-faint transition-colors hover:border-faint/50 focus:border-accent/60 focus:outline-none;
+  }
+  .kbd {
+    @apply rounded border border-line bg-raised px-1 py-px text-[10px] text-muted;
+  }
+}
+
+/* log pane: keep long lines on one row, the pane scrolls sideways */
+.logline {
+  white-space: pre;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+/* uPlot theming through our tokens */
+.uplot,
+.uplot * {
+  box-sizing: border-box;
+}
+.u-legend {
+  display: none;
+}
+.u-cursor-pt {
+  border-radius: 9999px;
+}
+.u-select {
+  background: rgb(var(--accent) / 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -303,6 +303,12 @@ sub find_project_root {
 }
 
 sub find_config_file {
+    # FLUXPYPE_CONFIG_FILE (a per-job snapshot made by flux-plumb) wins when set
+    if (defined $ENV{FLUXPYPE_CONFIG_FILE} && length $ENV{FLUXPYPE_CONFIG_FILE}) {
+        my $override = expand_home_dir($ENV{FLUXPYPE_CONFIG_FILE});
+        return $override if -e $override;
+        die "FLUXPYPE_CONFIG_FILE points to a missing file: $override";
+    }
     my $config_filename = "config.ini";
 
     # Locate the project root dynamically
