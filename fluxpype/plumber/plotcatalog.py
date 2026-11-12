@@ -492,7 +492,8 @@ _HOC: Dict[str, Dict[str, Any]] = {
     "wind_profiles_filled": _WIND_SOL,
     "light_triplot": dict(
         timeout_s=3600,
-        command=["{python}", "{science}/fluxlight.py", "{in_world}"],
+        settings="light",  # plotrun.SETTINGS; --force because fluxlight.py caches its result by world file, not by settings
+        command=["{python}", "{science}/fluxlight.py", "{in_world}", "--force"],
         needs={"world": _WR},
         command_ref=f"{_PDL}:360,476",
         overwrite_risk=_NAME_RISK.replace("figure or its input name", "figure name"),

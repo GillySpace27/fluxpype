@@ -225,8 +225,9 @@ class Scheduler:
         backend: str = None,
         tasks: Optional[List[List[str]]] = None,
         extra: Optional[Dict[str, str]] = None,
+        base_text: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Snapshot the config, expand the profile into tasks and queue them."""
+        """Snapshot the config (`base_text`, else the preset file as it is now), expand the profile into tasks and queue them."""
         backend = backend or self.active_backend
         if backend not in self.backends:
             raise SchedulerError(f"unknown backend {backend!r}")
@@ -241,7 +242,7 @@ class Scheduler:
                 + ", ".join(missing)
                 + "); update fluxpype"
             )
-        text = self.config_text()
+        text = base_text or self.config_text()
         cf = config_io.parse(text)
         if profile not in cf.sections:
             raise SchedulerError(f"unknown profile {profile!r}")
@@ -723,6 +724,64 @@ class Scheduler:
     def plot_run_dir(self, task_id: str, rid: str) -> str:
         return self._plot_dir(task_id, rid)
 
+    def rerun_options(self, task_id: str) -> Dict[str, Any]:
+        """For the two regenerate panels: each editable setting with the value this job ran with, and whether it can run now."""
+        from . import plotrun
+        from .plotcatalog import PLOTS
+
+        with self.lock:
+            t = self.store.get_task(task_id)
+            if not t:
+                raise SchedulerError("no such task")
+            job = self.store.get_job(t["job_id"])
+            ctx = self.probe_context(t)
+            if ctx is None:
+                raise SchedulerError("the job's configuration snapshot is unreadable")
+            eff = config_io.read_file(job["snapshot_path"]).effective(job["profile"])
+            _, missing = plotrun.resolve_needs(next(e for e in PLOTS if e["id"] == "light_triplot"), ctx)
+        out: Dict[str, Any] = {}
+        for group, fields in plotrun.SETTINGS.items():
+            rows = []
+            for f in fields:
+                cur = t["method"] if f["key"] == "flow_method" else config_io.resolve(eff, f["key"])
+                rows.append({**f, "value": (cur or "").strip().strip('"[]') or f["default"]})
+            out[group] = {"fields": rows, "can": not missing, "missing": missing}
+        return out
+
+    def rerun_wind(self, task_id: str, settings: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Queue a new job that redoes only the wind and wind plots of a finished task, in the same batch.
+
+        It runs the job's own frozen config with wind_only=1 (the pipeline's way of skipping everything before wind) and
+        light=0; the earlier stages' files are read, not rebuilt. The old wind files of the same method are replaced."""
+        from . import plotrun
+        from .plotcatalog import PLOTS
+
+        clean = plotrun.clean_settings("wind", settings)
+        with self.lock:
+            t = self.store.get_task(task_id)
+            if not t:
+                raise SchedulerError("no such task")
+            if t["status"] not in FINISHED:
+                raise SchedulerConflict("the task has not finished")
+            job = self.store.get_job(t["job_id"])
+            ctx = self.probe_context(t)
+            if ctx is None:
+                raise SchedulerError("the job's configuration snapshot is unreadable")
+            _, missing = plotrun.resolve_needs(next(e for e in PLOTS if e["id"] == "light_triplot"), ctx)
+            if missing:
+                raise SchedulerError("the relaxed world this wind is made from is missing: " + ", ".join(missing))
+            with open(job["snapshot_path"], encoding="utf-8") as f:
+                text = f.read()
+        method = clean.get("flow_method", "").strip("[]") or t["method"]
+        extra = {k: v for k, v in job["extra"].items() if k == "speed"}
+        extra["from_task"] = task_id
+        # set_value adds a key the profile lacks; the overrides argument only accepts keys it already has
+        for k, v in {"wind_only": "1", "light": "0", **clean}.items():
+            text = config_io.set_value(text, job["profile"], k, v)
+        return self.create_job(
+            job["profile"], {}, job["backend"], [[t["cr"], t["nflux"], t["adapt"], method]], extra, base_text=text
+        )
+
     def cancel_plot_run(self, task_id: str, rid: str) -> Dict[str, Any]:
         d = self._plot_dir(task_id, rid)
         job = self.store.get_job(self.store.get_task(task_id)["job_id"])
@@ -757,8 +816,11 @@ class Scheduler:
         overwrite: bool = False,
         dry_run: bool = False,
         include_legacy: bool = False,
+        settings: Optional[Dict[str, str]] = None,
     ):
-        """Remake plots of a finished task from the files on disk. Never changes the task's or job's status."""
+        """Remake plots of a finished task from the files on disk. Never changes the task's or job's status.
+
+        `settings` (plotrun.SETTINGS) are written into this run's own copy of the job's config, so the job's snapshot stays as it ran."""
         from . import plotrun
         from .plotcatalog import PLOTS
 
@@ -798,6 +860,10 @@ class Scheduler:
                 if not ids:
                     raise SchedulerError("nothing to generate")
                 items = plotrun.plan(ctx, ids, backend.python)
+                groups = {by_id[i].get("settings") for i in ids}
+                if settings and (len(groups) != 1 or None in groups):
+                    raise plotrun.PlotRunError("these plots take no settings")
+                clean = plotrun.clean_settings(groups.pop(), settings) if settings else {}
             except plotrun.PlotRunError as e:
                 raise SchedulerError(str(e)) from e
             later = {i: plotrun.generatable(by_id[i], ctx, t["ended"])["inputs_later"] for i in ids}
@@ -839,6 +905,8 @@ class Scheduler:
                 ("flow_method", t["method"]),
             ):
                 snap_text = config_io.set_value(snap_text, job["profile"], k, f"[{v}]")
+            for k, v in clean.items():
+                snap_text = config_io.set_value(snap_text, job["profile"], k, v)
             snap = os.path.join(d, "config.snapshot.ini")
             with open(snap, "w", encoding="utf-8") as f:
                 f.write(snap_text)
@@ -848,6 +916,7 @@ class Scheduler:
                 "job_id": t["job_id"],
                 "plots": ids,
                 "overwrite": bool(overwrite),
+                "settings": {k: v.strip('"[]') for k, v in clean.items()},  # as shown to the user
                 "fake": fake,
                 "python": backend.python,
                 "created": time.time(),

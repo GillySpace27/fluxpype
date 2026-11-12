@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import config_io, paths
+from . import config_io, paths, plotrun
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
@@ -89,12 +89,17 @@ class JobIn(BaseModel):
     speed: Optional[float] = None  # fake backend only
 
 
+class RerunWindIn(BaseModel):
+    settings: Dict[str, str] = Field(default_factory=dict)
+
+
 class PlotRunIn(BaseModel):
     plots: Union[List[str], Literal["all_possible"]]
     stage: Optional[str] = None
     overwrite: bool = False
     dry_run: bool = False
     include_legacy: bool = False
+    settings: Dict[str, str] = Field(default_factory=dict)  # plotrun.SETTINGS keys, for plots that take them
 
 
 class QueueIn(BaseModel):
@@ -962,7 +967,7 @@ def create_app(
             raise HTTPException(404, "unknown task")
         try:
             res = sched.start_plot_run(
-                task_id, body.plots, body.stage, body.overwrite, body.dry_run, body.include_legacy
+                task_id, body.plots, body.stage, body.overwrite, body.dry_run, body.include_legacy, body.settings
             )
         except SchedulerConflict as e:
             fail(e, 409)
@@ -971,6 +976,28 @@ def create_app(
         if body.dry_run:
             return reply({"plan": res})
         return reply(res, 201)
+
+    @app.get("/api/tasks/{task_id}/rerun")
+    def rerun_options(task_id: str):
+        """The settings the wind and FLUXlight regenerate panels offer, with this job's values."""
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            return reply(sched.rerun_options(task_id))
+        except SchedulerError as e:
+            fail(e)
+
+    @app.post("/api/tasks/{task_id}/rerun/wind")
+    def rerun_wind(task_id: str, body: RerunWindIn):
+        """Queue a job that redoes only the wind and wind plots of this task."""
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            return reply(sched.rerun_wind(task_id, body.settings), 201)
+        except SchedulerConflict as e:
+            fail(e, 409)
+        except (SchedulerError, plotrun.PlotRunError) as e:
+            fail(e)
 
     @app.get("/api/tasks/{task_id}/plots")
     def list_plots(task_id: str):

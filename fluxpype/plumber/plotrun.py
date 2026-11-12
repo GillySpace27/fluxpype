@@ -30,6 +30,48 @@ class PlotRunError(ValueError):
     pass
 
 
+# Settings a remake may change. They land in config.ini text that pipe_helper.convert_value passes to eval(), so each is
+# parsed and rewritten here (a number in range, or a name from a fixed list), never passed through as typed.
+SETTINGS: Dict[str, List[Dict[str, Any]]] = {
+    "light": [
+        dict(key="light_method", label="Method", kind="choice", choices=["voronoi", "soft_voronoi", "fluxel", "vertex"], default="fluxel", hint="How the fluxons are turned into a density field (fluxlight.py)."),
+        dict(key="fov", label="Field of view (Rsun)", kind="float", min=0.5, max=300, default="215.0", hint="Image half-width in solar radii. Small values zoom on the low corona."),
+        dict(key="nxy", label="Pixels per side", kind="int", min=16, max=2000, default="301", hint="Image size. Cost grows with the square."),
+        dict(key="nz", label="Line-of-sight steps", kind="int", min=2, max=2000, default="301", hint="Integration steps along each line of sight. Cost grows linearly."),
+        dict(key="influence_length", label="Influence length (Rsun)", kind="float", min=0.01, max=50, default="1.0", hint="Passed to the forward model as its influence length."),
+        dict(key="observer_lon", label="Observer longitude (deg)", kind="float", min=-360, max=720, default="", hint="Carrington longitude of the viewer. Leave blank to keep the job's value (pole-on if it has none)."),
+    ],
+    "wind": [
+        dict(key="flow_method", label="Wind method", kind="choice", choices=["parker", "wsa", "cranmer", "ghosts", "tempest"], fmt="[{}]", default="", hint="The solar wind model. Each method writes its own wind files."),
+    ],
+}
+
+
+def clean_settings(group: str, raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """Validated {key: config text} for `group`; an empty value means 'keep the job's'. Raises PlotRunError."""
+    spec = {f["key"]: f for f in SETTINGS.get(group, [])}
+    out: Dict[str, str] = {}
+    for k, v in (raw or {}).items():
+        f = spec.get(k)
+        v = str(v).strip()
+        if f is None:
+            raise PlotRunError(f"{k!r} is not a setting this step takes")
+        if v == "":
+            continue
+        if f["kind"] == "choice":
+            if v not in f["choices"]:
+                raise PlotRunError(f"{k}: choose one of {', '.join(f['choices'])}")
+            out[k] = f.get("fmt", '"{}"').format(v)
+            continue
+        if not re.match(r"^[-+]?\d+(\.\d*)?$" if f["kind"] == "float" else r"^\d+$", v):
+            raise PlotRunError(f"{k}: {v!r} is not a {'whole ' if f['kind'] == 'int' else ''}number")
+        x = float(v)
+        if not f["min"] <= x <= f["max"]:
+            raise PlotRunError(f"{k}: must be between {f['min']} and {f['max']}")
+        out[k] = str(int(x)) if f["kind"] == "int" else repr(x)
+    return out
+
+
 def context_vars(ctx: ProbeContext, python: str) -> Dict[str, str]:
     """Placeholder values for one task, validated: they end up in file names and argv."""
     for name, rx in (("cr", _CR), ("nflux", _NFLUX), ("adapt", _ADAPT)):
@@ -405,6 +447,7 @@ def read_view(run_dir: str) -> Dict[str, Any]:
         "ended": (result or {}).get("ended") or st.ended,
         "exit_code": st.exit_code,
         "overwrite": bool(req.get("overwrite")),
+        "settings": req.get("settings") or {},
         "plots": list(plots.values()),
         "log_size": log_size,
     }
