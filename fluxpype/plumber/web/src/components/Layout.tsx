@@ -5,6 +5,7 @@ import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { FlaskConical } from "lucide-react";
 import { QueuePill } from "./QueuePill";
+import { SysMonPanel } from "./SysMon";
 import { ConnectAgentButton } from "./ConnectAgent";
 import { BackendSwitcher, StatusLight } from "./SystemBar";
 import { UpdatePill } from "./Updates";
@@ -61,12 +62,15 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto space-y-2 px-2 text-[11px] text-faint">
-          <div className="flex items-center gap-2">
-            <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : "bg-run animate-pulse")} />
-            {connected ? "Live" : "Reconnecting..."}
+        <div className="mt-auto space-y-3">
+          <SysMonPanel />
+          <div className="space-y-2 px-2 text-[11px] text-faint">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : "bg-run animate-pulse")} />
+              {connected ? "Live" : "Reconnecting..."}
+            </div>
+            {status && <p className="num">v{status.version}</p>}
           </div>
-          {status && <p className="num">v{status.version}</p>}
         </div>
       </aside>
 

@@ -407,6 +407,21 @@ def test_wait_for_task_on_a_missing_task_is_an_error(rig):
 # ------------------------------------------------------------------ annotations
 
 
+def test_every_tool_is_in_the_agent_capability_table_and_calls_are_recorded(rig):
+    from fluxpype.plumber.agent_log import TOOLS
+
+    async def go():
+        async with Client(rig.server) as c:
+            return {t.name for t in (await c.list_tools()).tools}
+
+    assert anyio.run(go) == {name for name, _, _ in TOOLS}
+    rig.ok("list_jobs", limit=3)
+    assert rig.call("get_job", job_id="nope")[0]
+    calls = rig.tc.get("/api/agent", headers=H).json()["calls"]
+    assert [(c["tool"], c["status"]) for c in calls] == [("get_job", 404), ("list_jobs", 200)]
+    assert calls[1]["args"] == '{"limit": 3}' and len({c["call"] for c in calls}) == 2
+
+
 def test_tool_annotations(rig):
     async def go():
         async with Client(rig.server) as c:

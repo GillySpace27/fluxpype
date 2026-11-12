@@ -3,10 +3,11 @@ import { AlertTriangle, Bot, Check, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
-import { ago } from "../lib/format";
-import { useStatus } from "../lib/hooks";
+import { ago, clock, dateTime } from "../lib/format";
+import { useAgentRecord, useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
-import { Badge, Dialog, ErrorNote, Skeleton, useToast } from "./ui";
+import type { AgentCall, AgentTool } from "../lib/types";
+import { Badge, Dialog, EmptyState, ErrorNote, Segmented, Skeleton, useToast } from "./ui";
 
 interface AgentPrompt {
   name: string;
@@ -62,7 +63,93 @@ function CopyBlock({ text, label, primary, rows }: { text: string; label: string
   );
 }
 
-export function ConnectAgentDialog({ open, onOpenChange, idle }: { open: boolean; onOpenChange: (o: boolean) => void; idle?: string }) {
+const KIND = { read: { word: "Looks", tone: "neutral" }, write: { word: "Changes things", tone: "accent" }, stop: { word: "Stops work", tone: "fail" } } as const;
+
+/** Every tool the agent has, whether it has used it, and how often. */
+function Abilities({ tools }: { tools: AgentTool[] }) {
+  const used = tools.filter((t) => t.calls > 0).length;
+  return (
+    <div className="space-y-3">
+      <p className="text-[13px] text-muted">
+        The agent has used <span className="num font-medium text-ink">{used}</span> of <span className="num font-medium text-ink">{tools.length}</span> abilities.
+      </p>
+      <div className="divide-y divide-line/60 rounded-xl border border-line bg-bg/40">
+        {tools.map((t) => (
+          <div key={t.name} className={cn("flex items-start gap-3 px-4 py-2.5", t.calls === 0 && "opacity-70")}>
+            <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", t.calls ? "bg-ok" : "bg-faint/50")} aria-label={t.calls ? "used" : "not used yet"} />
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
+                <span className="font-mono">{t.name}</span>
+                <Badge tone={KIND[t.kind].tone}>{KIND[t.kind].word}</Badge>
+              </p>
+              <p className="mt-0.5 text-xs text-muted">{t.what}</p>
+            </div>
+            <div className="shrink-0 text-right text-[11px] text-faint">
+              {t.calls ? (
+                <>
+                  <p className="num text-ink">{t.calls} call{t.calls === 1 ? "" : "s"}</p>
+                  {t.errors > 0 && <p className="text-fail">{t.errors} failed</p>}
+                  <p>{ago(t.last)}</p>
+                </>
+              ) : (
+                "not used yet"
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Every call the agent has made, newest first. */
+function ActivityLog({ calls, total, since }: { calls: AgentCall[]; total: number; since: number | null }) {
+  if (!calls.length) return <EmptyState title="No agent calls yet" body="Every command an agent sends through the MCP server is recorded here." />;
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted">
+        {total} call{total === 1 ? "" : "s"} since {dateTime(since)}. Kept in the Plumber home folder (agent_log.jsonl), newest 1000.
+      </p>
+      <div className="overflow-hidden rounded-xl border border-line bg-bg/40">
+        <table className="w-full text-[12px]">
+          <tbody className="divide-y divide-line/50">
+            {calls.map((c) => (
+              <tr key={c.call} className="align-top">
+                <td className="num whitespace-nowrap px-3 py-1.5 text-faint" title={dateTime(c.ts)}>
+                  {clock(c.ts)}
+                </td>
+                <td className="px-2 py-1.5">
+                  <span className="font-mono font-medium">{c.tool || "?"}</span>
+                  {c.args && c.args !== "{}" && (
+                    <span className="mt-0.5 block max-w-[360px] truncate font-mono text-[11px] text-muted" title={c.args}>
+                      {c.args}
+                    </span>
+                  )}
+                </td>
+                <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                  <Badge tone={c.status >= 400 ? "fail" : "ok"}>{c.status >= 400 ? `error ${c.status}` : "ok"}</Badge>
+                  <span className="num mt-0.5 block text-[10.5px] text-faint" title={c.paths.join("\n")}>
+                    {c.ms} ms{c.requests > 1 ? ` · ${c.requests} requests` : ""}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+type Tab = "can" | "log" | "connect";
+
+export function ConnectAgentDialog({ open, onOpenChange, idle, setup }: { open: boolean; onOpenChange: (o: boolean) => void; idle?: string; setup?: boolean }) {
+  const [tab, setTab] = useState<Tab>("connect");
+  useEffect(() => {
+    if (open) setTab(setup ? "can" : "connect"); // an agent that has been here before gets its record first
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const record = useAgentRecord(open);
   const { data, error, refetch } = useQuery({
     queryKey: ["agent-prompt"],
     queryFn: () => api.get<AgentPrompt>("/api/agent-prompt"),
@@ -75,10 +162,32 @@ export function ConnectAgentDialog({ open, onOpenChange, idle }: { open: boolean
       open={open}
       onOpenChange={onOpenChange}
       wide
-      title="Connect an AI agent"
-      description="Paste this prompt into Claude Code, Claude Desktop or another MCP-capable agent. It registers Plumber's MCP server so the agent can queue runs, watch progress, read logs and look at images in this same queue."
+      title="AI agent"
+      description="An MCP-capable agent (Claude Code, Claude Desktop and others) works in this same queue: it can queue runs, watch progress, read logs and look at images."
     >
-      {error ? (
+      <div className="mb-4">
+        <Segmented<Tab>
+          value={tab}
+          onChange={setTab}
+          label="Agent view"
+          options={[
+            { value: "can", label: "What it can do" },
+            { value: "log", label: `Activity${record.data?.total ? ` (${record.data.total})` : ""}` },
+            { value: "connect", label: "Connect" },
+          ]}
+        />
+      </div>
+      {tab !== "connect" &&
+        (record.error ? (
+          <ErrorNote error={record.error} retry={() => record.refetch()} />
+        ) : !record.data ? (
+          <Skeleton className="h-72" />
+        ) : tab === "can" ? (
+          <Abilities tools={record.data.tools} />
+        ) : (
+          <ActivityLog calls={record.data.calls} total={record.data.total} since={record.data.since} />
+        ))}
+      {tab === "connect" && (error ? (
         <ErrorNote error={error} retry={() => refetch()} />
       ) : !data ? (
         <Skeleton className="h-72" />
@@ -139,7 +248,7 @@ export function ConnectAgentDialog({ open, onOpenChange, idle }: { open: boolean
             </div>
           )}
         </div>
-      )}
+      ))}
     </Dialog>
   );
 }
@@ -193,7 +302,7 @@ export function ConnectAgentButton({
         <span className="hidden sm:inline">{connected ? "Agent connected" : idle ? "Agent idle" : label}</span>
         {connected && <span className="sr-only">: {last}</span>}
       </button>
-      <ConnectAgentDialog open={open} onOpenChange={setOpen} idle={idleAgo} />
+      <ConnectAgentDialog open={open} onOpenChange={setOpen} idle={idleAgo} setup={connected || idle} />
     </>
   );
 }

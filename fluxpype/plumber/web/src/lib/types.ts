@@ -551,3 +551,59 @@ export interface UpdateStatus {
   fetched?: boolean | null;
   fetch_error?: string | null;
 }
+
+/** What an agent can do through the MCP server, and what it has done (GET /api/agent). */
+export interface AgentTool {
+  name: string;
+  kind: "read" | "write" | "stop";
+  what: string;
+  calls: number;
+  errors: number;
+  last: number | null;
+  last_status: number | null;
+}
+export interface AgentCall {
+  call: string;
+  ts: number;
+  tool: string;
+  /** the tool's arguments as JSON text */
+  args: string;
+  requests: number;
+  ms: number;
+  /** worst HTTP status among the call's requests */
+  status: number;
+  paths: string[];
+}
+export interface AgentRecord {
+  tools: AgentTool[];
+  calls: AgentCall[];
+  total: number;
+  since: number | null;
+}
+
+/** One reading of the machine (GET /api/system); null where the platform gives none. Rates are per second. */
+export interface SysSample {
+  t: number;
+  cpu: number | null;
+  mem: number | null;
+  net_rx: number | null;
+  net_tx: number | null;
+  disk_r: number | null;
+  disk_w: number | null;
+  gpu: number | null;
+}
+export interface SysSnapshot {
+  psutil: boolean;
+  now: SysSample;
+  history: SysSample[];
+  cpu_count: number | null;
+  load: number[];
+  gpu: { name: string; pct: number; mem_used: number | null; mem_total: number | null } | null;
+  storage: { label: string; path: string; total: number; used: number; free: number; pct: number }[];
+  cores?: number[];
+  memory?: { total: number; used: number; swap_used: number; swap_total: number };
+  processes?: {
+    top: { pid: number; name: string; cpu: number; rss: number; task: string | null }[];
+    tasks: { label: string; cpu: number; rss: number; procs: number }[];
+  };
+}

@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import quote, urlsplit
@@ -61,6 +62,7 @@ class PlumberError(Exception):
 # ---------------------------------------------------------------------------------------------- connection
 
 CURRENT_TOOL: "contextvars.ContextVar[str]" = contextvars.ContextVar("flux_mcp_tool", default="")
+CURRENT_CALL: "contextvars.ContextVar[Tuple[str, str]]" = contextvars.ContextVar("flux_mcp_call", default=("", ""))  # id, args
 
 
 def _detail(resp: "httpx.Response") -> str:
@@ -120,7 +122,8 @@ class PlumberClient:
             http = self._client()
             try:
                 # tells Plumber an agent is acting, so the UI can show it (see "Agent connected")
-                headers = {"X-Flux-Client": "mcp", "X-Flux-Tool": CURRENT_TOOL.get()}
+                call, args = CURRENT_CALL.get()  # groups this call's requests in Plumber's record of agent activity
+                headers = {"X-Flux-Client": "mcp", "X-Flux-Tool": CURRENT_TOOL.get(), "X-Flux-Call": call, "X-Flux-Args": args}
                 resp = http.request(method, path, params=params, json=body, headers=headers)
             except httpx.TransportError as e:
                 if attempt == 0 and self._resolver:
@@ -473,6 +476,8 @@ def build_server(client: PlumberClient) -> MCPServer:
             @functools.wraps(fn)
             async def guarded(*args, **kwargs):
                 CURRENT_TOOL.set(fn.__name__)
+                shown = {k: v for k, v in kwargs.items() if k != "ctx" and v is not None}
+                CURRENT_CALL.set((uuid.uuid4().hex[:12], json.dumps(shown, default=str)[:400]))  # ascii: it travels in a header
                 try:
                     return await fn(*args, **kwargs)
                 except ToolError:

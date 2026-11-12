@@ -11,6 +11,19 @@ type Surface = "cache" | "runFiles" | "stage" | "results";
 
 const DEFAULT_MODE: Record<Surface, FileMode> = { cache: "list", runFiles: "list", stage: "icons", results: "icons" };
 const IMG = /\.(png|jpe?g|svg)$/i;
+const FITS = /\.(fits?|fts)(\.gz)?$/i;
+
+/** An image tile; a FITS file shows the server's cached render. Falls back to the icon if the image will not load. */
+function Thumb({ src, alt, Icon, ext }: { src?: string; alt: string; Icon: typeof File; ext: string }) {
+  const [bad, setBad] = useState(false);
+  if (src && !bad) return <img src={src} alt={alt} loading="lazy" onError={() => setBad(true)} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />;
+  return (
+    <span className="flex flex-col items-center gap-1 text-muted">
+      <Icon className="h-7 w-7" />
+      <span className="text-[11px] font-medium">{ext || "file"}</span>
+    </span>
+  );
+}
 const GAP = 12; // px, matches gap-3
 
 /** Remembered per browser and per surface: list or icons, and the icon size. Not in the URL: Cache keeps its filters there. */
@@ -102,14 +115,12 @@ export function FileIcons<T extends CacheRecord>({
               className={cn("group block w-full overflow-hidden rounded-xl border bg-bg/50 text-left transition-colors hover:border-accent/50", active === i ? "border-accent/60" : "border-line/80", selected?.has(idOf(r)) && "bg-accent/5")}
             >
               <div className="grid aspect-[4/3] place-items-center overflow-hidden bg-black/40">
-                {IMG.test(r.name) ? (
-                  <img src={fileUrl(r.path, false, base)} alt={r.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                ) : (
-                  <span className="flex flex-col items-center gap-1 text-muted">
-                    <Icon className="h-7 w-7" />
-                    <span className="text-[11px] font-medium">{ext || "file"}</span>
-                  </span>
-                )}
+                <Thumb
+                  src={IMG.test(r.name) ? fileUrl(r.path, false, base) : FITS.test(r.name) ? `${base}/render.png?path=${encodeURIComponent(r.path)}` : undefined}
+                  alt={r.name}
+                  Icon={Icon}
+                  ext={ext}
+                />
               </div>
               <div className="space-y-1 px-2.5 py-2">
                 <p className="truncate text-xs text-muted" title={r.path}>

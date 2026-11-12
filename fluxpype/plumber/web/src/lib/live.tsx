@@ -99,6 +99,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "log_append":
             listeners.current.forEach((fn) => fn(msg.data));
             break;
+          case "agent_call":
+            soon([["agent-log"]]);
+            break;
           case "agent_activity":
             setAgent({ ts: Date.now(), tool: msg.data.tool, count: msg.data.count });
             break;

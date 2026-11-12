@@ -18,12 +18,14 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BaseModel, Field
 
 from . import config_io, paths
+from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
 from .health import Health
 from .presets import PresetError
 from .monitor import STAGES, first_match_for_context
 from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
+from .sysmon import SysMon
 
 COOKIE = "flux_plumber"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 30
@@ -230,6 +232,8 @@ def create_app(
     except (OSError, ValueError, KeyError, TypeError):
         pass
 
+    agent_log = AgentLog(str(Path(scheduler.home) / "agent_log.jsonl"))  # every agent call, kept across restarts
+
     def agent_alive() -> None:
         now = time.time()
         link["alive"] = link["seen"] = now
@@ -318,6 +322,20 @@ def create_app(
                 agent["ts"], agent["count"] = time.time(), agent["count"] + 1
                 agent["tool"] = request.headers.get("x-flux-tool", "")[:64]
                 hub.publish("agent_activity", {"tool": agent["tool"], "count": agent["count"]})
+                t0 = time.perf_counter()
+                resp = await call_next(request)
+                h = request.headers  # the MCP server tags each request with its tool call and that call's arguments
+                agent_log.record(
+                    h.get("x-flux-call") or f"{time.time():.6f}",
+                    agent["tool"],
+                    h.get("x-flux-args", "")[:400],
+                    request.method,
+                    path,
+                    resp.status_code,
+                    (time.perf_counter() - t0) * 1000,
+                )
+                hub.publish("agent_call", {})
+                return resp
             return await call_next(request)
         if path in PUBLIC_FILES or path.startswith(PUBLIC_PREFIXES):
             return await call_next(request)
@@ -445,6 +463,25 @@ def create_app(
         health.invalidate()
         hub.publish("data_dir_changed", {"data_dir": sched.data_dir()})
         return reply(sched.data_dir_report())
+
+    @app.get("/api/agent")
+    def agent_record():
+        """What an agent can do through the MCP server, and every call it has made."""
+        return reply(agent_log.summary())
+
+    def volumes():
+        return [("Data folder", sched.data_dir()), ("Plumber home", str(sched.home)), ("System", os.sep)]
+
+    def job_groups():
+        """Process-group id -> label for each running task (a task's pid leads its group)."""
+        return {t["pid"]: f"CR{t['cr']} f{t['nflux']}" for t in sched.store.tasks_with_status("running") if t["pid"]}
+
+    sysmon = SysMon(volumes, job_groups)
+
+    @app.get("/api/system")
+    def system(procs: bool = False):
+        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes."""
+        return reply(sysmon.snapshot(procs))
 
     @app.get("/api/agent-prompt")
     def agent_prompt_():

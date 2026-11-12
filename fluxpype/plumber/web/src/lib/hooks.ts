@@ -4,6 +4,7 @@ import { api } from "./api";
 import { useToast } from "../components/ui";
 import { useLive } from "./live";
 import type {
+  AgentRecord,
   CacheData,
   DatData,
   DataDirReport,
@@ -20,6 +21,7 @@ import type {
   QueueState,
   RelaxSeries,
   StatusInfo,
+  SysSnapshot,
   TaskResults,
   TaskState,
   TrashItem,
@@ -42,6 +44,19 @@ function useRefetch(fast: number, slow: number) {
 }
 
 export const useStatus = (poll?: number) => useQuery({ queryKey: ["status"], queryFn: () => api.get<StatusInfo>("/api/status"), staleTime: 60_000, refetchInterval: poll });
+
+/** What the AI agent can do and every call it has made; refreshed when a call lands (see live.tsx). */
+export const useAgentRecord = (enabled: boolean) =>
+  useQuery({ queryKey: ["agent-log"], queryFn: () => api.get<AgentRecord>("/api/agent"), enabled, staleTime: 5_000 });
+
+/** The machine's load for the sidebar monitor; `procs` adds the process tables for its popup. */
+export const useSystem = (procs: boolean) =>
+  useQuery({
+    queryKey: ["system", procs],
+    queryFn: () => api.get<SysSnapshot>(`/api/system${procs ? "?procs=1" : ""}`),
+    refetchInterval: 2000,
+    placeholderData: (prev) => prev,
+  });
 
 export const useOverview = () => {
   const refetchInterval = useRefetch(2000, 8000);

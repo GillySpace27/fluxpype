@@ -217,6 +217,33 @@ def test_agent_heartbeat_marks_alive_without_a_tool_call(client):
     assert 0 <= st["agent_link"]["alive"] < 30 and 0 <= st["agent_link"]["seen"] < 30
 
 
+def test_agent_calls_are_recorded_per_call_and_survive_a_restart(client, tmp_path):
+    a = {**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "get_job", "X-Flux-Call": "c1", "X-Flux-Args": '{"job_id": "nope"}'}
+    client.get("/api/queue", headers=a)
+    client.get("/api/jobs/nope", headers=a)  # a second request of the same call, and a failing one
+    client.get("/api/queue", headers={**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "status", "X-Flux-Call": "c2"})
+    rec = client.get("/api/agent", headers=H).json()
+    tools = {t["name"]: t for t in rec["tools"]}
+    assert rec["total"] == 2 and [c["call"] for c in rec["calls"]] == ["c2", "c1"]
+    c1 = rec["calls"][1]
+    assert c1["requests"] == 2 and c1["status"] == 404 and c1["args"] == '{"job_id": "nope"}'
+    assert tools["get_job"]["calls"] == 1 and tools["get_job"]["errors"] == 1 and tools["status"]["errors"] == 0
+    assert tools["submit_job"]["calls"] == 0 and tools["submit_job"]["kind"] == "write"
+    from fluxpype.plumber.agent_log import AgentLog
+
+    home = client.get("/api/status", headers=H).json()["plumber_home"]
+    again = AgentLog(os.path.join(home, "agent_log.jsonl")).summary()
+    assert again["total"] == 2 and again["calls"][1]["requests"] == 2
+
+
+def test_system_snapshot_has_history_and_storage(client):
+    d = client.get("/api/system", headers=H).json()
+    assert d["now"]["cpu"] is not None and d["history"] and d["storage"][0]["total"] > 0
+    if d["psutil"]:
+        assert "processes" not in d
+        assert client.get("/api/system?procs=1", headers=H).json()["processes"]["top"]
+
+
 # ------------------------------------------------------------------ artifacts
 
 

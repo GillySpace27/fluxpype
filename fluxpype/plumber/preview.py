@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 from typing import Any, Dict, List, Optional
 
 IMAGE_TYPES = {
@@ -29,6 +30,7 @@ TEXT_LINES = 400
 MAX_HDUS = 4
 MAX_CARDS = 2000
 RENDER_TIMEOUT = 90.0
+_RENDERS = threading.Semaphore(2)  # a grid of FITS thumbnails asks for many renders at once; each one is a matplotlib process
 KEEP_RENDERS = 300
 
 
@@ -259,13 +261,17 @@ def render_fits(path: str, home: str, python: str) -> Dict[str, Any]:
             return {"png": png, "stats": json.load(f)}
     tmp = png + f".tmp{os.getpid()}.png"
     try:
-        r = subprocess.run(
-            [python, "-c", RENDER_SCRIPT, path, tmp],
-            capture_output=True,
-            text=True,
-            timeout=RENDER_TIMEOUT,
-            env={**os.environ, "MPLBACKEND": "Agg"},
-        )
+        with _RENDERS:
+            if os.path.isfile(png) and os.path.isfile(meta):  # another request rendered it while this one waited
+                with open(meta, encoding="utf-8") as f:
+                    return {"png": png, "stats": json.load(f)}
+            r = subprocess.run(
+                [python, "-c", RENDER_SCRIPT, path, tmp],
+                capture_output=True,
+                text=True,
+                timeout=RENDER_TIMEOUT,
+                env={**os.environ, "MPLBACKEND": "Agg"},
+            )
     except subprocess.TimeoutExpired:
         raise RenderError(f"rendering took longer than {RENDER_TIMEOUT:.0f} s")
     except OSError as e:
