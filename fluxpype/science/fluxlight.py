@@ -81,6 +81,7 @@ influence_length = configs.get("influence_length", def_influence_length)
 nz = configs.get("nz", def_nz)
 nxy = configs.get("nxy", configs.get("npix", def_nxy))
 fov = configs.get("fov", def_fov)
+observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
 
 def do_fluxlight(flux_world_file, save=True, force=False):
     results_file = flux_world_file.replace(".flux", ".light")
@@ -115,6 +116,7 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         influence_length=influence_length,
         scale=20,
         method=method,
+        observer_lon=None if observer_lon is None else np.deg2rad(float(observer_lon)),
         # voronoi_blur=0.04,
         # voronoi_samples=9
     )
@@ -308,7 +310,7 @@ if __name__ == "__main__":
     else:
         the_world_file = def_world_file
 
-    force = "--force" in sys.argv or True
+    force = "--force" in sys.argv
     results = do_fluxlight(the_world_file, force=force)
 
 

@@ -3,6 +3,8 @@ tqdm
 matplotlib
 astropy
 sunpy
+sunkit-image
+joblib
 bs4
 lxml
 zeep
@@ -15,5 +17,3 @@ pfsspy
 sunkit-magex
 PyQt5
 numpy
-joblib
-sunkit-image

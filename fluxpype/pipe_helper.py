@@ -1396,7 +1396,7 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
         return out_file_name
 
     emit("\tFormatting ADAPT file...", end="")
-    adapt_fits = sunpy.io.read_file(filename)
+    adapt_fits = fits.open(filename, ignore_missing_simple=True)  # sunpy.io.read_file is gone in sunpy 7
     main_data = adapt_fits[0].data
     main_header = adapt_fits[0].header
 
@@ -1430,6 +1430,13 @@ def format_ADAPT_file(filename, method="mean", force=False, configs=None):
         output_map = np.asarray(adapt_map.data)
     else:
         assert False, "Method not recognized!"
+
+    # ADAPT rows are uniform in latitude (GRID=1, LATTYPE=0); the CEA header written
+    # below says uniform in sin(latitude), so resample the rows to match it.
+    nlat = output_map.shape[0]
+    lat_in = np.linspace(-90, 90, nlat, endpoint=False) + 90 / nlat
+    lat_out = np.rad2deg(np.arcsin(np.linspace(-1, 1, nlat, endpoint=False) + 1 / nlat))
+    output_map = np.stack([np.interp(lat_out, lat_in, col) for col in output_map.T], axis=1)
 
     useheader = fix_header_ADAPT(header2, output_map)
     fits.writeto(out_file_name, output_map, useheader, overwrite=True)

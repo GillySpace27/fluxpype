@@ -96,7 +96,13 @@ from astropy.coordinates import SkyCoord
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+import pfsspy
+import pfsspy.map
 import sunpy.map
+
+# pfsspy registers its own ADAPTMap beside sunpy's, so Map() of any ADAPT file fails
+# with MultipleMatchError. Keep sunpy's.
+sunpy.map.Map.registry.pop(pfsspy.map.ADAPTMap, None)
 import timeout_decorator
 from tqdm import tqdm
 
@@ -196,7 +202,8 @@ def load_and_condition_fits_file(fname, datdir, adapt):
     brdat = hdu_0.data
     header = hdu_0.header
 
-    header["CUNIT2"] = "rad"
+    if not adapt:  # HMI files carry CDELT2 in radians; formatted ADAPT files use degrees
+        header["CUNIT2"] = "rad"
 
     # u.def_unit("sin", u.dimensionless_angles)
     # u.add_enabled_units("sin")
