@@ -14,9 +14,9 @@ const IMG = /\.(png|jpe?g|svg)$/i;
 const FITS = /\.(fits?|fts)(\.gz)?$/i;
 
 /** An image tile; a FITS file shows the server's cached render. Falls back to the icon if the image will not load. */
-function Thumb({ src, alt, Icon, ext }: { src?: string; alt: string; Icon: typeof File; ext: string }) {
+function Thumb({ src, alt, Icon, ext, contain }: { src?: string; alt: string; Icon: typeof File; ext: string; contain?: boolean }) {
   const [bad, setBad] = useState(false);
-  if (src && !bad) return <img src={src} alt={alt} loading="lazy" onError={() => setBad(true)} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />;
+  if (src && !bad) return <img src={src} alt={alt} loading="lazy" onError={() => setBad(true)} className={cn("h-full w-full transition-transform duration-300 group-hover:scale-[1.03]", contain ? "object-contain" : "object-cover")} />;
   return (
     <span className="flex flex-col items-center gap-1 text-muted">
       <Icon className="h-7 w-7" />
@@ -118,6 +118,7 @@ export function FileIcons<T extends CacheRecord>({
                 <Thumb
                   src={IMG.test(r.name) ? fileUrl(r.path, false, base) : FITS.test(r.name) ? `${base}/render.png?path=${encodeURIComponent(r.path)}` : undefined}
                   alt={r.name}
+                  contain={FITS.test(r.name)} // a 2:1 synoptic map would lose its sides to a 4:3 crop
                   Icon={Icon}
                   ext={ext}
                 />
