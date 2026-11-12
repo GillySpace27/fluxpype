@@ -27,9 +27,11 @@ def log(message):
     """Log informational messages."""
     log_info(message)
 
+
 def log_info(message):
     """Log informational messages."""
     logger.info(f"{message}")
+
 
 def log_warning(message):
     """Log warning messages."""
@@ -233,6 +235,7 @@ def clone_and_build_flux():
     else:
         log("Flux failed to build")
         raise Exception()
+
 
 def main():
     if sys.platform != "darwin":

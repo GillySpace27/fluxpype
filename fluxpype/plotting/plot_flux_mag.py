@@ -1,5 +1,6 @@
 from fluxpype.science.read_world import rdworld
 from fluxpype.pipe_helper import configurations
+
 configs = configurations()
 
 # Path: fluxon-mhd/fluxpype/fluxpype/plotting/plot_flux_mag.py
@@ -15,9 +16,9 @@ print((world.fx.fl))
 # print(len(world.fx))
 
 
-plt.plot(np.asarray(world.fx.fc0), 'o', label='fc0')
-plt.plot(np.asarray(world.fx.fc1), 'o', label='fc1')
-plt.plot(np.asarray(world.fx.fl), 'o', label='fl')
+plt.plot(np.asarray(world.fx.fc0), "o", label="fc0")
+plt.plot(np.asarray(world.fx.fc1), "o", label="fc1")
+plt.plot(np.asarray(world.fx.fl), "o", label="fl")
 
 plt.legend()
 plt.show()

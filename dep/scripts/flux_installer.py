@@ -13,9 +13,7 @@ class FluxInstaller:
     def ensure_dependencies(self):
         print("Ensuring dependencies...")
         if not shutil.which("cpanm"):
-            raise EnvironmentError(
-                "cpanm (App::cpanminus) not found. Please install it to proceed."
-            )
+            raise EnvironmentError("cpanm (App::cpanminus) not found. Please install it to proceed.")
         print("cpanm found.")
 
     def install_perlbrew(self):
@@ -24,17 +22,13 @@ class FluxInstaller:
 
         if not shutil.which("perlbrew"):
             print("Perlbrew not found, installing...")
-            subprocess.check_call(
-                "/bin/bash -c 'curl -L https://install.perlbrew.pl | bash'", shell=True
-            )
+            subprocess.check_call("/bin/bash -c 'curl -L https://install.perlbrew.pl | bash'", shell=True)
             perlbrew_env = Path.home() / "perl5" / "perlbrew" / "etc" / "bashrc"
             if perlbrew_env.exists():
                 print(f"Initializing Perlbrew from {perlbrew_env}...")
                 self.initialize_perlbrew(perlbrew_env)
             else:
-                raise FileNotFoundError(
-                    f"Perlbrew initialization script not found: {perlbrew_env}"
-                )
+                raise FileNotFoundError(f"Perlbrew initialization script not found: {perlbrew_env}")
         else:
             print("Perlbrew is already installed.")
 
@@ -56,9 +50,7 @@ class FluxInstaller:
     def initialize_perlbrew(self, perlbrew_env):
         print("Initializing Perlbrew environment...")
         command = f"source {perlbrew_env} && env"
-        proc = subprocess.Popen(
-            command, stdout=subprocess.PIPE, shell=True, executable="/bin/bash"
-        )
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, executable="/bin/bash")
         output, _ = proc.communicate()
 
         for line in output.decode().splitlines():
@@ -80,9 +72,7 @@ class FluxInstaller:
         print(f"Setting up local::lib with PL_PREFIX={self.pl_prefix}...")
         env = {"PERL_MM_OPT": f"INSTALL_BASE={self.pl_prefix}"}
         with self.temporary_env(env):
-            subprocess.check_call(
-                ["cpanm", "--local-lib-contained", self.pl_prefix, "local::lib"]
-            )
+            subprocess.check_call(["cpanm", "--local-lib-contained", self.pl_prefix, "local::lib"])
 
     def install_prerequisites(self):
         print("Installing Perl dependencies...")
@@ -106,9 +96,7 @@ class FluxInstaller:
 
     def install_flux(self):
         if self.check_existing_flux():
-            print(
-                "FLUX installation detected. Linking the Python package to the existing installation."
-            )
+            print("FLUX installation detected. Linking the Python package to the existing installation.")
             return
 
         print("No existing FLUX installation detected. Installing FLUX...")
@@ -119,9 +107,7 @@ class FluxInstaller:
         libflux_path = self.fl_prefix / "lib" / "libflux.a"
         flux_pm_path = self.pl_prefix / "lib" / "perl5" / "Flux.pm"
         if libflux_path.exists() and flux_pm_path.exists():
-            print(
-                f"Found existing FLUX installation:\n- {libflux_path}\n- {flux_pm_path}"
-            )
+            print(f"Found existing FLUX installation:\n- {libflux_path}\n- {flux_pm_path}")
             return True
         return False
 
@@ -157,9 +143,7 @@ class FluxInstaller:
                 file.write(f"export FL_PREFIX={self.fl_prefix}\n")
                 file.write(f"export PL_PREFIX={self.pl_prefix}\n")
                 perl_lib_path = self.pl_prefix / "lib" / "perl5"
-                file.write(
-                    f"eval `perl -I {perl_lib_path} -Mlocal::lib={perl_lib_path}`\n"
-                )
+                file.write(f"eval `perl -I {perl_lib_path} -Mlocal::lib={perl_lib_path}`\n")
             print(f"Shell configuration updated in {shell_config}.")
         else:
             print("FLUX environment variables already set in shell configuration.")
@@ -168,12 +152,8 @@ class FluxInstaller:
 def run_flux_installer(fl_prefix=None, pl_prefix=None):
     """Helper to run the FluxInstaller."""
     user_home = Path.home()
-    fl_prefix = fl_prefix or Path(
-        os.environ.get("FL_PREFIX", user_home / "Library" / "flux")
-    )
-    pl_prefix = pl_prefix or Path(
-        os.environ.get("PL_PREFIX", user_home / "Library" / "perl5")
-    )
+    fl_prefix = fl_prefix or Path(os.environ.get("FL_PREFIX", user_home / "Library" / "flux"))
+    pl_prefix = pl_prefix or Path(os.environ.get("PL_PREFIX", user_home / "Library" / "perl5"))
     print("THIS IS RUNNIGN AND IT IS A BIG DEAL")
     installer = FluxInstaller(fl_prefix, pl_prefix)
     installer.ensure_dependencies()

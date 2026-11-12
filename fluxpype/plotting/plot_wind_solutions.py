@@ -9,6 +9,7 @@ from rich import print
 import re
 from scipy.io import readsav
 
+
 def load_zephyr():
     """
     Loads the Zephyr data from zephyr_2007_2013.sav,
@@ -16,7 +17,7 @@ def load_zephyr():
     """
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "zephyr_2007_2013.sav")
+    file_path = os.path.join(script_dir, "zephyr_2007_2013.sav")
 
     # Load the SAV file
     data = readsav(file_path)
@@ -24,6 +25,7 @@ def load_zephyr():
 
     # Return the entire data structure
     return data
+
 
 def plot_full_velocity_profiles(directory=None):
     print("\n\tPlotting full velocity profiles...")
@@ -33,7 +35,7 @@ def plot_full_velocity_profiles(directory=None):
     # Extract configuration settings
     batch = configs.get("batch_name")
     dat_dir = configs.get("data_dir")
-    directory = directory or f'{dat_dir}/batches/{batch}/data/'
+    directory = directory or f"{dat_dir}/batches/{batch}/data/"
     # list all of the directories in the data directory
     # rotations = os.listdir(directory)
     # filter out the directories that are not of the form cr#
@@ -44,7 +46,7 @@ def plot_full_velocity_profiles(directory=None):
     # Use regular expression to find the integer value following 'cr'
     # match = re.search(r'/cr(\d+)/', directory)
     # cr_value = int(match.group(1))
-    file = 'cr{}/wind/full_velocity_profiles/'
+    file = "cr{}/wind/full_velocity_profiles/"
     rot_dirs = [directory + file.format(cr) for cr in rotations]
     print(f"{rot_dirs = }")
 
@@ -59,7 +61,7 @@ def plot_full_velocity_profiles(directory=None):
         for plot_lines in [True, False]:
 
             if True:
-                fig, (ax, ax2) = plt.subplots(1,2, sharey='all', figsize=(10, 6),gridspec_kw={"width_ratios":[3,1]})
+                fig, (ax, ax2) = plt.subplots(1, 2, sharey="all", figsize=(10, 6), gridspec_kw={"width_ratios": [3, 1]})
             else:
                 fig, ax = plt.subplots()
                 fig, ax2 = plt.subplots()
@@ -74,32 +76,39 @@ def plot_full_velocity_profiles(directory=None):
             for id, filename in enumerate(filenames):
                 color = f"C{id}"
                 df = pd.read_csv(filename)
-                method_name = os.path.basename(filename).split('_')[1]  # Extract method name from filename
+                method_name = os.path.basename(filename).split("_")[1]  # Extract method name from filename
                 hist_box[method_name] = []
                 methods.append(method_name)
 
                 interpolated_data = []
 
-                fluxons = df.groupby('fluxon_position')
+                fluxons = df.groupby("fluxon_position")
 
                 for fluxon_id, group in fluxons:
-                    group = group.sort_values(by='radius')  # Ensure the group is sorted by radius
+                    group = group.sort_values(by="radius")  # Ensure the group is sorted by radius
 
-                    cut_value = interp1d(group['radius'] - 1, group['velocity'], fill_value="extrapolate")(cut_loc)
+                    cut_value = interp1d(group["radius"] - 1, group["velocity"], fill_value="extrapolate")(cut_loc)
                     hist_box[method_name].append(cut_value)
 
-                    interp_vel = interp1d(group['radius'] - 1, group['velocity'], bounds_error=False, fill_value=np.nan)(common_grid)
+                    interp_vel = interp1d(
+                        group["radius"] - 1, group["velocity"], bounds_error=False, fill_value=np.nan
+                    )(common_grid)
                     interpolated_data.append(interp_vel)
 
                 interpolated_data = np.array(interpolated_data)
 
                 if plot_lines:
                     for data in interpolated_data:
-                        ax.plot(common_grid, data, color=color, alpha=0.75,
-                                zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None)
+                        ax.plot(
+                            common_grid,
+                            data,
+                            color=color,
+                            alpha=0.75,
+                            zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None,
+                        )
                 else:
-                    low_vel = np.nanpercentile(interpolated_data, 99., axis=0)
-                    high_vel = np.nanpercentile(interpolated_data,1., axis=0)
+                    low_vel = np.nanpercentile(interpolated_data, 99.0, axis=0)
+                    high_vel = np.nanpercentile(interpolated_data, 1.0, axis=0)
 
                     # ax.fill_between(common_grid, low_vel, high_vel, color=color, alpha=0.1, zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None)
 
@@ -110,59 +119,97 @@ def plot_full_velocity_profiles(directory=None):
 
                     if mean_velocity is not None and std_velocity is not None:
                         # Plot mean and std
-                        ax.errorbar(common_grid, med_velocity, yerr=std_velocity, fmt='-', color=color, label=method_name, alpha=0.7, lw=4,
-                                    zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None)
+                        ax.errorbar(
+                            common_grid,
+                            med_velocity,
+                            yerr=std_velocity,
+                            fmt="-",
+                            color=color,
+                            label=method_name,
+                            alpha=0.7,
+                            lw=4,
+                            zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None,
+                        )
 
             zephyr = load_zephyr()
 
             # Interpolating and plotting Zephyr data on the common grid
-            ztop = np.nanmax(zephyr['uu'].T / 10**5, axis=1)
-            zbot = np.nanmin(zephyr['uu'].T / 10**5, axis=1)
-            zmean = np.nanmean(zephyr['uu'].T / 10**5, axis=1)
-            zmed = np.nanmedian(zephyr["uu"].T/ 10**5, axis=1)
-            zstd = np.nanstd(zephyr['uu'].T / 10**5, axis=1)
+            ztop = np.nanmax(zephyr["uu"].T / 10**5, axis=1)
+            zbot = np.nanmin(zephyr["uu"].T / 10**5, axis=1)
+            zmean = np.nanmean(zephyr["uu"].T / 10**5, axis=1)
+            zmed = np.nanmedian(zephyr["uu"].T / 10**5, axis=1)
+            zstd = np.nanstd(zephyr["uu"].T / 10**5, axis=1)
 
             # Interpolate Zephyr data on common grid
-            zephyr_interp_top = interp1d(zephyr['rx'] - 1, ztop, bounds_error=False, fill_value=np.nan)(common_grid)
-            zephyr_interp_bot = interp1d(zephyr['rx'] - 1, zbot, bounds_error=False, fill_value=np.nan)(common_grid)
-            zephyr_interp_mean = interp1d(zephyr['rx'] - 1, zmean, bounds_error=False, fill_value=np.nan)(common_grid)
-            zephyr_interp_med = interp1d(zephyr['rx'] - 1, zmed, bounds_error=False, fill_value=np.nan)(common_grid)
-            zephyr_interp_std = interp1d(zephyr['rx'] - 1, zstd, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_top = interp1d(zephyr["rx"] - 1, ztop, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_bot = interp1d(zephyr["rx"] - 1, zbot, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_mean = interp1d(zephyr["rx"] - 1, zmean, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_med = interp1d(zephyr["rx"] - 1, zmed, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_std = interp1d(zephyr["rx"] - 1, zstd, bounds_error=False, fill_value=np.nan)(common_grid)
 
             # ax.fill_between(common_grid, zephyr_interp_bot, zephyr_interp_top, color='purple', alpha=0.1)
-            ax.errorbar(common_grid, zephyr_interp_med, yerr=zephyr_interp_std, fmt='-', color='purple', label='Zephyr_2007/13', alpha=0.7, zorder=-10, lw=5)
+            ax.errorbar(
+                common_grid,
+                zephyr_interp_med,
+                yerr=zephyr_interp_std,
+                fmt="-",
+                color="purple",
+                label="Zephyr_2007/13",
+                alpha=0.7,
+                zorder=-10,
+                lw=5,
+            )
 
             # Collect interpolated values for Zephyr
-            zephyr_method_name = 'Zephyr_2007_2013'
+            zephyr_method_name = "Zephyr_2007_2013"
             methods.append(zephyr_method_name)
             hist_box[zephyr_method_name] = []
-            for line in zephyr['uu']:
-                cut_value = interp1d(zephyr['rx'] - 1, line / 10**5, fill_value="extrapolate")(cut_loc)
+            for line in zephyr["uu"]:
+                cut_value = interp1d(zephyr["rx"] - 1, line / 10**5, fill_value="extrapolate")(cut_loc)
                 hist_box[zephyr_method_name].append(cut_value)
 
             bins = np.linspace(0, 10**3, 20)
 
             for num, key in enumerate(methods):
                 samples = hist_box[key]
-                handle = ax2.hist(samples, bins=bins, alpha=0.5, label=key, color='purple' if '2007' in key else f"C{num}",
-                                histtype='stepfilled', density=True, orientation='horizontal', align='mid')
-                handle = ax2.hist(samples, bins=bins, alpha=0.95, label=None, color='k' if '2007' in key else f"C{num}",
-                                histtype='step', lw=4, density=True, orientation='horizontal', align='mid')
-            ax2.legend(fontsize='small')
+                handle = ax2.hist(
+                    samples,
+                    bins=bins,
+                    alpha=0.5,
+                    label=key,
+                    color="purple" if "2007" in key else f"C{num}",
+                    histtype="stepfilled",
+                    density=True,
+                    orientation="horizontal",
+                    align="mid",
+                )
+                handle = ax2.hist(
+                    samples,
+                    bins=bins,
+                    alpha=0.95,
+                    label=None,
+                    color="k" if "2007" in key else f"C{num}",
+                    histtype="step",
+                    lw=4,
+                    density=True,
+                    orientation="horizontal",
+                    align="mid",
+                )
+            ax2.legend(fontsize="small")
 
             ax.set_xlabel("z = r/$R_\\odot$ - 1")
-            ax.set_ylabel('Velocity [km/s]')
-            ax.set_xscale('log')
+            ax.set_ylabel("Velocity [km/s]")
+            ax.set_xscale("log")
             ax.set_ylim(-10, 10**3)
             ax.set_xlim(1e-2, 220)
-            ax.set_title(f'Full Velocity Profiles Comparison CR {cr_value}')
-            ax2.set_title(f'Hists at z={cut_loc}')
-            ax.axvline(cut_loc, color='k', ls='--', alpha=0.95, lw=3)
+            ax.set_title(f"Full Velocity Profiles Comparison CR {cr_value}")
+            ax2.set_title(f"Hists at z={cut_loc}")
+            ax.axvline(cut_loc, color="k", ls="--", alpha=0.95, lw=3)
 
             plt.tight_layout()
 
             lab = "lines_" if plot_lines else "filled_"
-            outfile = f'{dat_dir}/batches/{batch}/imgs/wind/full_velocity_profiles/{lab}velocity_profile_comparison_cr{cr_value}.png'
+            outfile = f"{dat_dir}/batches/{batch}/imgs/wind/full_velocity_profiles/{lab}velocity_profile_comparison_cr{cr_value}.png"
 
             if not os.path.exists(os.path.dirname(outfile)):
                 os.makedirs(os.path.dirname(outfile))
@@ -170,6 +217,7 @@ def plot_full_velocity_profiles(directory=None):
             plt.savefig(outfile)
             print(f"\n[yellow]Saved plot to\n[/yellow] {outfile}\n")
             plt.close(fig)
+
 
 if __name__ == "__main__":
     # import sys

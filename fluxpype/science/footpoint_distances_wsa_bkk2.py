@@ -189,10 +189,9 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
 
 
 # --- Helper: contiguous polar caps from open topology ---
-def _polar_caps_from_open(open_mask: np.ndarray,
-                          lat_1d: np.ndarray,
-                          seed_deg: float = _POLAR_SEED_DEG,
-                          bridge_deg: float = _POLAR_BRIDGE_DEG) -> np.ndarray:
+def _polar_caps_from_open(
+    open_mask: np.ndarray, lat_1d: np.ndarray, seed_deg: float = _POLAR_SEED_DEG, bridge_deg: float = _POLAR_BRIDGE_DEG
+) -> np.ndarray:
     """
     Return a boolean mask of CONTIGUOUS polar coronal holes (open regions touching either pole),
     combining a distance-from-pole seed with flood fill and optional local bridging.
@@ -317,15 +316,17 @@ def _debug_morph_steps(
         # draw polar trim latitude lines on every panel
         lat_thr = np.deg2rad(_POLAR_TRIM_DEG)
         y_thr = np.sin(lat_thr)
-        ax.axhline(+y_thr, color='k', ls=':', lw=0.8, alpha=0.6)
-        ax.axhline(-y_thr, color='k', ls=':', lw=0.8, alpha=0.6)
+        ax.axhline(+y_thr, color="k", ls=":", lw=0.8, alpha=0.6)
+        ax.axhline(-y_thr, color="k", ls=":", lw=0.8, alpha=0.6)
         # on the last panel, overlay untrimmed vs trimmed outlines
         if idx == len(panels) - 1:
             j_u, i_u = np.where(outline_untrim)
             j_t, i_t = np.where(outline_trim)
-            ax.plot(lon_1d[i_u], np.sin(lat_1d[j_u]), '.', ms=1.0, color='orange', alpha=0.7, label='outline (untrimmed)')
-            ax.plot(lon_1d[i_t], np.sin(lat_1d[j_t]), '.', ms=1.0, color='cyan',   alpha=0.85, label='outline (trimmed)')
-            ax.legend(fontsize='x-small', loc='lower right', framealpha=0.5)
+            ax.plot(
+                lon_1d[i_u], np.sin(lat_1d[j_u]), ".", ms=1.0, color="orange", alpha=0.7, label="outline (untrimmed)"
+            )
+            ax.plot(lon_1d[i_t], np.sin(lat_1d[j_t]), ".", ms=1.0, color="cyan", alpha=0.85, label="outline (trimmed)")
+            ax.legend(fontsize="x-small", loc="lower right", framealpha=0.5)
 
     if savepath and _MORPH_DEBUG_SAVE:
         plt.savefig(savepath, dpi=200)
@@ -882,7 +883,7 @@ def magnet_plot(
                 region_mask_morph = _region_from_boundary(boundary_mask)
 
                 # --- CONTIGUOUS POLAR CAPS: seed-by-angle + flood-fill inside open regions ---
-                open_mask = (P == 0)
+                open_mask = P == 0
                 polar_caps = _polar_caps_from_open(open_mask, lat_1d)
                 # Union the polar caps into the morphed region so plotted red contour reflects the polar treatment
                 region_mask_morph = region_mask_morph | polar_caps
@@ -941,7 +942,15 @@ def magnet_plot(
                         aspect="auto",
                     )
                     # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        ch_distance_deg,
+                        levels=[5, 10, 20, 30],
+                        colors="k",
+                        linewidths=0.6,
+                        alpha=0.4,
+                    )
                     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
                     ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
                     cs_raw = ax_ch.contour(
@@ -1025,7 +1034,7 @@ def magnet_plot(
                 region_mask_morph = _region_from_boundary(boundary_mask)
 
                 # --- CONTIGUOUS POLAR CAPS: seed-by-angle + flood-fill inside open regions ---
-                open_mask = (P == 0)
+                open_mask = P == 0
                 polar_caps = _polar_caps_from_open(open_mask, lat_1d)
                 region_mask_morph = region_mask_morph | polar_caps
 
@@ -1082,7 +1091,15 @@ def magnet_plot(
                         aspect="auto",
                     )
                     # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        ch_distance_deg,
+                        levels=[5, 10, 20, 30],
+                        colors="k",
+                        linewidths=0.6,
+                        alpha=0.4,
+                    )
                     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
                     ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
                     cs_raw = ax_ch.contour(
@@ -1119,10 +1136,8 @@ def magnet_plot(
             print(f"\t\t{shorten_path(fluxon_map_histput_path)}")
             print(f"\t\t{shorten_path(fluxon_map_histput_path_top)}")
     if do_print:
-        print(
-            f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
-                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}"
-        )
+        print(f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
+                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}")
 
     if do_print_top:
         print("\t\t    Success!")

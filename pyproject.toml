@@ -83,6 +83,8 @@ markers = [
 [tool.black]
 line-length = 120
 fast = true
+# Two scratch scripts under dep/scripts/new/ do not parse (unterminated strings), so black cannot format them.
+extend-exclude = "dep/scripts/new/(final_setup|refined_setup copy)\\.py"
 
 [tool.flake8]
 max-line-length = 120

@@ -104,9 +104,7 @@ import configparser
 import os
 
 
-def configurations(
-    config_name=None, config_filename="config.ini", args=None, debug=False
-):
+def configurations(config_name=None, config_filename="config.ini", args=None, debug=False):
     """
     Reads and sanitizes configuration settings from a specified config file.
 
@@ -123,9 +121,7 @@ def configurations(
     """
     # Load configuration file
     config_path = find_config_file(config_filename)
-    config_obj = configparser.ConfigParser(
-        interpolation=configparser.ExtendedInterpolation()
-    )
+    config_obj = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
 
     with open(config_path, "r") as f:
         clean_content = clean_config_content(f.readlines())
@@ -134,9 +130,7 @@ def configurations(
     # Determine the configuration section to use
     # FLUXPYPE_CONFIG (set by flux-config-run --config) wins over the file's config_name
     config_name = (
-        config_name
-        or os.environ.get("FLUXPYPE_CONFIG")
-        or config_obj["DEFAULT"].get("config_name", "DEFAULT")
+        config_name or os.environ.get("FLUXPYPE_CONFIG") or config_obj["DEFAULT"].get("config_name", "DEFAULT")
     )
     if config_name not in config_obj:
         available_sections = ", ".join(config_obj.sections())
@@ -148,9 +142,7 @@ def configurations(
     # base_dir = auto (or empty): the folder that holds this fluxpype checkout,
     # so a fresh clone works wherever it lives. Set before any ${base_dir} is interpolated.
     if config_obj["DEFAULT"].get("base_dir", "").strip() in ("", "auto"):
-        config_obj["DEFAULT"]["base_dir"] = os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        )
+        config_obj["DEFAULT"]["base_dir"] = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     # Create the configuration dictionary
     the_config = dict(config_obj[config_name])
@@ -261,9 +253,7 @@ def update_magdir_paths(config):
     CR = config.get("cr", config.get("rotations", [2100])[0])
     n_fluxons_wanted = config.get("fluxon_count")
     if not CR or not n_fluxons_wanted:
-        raise ValueError(
-            "Instance values 'cr' or 'fluxon_count' not found in configuration."
-        )
+        raise ValueError("Instance values 'cr' or 'fluxon_count' not found in configuration.")
 
     adapt_select = config.get("adapt_select", 0)
     reduction = config.get("mag_reduce", 1)
@@ -301,10 +291,7 @@ def compute_configs(config):
     # config["cr"] = config["rotations"][0]
     # config["nwant"] = config["fluxon_count"][0]
     config["n_jobs"] = str(
-        len(config["rotations"])
-        * len(config["fluxon_count"])
-        * len(config["adapts"])
-        * len(config["flow_method"])
+        len(config["rotations"]) * len(config["fluxon_count"]) * len(config["adapts"]) * len(config["flow_method"])
     )
 
 
@@ -384,8 +371,10 @@ def get_flux_perl_lib(config):
     # Under fl_prefix
     fl_prefix = os.path.expanduser(config.get("fl_prefix", "").strip())
     if fl_prefix:
-        for prefix in (os.path.join(fl_prefix, "lib", "perl5"),
-                       os.path.join(fl_prefix, "lib", "perl5", "darwin-2level")):
+        for prefix in (
+            os.path.join(fl_prefix, "lib", "perl5"),
+            os.path.join(fl_prefix, "lib", "perl5", "darwin-2level"),
+        ):
             if os.path.isdir(prefix) and os.path.isfile(os.path.join(prefix, "Flux.pm")):
                 return prefix
             if os.path.isdir(prefix):
@@ -453,9 +442,7 @@ def add_top_level_dirs_to_path(root_dir):
 
     # List the top-level directories under the root directory
     top_level_dirs = [
-        os.path.join(root_dir, d)
-        for d in os.listdir(root_dir)
-        if os.path.isdir(os.path.join(root_dir, d))
+        os.path.join(root_dir, d) for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))
     ]
     top_level_dirs.append(f"{root_dir}:")
 
@@ -703,18 +690,14 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
     emit(f"\tReducing image size by a factor of {reduction}...", end="")
 
     if not os.path.exists(small_file) or force:
-        small_file = reduce_fits_image(
-            mag_file, small_file, target_resolution=None, reduction_amount=reduction
-        )
+        small_file = reduce_fits_image(mag_file, small_file, target_resolution=None, reduction_amount=reduction)
     else:
         emit(f"Skipped! Reduced file already exists: {shorten_path(str(small_file))}")
 
     return small_file
 
 
-def reduce_fits_image(
-    fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum
-):
+def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum):
     """
     Open a FITS file, reduce the size of the image using astropy's block_reduce
     function, and save a new copy of the FITS file with the smaller image in the
@@ -748,9 +731,7 @@ def reduce_fits_image(
 
         # Raise an error if neither target_resolution nor reduction_amount is specified
         elif reduction_amount is None:
-            raise ValueError(
-                "Either target_resolution or reduction_amount must be specified."
-            )
+            raise ValueError("Either target_resolution or reduction_amount must be specified.")
 
         before_sum = np.sum(data)
         small_image = block_reduce(data, reduction_amount, func)
@@ -770,9 +751,7 @@ def reduce_fits_image(
         useheader["BSCALE"] = 1
 
         useheader["CDELT1"] = 360 / small_image.shape[1]  ## DEGREES
-        useheader["CDELT2"] = np.deg2rad(
-            360 / (small_image.shape[0] * np.pi)
-        )  # RADIANS
+        useheader["CDELT2"] = np.deg2rad(360 / (small_image.shape[0] * np.pi))  # RADIANS
 
         emit(f"\t\tFinal shape: {small_image.shape}")
         emit(f"\t\tSaving {shorten_path(str(small_file))}")
@@ -1037,9 +1016,7 @@ def add_fluxon_dirs_to_path(do_print=False):
     return dirlist
 
 
-def path_add(
-    dirlist, do_print=False
-):  # Add the parent directory to the module search path
+def path_add(dirlist, do_print=False):  # Add the parent directory to the module search path
     for path in dirlist:
         sys.path.append(path)
         if do_print:
@@ -1148,10 +1125,7 @@ def get_magnetogram_file(
 
     # Set the download account
     jsoc_email = (
-        email
-        or os.environ.get("JSOC_EMAIL")
-        or configurations().get("jsoc_email", "").strip()
-        or default_email
+        email or os.environ.get("JSOC_EMAIL") or configurations().get("jsoc_email", "").strip() or default_email
     )
 
     # Set the Carrington rotation number
@@ -1199,9 +1173,7 @@ def get_magnetogram_file(
     c = drms.Client()
     # Generate a search
     crot = a.jsoc.PrimeKey("CAR_ROT", str(CR))
-    res = Fido.search(
-        a.jsoc.Series("hmi.Synoptic_Mr_polfil_720s"), crot, a.jsoc.Notify(jsoc_email)
-    )
+    res = Fido.search(a.jsoc.Series("hmi.Synoptic_Mr_polfil_720s"), crot, a.jsoc.Notify(jsoc_email))
 
     # Once the query is made and trimmed down...
     big_path = os.path.join(mag_dir, f"CR{CR}_r1_hmi.fits")
@@ -1288,9 +1260,7 @@ def get_ADAPT_file(
             break
             for ii, dt in enumerate(dates):
                 if dt in str(file):
-                    emit(
-                        f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'"
-                    )
+                    emit(f"\t\tFound '{os.path.basename(file)}' in '{shorten_path(mag_dir)}'")
                     emit(f"\t\tDate: {date_obs[ii].strftime(tstring_display)}")
                     found_file = True
                     break
@@ -1314,9 +1284,7 @@ def get_ADAPT_file(
     from sunpy.net.dataretriever.attrs.adapt import ADAPTLonType as ADAPTLngType
 
     LngType = "0"  # 0 is carrington, 1 is central meridian
-    res = Fido.search(
-        a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType)
-    )
+    res = Fido.search(a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType))
     if res.file_num == 0:
         # ponytail: known gap, sunpy 7.1's client found no files for current NSO names
         # (e.g. adapt40311_044012_...fts.gz) on 2026-10-17; a direct NSO listing is the fix
@@ -1449,9 +1417,7 @@ def reduce_mag_file(mag_file, reduction=3, force=False):
     small_file = PosixPath(str(mag_file).replace("_r1_", f"_r{reduction}_"))
     emit(f"\tReducing image size by a factor of {reduction}...", end="")
     if not os.path.exists(small_file) or force:
-        small_file = reduce_fits_image(
-            mag_file, small_file, target_resolution=None, reduction_amount=reduction
-        )
+        small_file = reduce_fits_image(mag_file, small_file, target_resolution=None, reduction_amount=reduction)
     else:
         emit(f"Skipped! Reduced file already exists: {shorten_path(str(small_file))}")
     return small_file
@@ -1464,9 +1430,7 @@ def read_fits_data(fname):
     return hdulist
 
 
-def reduce_fits_image(
-    fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum
-):
+def reduce_fits_image(fits_path, small_file, target_resolution=None, reduction_amount=None, func=np.nansum):
     """
     Open a FITS file, reduce the size of the image using astropy's block_reduce
     function, and save a new copy of the FITS file with the smaller image in the
@@ -1496,9 +1460,7 @@ def reduce_fits_image(
 
         # Raise an error if neither target_resolution nor reduction_amount is specified
         elif reduction_amount is None:
-            raise ValueError(
-                "Either target_resolution or reduction_amount must be specified."
-            )
+            raise ValueError("Either target_resolution or reduction_amount must be specified.")
 
         before_sum = np.sum(data)
         small_image = block_reduce(data, reduction_amount, func)
@@ -1764,10 +1726,10 @@ def sunspotplot(carr_ax, cr=None, use_years=False):
     # Plot the Sunspot Number
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "plotting", "SN_m_tot_V2.0.tsv")
+    file_path = os.path.join(script_dir, "plotting", "SN_m_tot_V2.0.tsv")
 
     # Load sunspot data (transpose as in your original code)
-    carrington = np.loadtxt(file_path).T    ## https://sidc.be/SILSO/datafiles#total ##
+    carrington = np.loadtxt(file_path).T  ## https://sidc.be/SILSO/datafiles#total ##
     from sunpy.coordinates.sun import (
         carrington_rotation_time as crt,
         carrington_rotation_number as crn,
@@ -1867,11 +1829,11 @@ def parse_big_dict(big_dict, field="vel1", vmin=VMIN, vmax=VMAX):
     )
 
 
-
 # A quick function to read output FLUX world data
 
 # Import libraries
 import numpy
+
 
 def rdworld(filename):
 
@@ -1922,7 +1884,7 @@ def rdworld(filename):
     w = world()
 
     # Now actually go about reading the data
-    df = open(filename, 'r')
+    df = open(filename, "r")
 
     # Initialize data storage
     ln_id = []
@@ -1943,15 +1905,18 @@ def rdworld(filename):
         sl = rl.strip().split()
 
         # Skip ahead for blank lines
-        if len(sl) == 0: continue
+        if len(sl) == 0:
+            continue
 
         # Read out flux concentrations
-        if sl[0] == 'NEW':
-            w.add_fc(numpy.int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5]))
+        if sl[0] == "NEW":
+            w.add_fc(
+                numpy.int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5])
+            )
 
         # Read out fluxon data
-        if sl[0] == 'LINE':
-            if numpy.int(sl[1])>0:
+        if sl[0] == "LINE":
+            if numpy.int(sl[1]) > 0:
                 ln_id.append(numpy.int(sl[1]))
                 ln_fc0.append(numpy.int(sl[4]))
                 ln_fc1.append(numpy.int(sl[5]))
@@ -1960,7 +1925,7 @@ def rdworld(filename):
                 ln_r1.append([numpy.double(sl[10]), numpy.double(sl[11]), numpy.double(sl[12])])
 
         # Read out vertex points
-        if sl[0] == 'VERTEX':
+        if sl[0] == "VERTEX":
             vx_lid.append(numpy.int(sl[1]))
             vx_id.append(numpy.int(sl[2]))
             vx_pos.append(numpy.int(sl[3]))
@@ -1969,13 +1934,13 @@ def rdworld(filename):
             vx_z.append(numpy.double(sl[6]))
 
         # Exit on neighbor information
-        if 'VNEIGHBOR' in sl[0]:
+        if "VNEIGHBOR" in sl[0]:
             break
 
     df.close()
 
     # Convert lists into numpy arrays
-    ln_id  = numpy.array(ln_id)
+    ln_id = numpy.array(ln_id)
     ln_fc0 = numpy.array(ln_fc0)
     ln_fc1 = numpy.array(ln_fc1)
     ln_fl = numpy.array(ln_fl)
@@ -1994,9 +1959,20 @@ def rdworld(filename):
         wl = numpy.where(ln_id == lid)[0]
         wv = numpy.where(vx_lid == lid)[0]
 
-        w.add_fx(lid, ln_fc0[wl][0], ln_fc1[wl][0], ln_fl[wl][0], ln_r0[wl,:][0].tolist(), ln_r1[wl,:][0].tolist(), vx_x[wv].tolist(), vx_y[wv].tolist(), vx_z[wv].tolist())
+        w.add_fx(
+            lid,
+            ln_fc0[wl][0],
+            ln_fc1[wl][0],
+            ln_fl[wl][0],
+            ln_r0[wl, :][0].tolist(),
+            ln_r1[wl, :][0].tolist(),
+            vx_x[wv].tolist(),
+            vx_y[wv].tolist(),
+            vx_z[wv].tolist(),
+        )
 
     return w
+
 
 # A quick comment on reading FLUX output world files:
 
