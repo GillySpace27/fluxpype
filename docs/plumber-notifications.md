@@ -60,7 +60,17 @@ deleted, then the newest 50,000 are kept. Deleting a job acknowledges its events
 Event JSON: `{seq, t, kind, sev, key, job_id, task_id, origin: {kind, session?, tab?}, f, acked}`. `log_id` changes
 only if the database is replaced; a client that sees it change resets its cursor.
 
+## Agents
+
+The MCP server sends `X-Flux-Session` (a random id per MCP server process) on every request, so the jobs an agent
+starts carry its session. `submit_job` and `retry_failed` return `notify.command`, a
+`python -m fluxpype.plumber.watch --job J` line for Claude Code's Monitor tool; `get_notifications` is the pull
+fallback; `status` reports `notifications: {last_seq, attention, unread}`. `watch` identifies itself with
+`X-Flux-Client: watch`, which is neither logged as agent activity nor counted. Details and exit codes:
+`docs/mcp/TOOLS.md`, "Being told when a job ends".
+
 ## Contracts
 
 `tests/notify_line_golden.py`, `tests/notify_transitions_golden.py` and `tests/events_api_golden.py` write golden files
 under `tests/golden/` (`--update`); `tests/test_notify_golden.py` names every entry that moved.
+`tests/mcp_tools_golden.py` pins the MCP tool names, arguments and annotations of both server copies.

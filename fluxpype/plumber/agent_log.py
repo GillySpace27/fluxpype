@@ -30,6 +30,7 @@ TOOLS = [
     ("get_task_image", "read", "Look at one of a task's images"),
     ("create_preset", "write", "Save a new preset (runs nothing)"),
     ("list_proposals", "read", "See the Ask bar's proposals and what became of them"),
+    ("get_notifications", "read", "Read recent job events, one line each"),
 ]
 
 MAX_CALLS = 1000  # calls kept in memory (and the file is trimmed to about twice the request lines this implies)

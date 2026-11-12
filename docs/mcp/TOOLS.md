@@ -29,10 +29,10 @@ Results are compact JSON. Every string is cut to 2,000 characters, except log te
 
 | Tool | Arguments | What it does | Kind |
 |---|---|---|---|
-| `status` | none | Version, backends, queue settings, running and queued tasks, recent results with failure reasons | read-only |
+| `status` | none | Version, backends, queue settings, running and queued tasks, recent results with failure reasons, and `notifications: {last_seq, attention, unread}` from the event log | read-only |
 | `list_profiles` | none | Profiles with batch name, task count, errors and warnings | read-only |
 | `get_profile` | `name` | A profile's own settings, editable keys, and a task preview showing cached stages | read-only |
-| `submit_job` | `profile`, `overrides`, `tasks`, `backend`, `scenario`, `speed` | Queues a job. Override values may be strings, numbers, booleans or lists; they are sent as strings (`[2225, 2226]` for a list). `tasks` is a list of `[cr, nflux, adapt, method]`. `scenario` and `speed` only apply to the fake backend | write |
+| `submit_job` | `profile`, `overrides`, `tasks`, `backend`, `scenario`, `speed` | Queues a job. Override values may be strings, numbers, booleans or lists; they are sent as strings (`[2225, 2226]` for a list). `tasks` is a list of `[cr, nflux, adapt, method]`. `scenario` and `speed` only apply to the fake backend. The result carries `notify: {command, timeout_ms, rearm}`, a `watch` command line for the Monitor tool (see "Being told when a job ends") | write |
 | `list_jobs` | `limit` (20), `status`, `profile` | Recent jobs, filtered | read-only |
 | `get_job` | `job_id` | One job with a stage summary per task | read-only |
 | `get_task` | `task_id` | Stages (status, source, verified, elapsed), latest relaxation, warnings, degraded flag, exit code, artifacts with an index | read-only |
@@ -40,13 +40,24 @@ Results are compact JSON. Every string is cut to 2,000 characters, except log te
 | `read_task_log` | `task_id`, `tail_lines` (200, max 400), `grep`, `context` (3, max 20) | The log tail, or matching lines with context. `grep` is a case-insensitive plain substring, not a regex | read-only |
 | `wait_for_task` | `task_id`, `until` (`finished` or a stage id), `timeout_s` (60, max 300) | Polls every 1.5 s, reports progress on each stage change, and returns the final state or `{"still_running": true, "stage": ...}` | read-only |
 | `cancel` | `job_id` or `task_id` | Cancels a job or one task; running work is stopped | destructive |
-| `retry_failed` | `job_id` | Re-queues the failed tasks of a job | write |
+| `retry_failed` | `job_id` | Re-queues the failed tasks of a job; the result carries `notify` as `submit_job` does | write |
 | `set_queue` | `paused`, `max_parallel`, `cpu_budget` | Changes queue settings | write |
 | `cache_summary` | `profile`, `kind`, `cr`, `nflux`, `limit` (50), `offset`, `rescan` | Totals by kind plus a filtered, paged file list | read-only |
 | `get_task_image` | `task_id`, `index` (-1 is the newest), `max_edge` (1024) | One plot as an image with a caption. With Pillow installed it is downscaled; without it, images over 1.5 MB are refused | read-only |
 | `create_preset` | `name`, `base`, `values` | Saves a new user preset (runs nothing): `base` is copied, then `values` replace its keys. Same checks as the Presets page (`POST /api/profiles`) | write |
 | `list_proposals` | `status`, `limit` (20) | Changes proposed from the Ask bar, with what became of each (approved with its job id or preset name, rejected, expired, failed, withdrawn with `superseded_by`) | read-only |
-| `withdraw_proposal` | `proposal_id`, `reason` | Ask bar copy only (an 18th tool there; agents see the 17 above). Closes the Ask bar's own pending proposal without running it | write |
+| `get_notifications` | `since` (0), `job_id`, `only_mine` (false), `limit` (50, max 500) | Job events from Plumber's event log as one line each, oldest first (`flux seq=.. kind=.. job=.. task=..`), plus `log_id`, `last_seq` and this server's `session`. `since` is the `last_seq` of the previous call (0 gives the newest `limit`); `only_mine` keeps jobs this MCP server started. Agents' copy only | read-only |
+| `withdraw_proposal` | `proposal_id`, `reason` | Ask bar copy only (an 18th tool there, which lacks `get_notifications`; agents see the 18 above it). Closes the Ask bar's own pending proposal without running it | write |
+
+## Being told when a job ends
+
+The MCP server cannot push to a chat on its own, so a job's outcome reaches an agent in one of three ways, best first:
+
+1. **Monitor (push).** Run the `notify.command` from `submit_job` with Claude Code's Monitor tool and `timeout_ms` set to `notify.timeout_ms` (1,800,000). It is `<the MCP server's python> -m fluxpype.plumber.watch --job J [--home H]`: it prints one `flux state ...` line per watched job, then one line per event, and exits when every watched job has ended (0 all ok, 1 otherwise). Each line wakes the session. When the Monitor run expires before the job ends, run the command again: it reprints the current state first. The first run may ask for Bash permission unless allow-listed.
+2. **Background Bash (one notification).** The same command with `--quiet` under `run_in_background` prints only the final `flux done exit=N ...` line.
+3. **Pull.** `get_notifications(since=<last_seq>)` works in every MCP client, including Claude Desktop chat.
+
+Lines contain only event kinds, ids and integers (`flux seq=815 t=... kind=task_failed sev=error job=j1a2b3c4d task=j1a2b3c4d-02 stage=pfss exit=1 next=get_task:j1a2b3c4d-02`), never log text; read failure details with `get_task` and `read_task_log`. `watch` reads the token from the home and never prints it; it is also installed as `flux-plumb-watch`. Its options: `--job J` (repeatable), `--session S`, `--all`, `--until finished|never`, `--quiet`, `--home H`. Exit codes: 0 ok, 1 a job ended otherwise, 2 usage, 3 unknown job, 4 Plumber unreachable for 300 s. The event log itself is described in `docs/plumber-notifications.md`.
 
 Not provided: moving files to the cache trash, restoring or emptying it, deleting jobs, writing `config.ini`, MCP resources and prompts.
 

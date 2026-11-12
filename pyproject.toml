@@ -57,6 +57,7 @@ flux-config-edit = "fluxpype.config_runner:open_config"
 flux-config-gallery = "fluxpype.config_runner:gallery"
 flux-plumb = "fluxpype.plumber.cli:main"
 flux-plumb-mcp = "fluxpype.plumber.mcp_server:main"
+flux-plumb-watch = "fluxpype.plumber.watch:main"
 
 [project.urls]
 Homepage = "https://github.com/gillyspace27/fluxpype"
