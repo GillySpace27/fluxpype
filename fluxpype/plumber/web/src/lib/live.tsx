@@ -102,6 +102,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "agent_call":
             soon([["agent-log"]]);
             break;
+          case "proposals":
+            soon([["proposals"]]);
+            break;
           case "agent_activity":
             setAgent({ ts: Date.now(), tool: msg.data.tool, count: msg.data.count });
             break;

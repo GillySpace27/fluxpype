@@ -7,6 +7,7 @@ so nothing here may print to stdout: diagnostics go to stderr.
 import argparse
 import contextvars
 import functools
+import inspect
 import io
 import json
 import os
@@ -61,7 +62,9 @@ ASK_INSTRUCTIONS = (
 )
 PROPOSE_NOTE = (
     " In the Ask bar this changes nothing: Plumber checks the arguments (an error comes back now) and stores a "
-    "proposal; the person runs or rejects it after your answer ends."
+    "proposal; the person runs or rejects it after your answer ends. `supersedes`: the id of your own earlier "
+    "pending proposal that this one replaces (revised numbers, or the earlier one was wrong); its card closes and "
+    "it is never run."
 )
 
 
@@ -75,6 +78,7 @@ CURRENT_TOOL: "contextvars.ContextVar[str]" = contextvars.ContextVar("flux_mcp_t
 CURRENT_CALL: "contextvars.ContextVar[Tuple[str, str]]" = contextvars.ContextVar(
     "flux_mcp_call", default=("", "")
 )  # id, args
+SUPERSEDES: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("flux_supersedes", default=None)
 
 
 def _detail(resp: "httpx.Response") -> str:
@@ -498,6 +502,8 @@ def build_server(client: PlumberClient, propose: bool = False) -> MCPServer:
                 CURRENT_CALL.set(
                     (uuid.uuid4().hex[:12], json.dumps(shown, default=str)[:400])
                 )  # ascii: it travels in a header
+                if proposes:
+                    SUPERSEDES.set(kwargs.pop("supersedes", None))
                 try:
                     return await fn(*args, **kwargs)
                 except ToolError:
@@ -507,11 +513,16 @@ def build_server(client: PlumberClient, propose: bool = False) -> MCPServer:
                 except httpx.HTTPError as e:
                     raise ToolError(f"Plumber request failed: {e}") from None
 
-            text = (
-                description
-                + (UNTRUSTED if untrusted else "")
-                + (PROPOSE_NOTE if propose and fn.__name__ in proposals.TOOLS else "")
-            )
+            proposes = propose and fn.__name__ in proposals.TOOLS
+            if proposes:  # the Ask bar's copy takes one more argument; the agents' tools stay as they are
+                sig = inspect.signature(fn)
+                extra = inspect.Parameter(
+                    "supersedes", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=Optional[str]
+                )
+                guarded.__signature__ = sig.replace(  # type: ignore[attr-defined]
+                    parameters=[*sig.parameters.values(), extra]
+                )
+            text = description + (UNTRUSTED if untrusted else "") + (PROPOSE_NOTE if proposes else "")
             return server.tool(description=text, annotations=annotations, structured_output=False)(guarded)
 
         return register
@@ -529,12 +540,15 @@ def build_server(client: PlumberClient, propose: bool = False) -> MCPServer:
 
     async def proposal(tool: str, args: Dict[str, Any]) -> str:
         body = {"tool": tool, "args": args, "question": os.environ.get("FLUX_ASK_QUESTION", "")}
+        if SUPERSEDES.get():
+            body["supersedes"] = SUPERSEDES.get()
         p = (await api("POST", "/api/proposals", body=body)).json()
         return dumps(
             {
                 "proposal_id": p["id"],
                 "status": p["status"],
                 "summary": p["summary"],
+                **({"withdrew": p["supersedes"]} if p.get("supersedes") else {}),
                 "next": "Nothing has changed. The person sees a card and runs or rejects it after your answer; end your turn.",
             }
         )
@@ -830,14 +844,27 @@ def build_server(client: PlumberClient, propose: bool = False) -> MCPServer:
 
     @tool(
         "Changes proposed from the Ask bar, newest first: tool, the stored arguments, a summary, and status (pending, "
-        "running, approved, rejected, expired, failed) with the result (job_id or preset name) or error.",
+        "running, approved, rejected, expired, failed, withdrawn) with the result (job_id or preset name) or error.",
         ro,
     )
     async def list_proposals(status: Optional[str] = None, limit: int = 20) -> str:
         rows = (await get("/api/proposals")).get("proposals", [])
         rows = [p for p in rows if not status or p.get("status") == status][: clamp(limit, 1, 100)]
-        keys = ("id", "tool", "args", "summary", "status", "created", "decided", "result", "error")
+        keys = ("id", "tool", "args", "summary", "status", "created", "decided", "result", "error", "superseded_by")
         return dumps({"proposals": [keep(p, *keys) for p in rows]})
+
+    if propose:
+
+        @tool(
+            "Withdraw your own earlier pending proposal (from this question or an earlier one) without replacing it, "
+            "when the person no longer wants it. Its card closes and it is never run. To replace a proposal, give "
+            "`supersedes` to the new one instead. A proposal the person already ran, rejected or is running stays.",
+            set_write,
+        )
+        async def withdraw_proposal(proposal_id: str, reason: Optional[str] = None) -> str:
+            body = {"question": os.environ.get("FLUX_ASK_QUESTION", ""), "reason": (reason or "")[:300]}
+            p = (await api("POST", f"/api/proposals/{ident(proposal_id, 'proposal_id')}/withdraw", body=body)).json()
+            return dumps({"proposal_id": p["id"], "status": p["status"]})
 
     @tool(
         "What is in the data cache: totals by kind, and a page of files filtered by kind, rotation (cr) or "

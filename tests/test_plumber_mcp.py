@@ -487,6 +487,36 @@ def test_the_ask_bars_copy_only_proposes(rig, monkeypatch):
     assert "changes nothing" not in d["status"]
 
 
+def test_the_ask_bars_copy_supersedes_and_withdraws_its_own_proposals(rig, monkeypatch):
+    from fluxpype.plumber import ask
+    from fluxpype.plumber.agent_log import TOOLS
+
+    monkeypatch.setattr(ask, "_question", "q9")
+    monkeypatch.setenv("FLUX_ASK_QUESTION", "q9")
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    rig.tc.patch("/api/queue", json={"paused": True}, headers=H)
+    asker = Rig(rig.tc, rig.sched)
+    asker.server = build_server(asker.client, propose=True)
+
+    async def schemas(server):
+        async with Client(server) as c:
+            return {t.name: t.input_schema["properties"] for t in (await c.list_tools()).tools}
+
+    s = anyio.run(schemas, asker.server)
+    assert set(s) == {n for n, _, _ in TOOLS} | {"withdraw_proposal"}
+    assert all("supersedes" in s[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
+    plain = anyio.run(schemas, rig.server)  # the agents' copy is unchanged: 17 tools, no supersedes
+    assert "withdraw_proposal" not in plain and "supersedes" not in plain["submit_job"]
+    a = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [200]})["proposal_id"]
+    b = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [300]}, supersedes=a)
+    assert b["withdrew"] == a
+    listed = {p["id"]: p for p in asker.ok("list_proposals")["proposals"]}
+    assert listed[a]["status"] == "withdrawn" and listed[a]["superseded_by"] == b["proposal_id"]
+    assert asker.ok("withdraw_proposal", proposal_id=b["proposal_id"], reason="never mind")["status"] == "withdrawn"
+    err, msg = asker.call("withdraw_proposal", proposal_id=a)
+    assert err and "withdrawn, not pending" in msg
+
+
 # ------------------------------------------------------------------ images
 
 

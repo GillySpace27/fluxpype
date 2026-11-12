@@ -64,7 +64,7 @@ def test_the_cli_is_stripped_down_and_its_write_tools_only_propose():
     tools = " ".join(flag(cmd, f) for f in ("--tools", "--allowedTools", "--disallowedTools"))
     assert not any(t in tools for t in ("Bash", "Edit", "Write")) and "--add-dir" in cmd  # the repo, read-only
     allowed = {a.replace("mcp__fluxpype__", "") for a in flag(cmd, "--allowedTools").split(",")}
-    assert allowed == set(ask.READ_TOOLS) | set(proposals.TOOLS)  # images and outcomes now; writes only propose
+    assert allowed == set(ask.READ_TOOLS) | set(proposals.TOOLS) | {"withdraw_proposal"}  # writes only propose
     assert {"get_task_image", "list_proposals", "submit_job", "create_preset"} <= allowed and "wait_for_task" not in allowed
     assert not {"Read", "Grep", "Glob"} & allowed  # a bare allow rule reaches every path; unlisted, only the repo
     denied = flag(cmd, "--disallowedTools").split(",")
@@ -304,3 +304,109 @@ def test_the_answer_ends_with_plumbers_list_of_its_proposals(client, monkeypatch
     ev = events(client.post("/api/ask", json={"question": "queue t_one"}, headers=H))
     assert ev[-2] == {"type": "text", "text": '\n\n```flux-proposals\n["abc123def456"]\n```\n'} and ev[-1]["type"] == "done"
     assert len(seen[0]) == 12 and ask.current_question() == ""  # the id lived only while the question ran
+
+
+
+def withdraw(c, pid, question="q1", headers=None):
+    body = {"question": question, "reason": "the person changed their mind"}
+    return c.post(
+        f"/api/proposals/{pid}/withdraw", json=body, headers=headers or {**ASK, "X-Flux-Tool": "withdraw_proposal"}
+    )
+
+
+def test_supersede_and_withdraw_close_a_pending_ask_proposal_for_good(asking, monkeypatch):
+    c = asking
+    a = propose(c, "set_queue", {"cpu_budget": 3}).json()
+    monkeypatch.setattr(ask, "_question", "q2")  # iteration happens across turns: a later question revises it
+    r = c.post(
+        "/api/proposals",
+        json={"tool": "set_queue", "args": {"cpu_budget": 4}, "question": "q2", "supersedes": a["id"]},
+        headers={**ASK, "X-Flux-Tool": "set_queue"},
+    )
+    assert r.status_code == 201 and r.json()["supersedes"] == a["id"]
+    b = r.json()
+    old = c.get("/api/proposals", headers=H).json()["proposals"][1]
+    assert old["id"] == a["id"] and old["status"] == "withdrawn" and old["superseded_by"] == b["id"]
+    assert old["withdrawn_in"] == "q2" and old["decided"]
+    assert c.post(f"/api/proposals/{a['id']}/approve", headers=H).status_code == 409  # never runs afterwards
+    assert c.post(f"/api/proposals/{a['id']}/reject", headers=H).status_code == 409
+    assert withdraw(c, a["id"], "q2").status_code == 409  # not twice
+    r = withdraw(c, b["id"], "q2")
+    assert (
+        r.status_code == 200
+        and r.json()["status"] == "withdrawn"
+        and r.json()["reason"] == "the person changed their mind"
+    )
+    assert r.json()["superseded_by"] is None
+    assert c.get("/api/queue", headers=H).json()["cpu_budget"] == 64  # nothing ran
+    calls = c.get("/api/agent", headers=H).json()["calls"]
+    logged = [json.loads(x["args"]) for x in calls if x["via"] == "ask" and x["args"].startswith('{"proposal"')]
+    assert {"proposal": a["id"], "decision": "superseded"} in logged and {
+        "proposal": b["id"],
+        "decision": "withdrawn",
+    } in logged
+    assert any(
+        x["tool"] == "withdraw_proposal" and f"POST /api/proposals/{b['id']}/withdraw" in x["paths"] for x in calls
+    )
+
+
+def test_a_bad_supersedes_stores_nothing(asking):
+    c = asking
+    body = {"tool": "set_queue", "args": {"cpu_budget": 4}, "question": "q1", "supersedes": "nope"}
+    assert c.post("/api/proposals", json=body, headers=ASK).status_code == 404
+    done = propose(c, "set_queue", {"cpu_budget": 5}).json()
+    c.post(f"/api/proposals/{done['id']}/reject", headers=H)
+    assert c.post("/api/proposals", json={**body, "supersedes": done["id"]}, headers=ASK).status_code == 409
+    assert [p["id"] for p in c.get("/api/proposals", headers=H).json()["proposals"]] == [done["id"]]
+
+
+def test_running_or_done_proposals_cannot_be_withdrawn(asking, tmp_path):
+    store = proposals.ProposalStore(str(tmp_path / "p.json"))
+    p = store.add("set_queue", {"cpu_budget": 3}, "s", "q1")
+    store.claim(p["id"])  # the person's click is in flight; claim and withdraw share the lock, and running wins
+    with pytest.raises(proposals.ProposalError, match="running") as e:
+        store.withdraw(p["id"], "q1")
+    assert e.value.code == 409
+    with pytest.raises(proposals.ProposalError, match="running"):
+        store.add("set_queue", {"cpu_budget": 4}, "s", "q1", supersedes=p["id"])
+    assert len(store.list()) == 1  # the refused supersede stored nothing
+    store.finish(p["id"], "approved", result={})
+    with pytest.raises(proposals.ProposalError, match="approved"):
+        store.withdraw(p["id"], "q1")
+    c = asking  # and through the routes, after a real click
+    q = propose(c, "set_queue", {"cpu_budget": 4}).json()
+    assert c.post(f"/api/proposals/{q['id']}/approve", headers=H).json()["status"] == "approved"
+    assert withdraw(c, q["id"]).status_code == 409
+    assert c.get("/api/proposals", headers=H).json()["proposals"][0]["status"] == "approved"
+
+
+def test_withdraw_is_the_ask_clients_during_a_question_only(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(ask, "_question", "q1")
+    p = propose(client, "set_queue", {"cpu_budget": 3}).json()
+    assert withdraw(client, p["id"], headers=H).status_code == 403  # the person rejects from the card instead
+    assert withdraw(client, p["id"], headers={**H, "X-Flux-Client": "mcp"}).status_code == 403
+    assert withdraw(client, p["id"], question="q2").status_code == 409  # not the running question
+    monkeypatch.setattr(ask, "_question", "")
+    assert withdraw(client, p["id"], question="").status_code == 409  # no question running
+    assert client.get("/api/proposals", headers=H).json()["proposals"][0]["status"] == "pending"
+    store = proposals.ProposalStore(str(tmp_path / "p.json"))  # only proposals the Ask bar made
+    store.items.append(
+        {"id": "x1", "tool": "set_queue", "args": {}, "origin": "browser", "status": "pending", "created": 9e9}
+    )
+    with pytest.raises(proposals.ProposalError, match="Ask bar made") as e:
+        store.withdraw("x1", "q1")
+    assert e.value.code == 403
+
+
+def test_withdrawals_are_capped_per_question(asking, monkeypatch):
+    c = asking
+    monkeypatch.setattr(proposals, "PER_QUESTION", 100)
+    ids = [propose(c, "set_queue", {"cpu_budget": i}).json()["id"] for i in range(1, 9)]
+    for pid in ids[:5]:
+        assert withdraw(c, pid).status_code == 200
+    body = {"tool": "set_queue", "args": {"cpu_budget": 20}, "question": "q1", "supersedes": ids[5]}
+    assert c.post("/api/proposals", json=body, headers=ASK).status_code == 201  # a supersede counts as one
+    r = withdraw(c, ids[6])
+    assert r.status_code == 429 and "per question" in r.json()["detail"]
+    monkeypatch.setattr(ask, "_question", "q2")
+    assert withdraw(c, ids[6], "q2").status_code == 200  # a new question has its own allowance

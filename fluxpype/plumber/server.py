@@ -108,6 +108,12 @@ class ProposalIn(BaseModel):
     tool: Literal[PROPOSAL_TOOLS]  # type: ignore[valid-type]
     args: Dict[str, Any] = Field(default_factory=dict)
     question: str = Field(default="", max_length=64)
+    supersedes: Optional[str] = Field(default=None, max_length=64)  # an earlier pending Ask proposal this replaces
+
+
+class WithdrawIn(BaseModel):
+    question: str = Field(default="", max_length=64)
+    reason: str = Field(default="", max_length=300)
 
 
 class QueueIn(BaseModel):
@@ -334,6 +340,12 @@ def create_app(
                 client == "ask"
                 and request.method not in ("GET", "HEAD", "OPTIONS")
                 and (request.method, path) != ("POST", "/api/proposals")
+                and not (
+                    request.method == "POST"
+                    and path.startswith("/api/proposals/")
+                    and path.count("/") == 4
+                    and path.endswith("/withdraw")
+                )
             ):
                 return JSONResponse({"detail": "the Ask bar is read-only; a person clicks a card"}, status_code=403)
             if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
@@ -1199,11 +1211,31 @@ def create_app(
             raise HTTPException(409, "no Ask question is running with this id")
         norm, summary, diff = check_proposal(body.tool, body.args)
         try:
-            p = proposals.add(body.tool, norm, summary, body.question, diff)
+            p = proposals.add(body.tool, norm, summary, body.question, diff, body.supersedes)
         except ProposalError as e:
             fail(e, e.code)
+        if body.supersedes:
+            decided(request, proposals.get(body.supersedes), "superseded")
         hub.publish("proposals", {})
         return reply(p, 201)
+
+    @app.post("/api/proposals/{pid}/withdraw")
+    def proposal_withdraw(request: Request, pid: str, body: WithdrawIn):
+        """The Ask bar retires its own pending proposal (the person rejects from the card instead). Binds to a running
+        question like creation does, but the proposal may come from an earlier question: iteration spans turns."""
+        from . import ask
+
+        if request.headers.get("x-flux-client") != "ask":
+            raise HTTPException(403, "only the Ask bar withdraws; a person rejects from the card")
+        if not body.question or body.question != ask.current_question():
+            raise HTTPException(409, "no Ask question is running with this id")
+        try:
+            p = proposals.withdraw(pid, body.question, body.reason)
+        except ProposalError as e:
+            fail(e, e.code)
+        decided(request, p, "withdrawn")
+        hub.publish("proposals", {})
+        return reply(p)
 
     @app.post("/api/proposals/{pid}/approve")
     def proposal_approve(request: Request, pid: str):

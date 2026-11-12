@@ -3,7 +3,8 @@
 The Ask CLI's MCP server may not change Plumber: server.py refuses every write it sends except ``POST /api/proposals``.
 Its write tools post there instead. Plumber checks the arguments with the code the real route uses, stores the
 normalized arguments here and returns an id. A click on the card (``POST /api/proposals/{id}/approve``, refused to the
-Ask client) runs exactly the stored arguments, once. Stdlib only.
+Ask client) runs exactly the stored arguments, once. The Ask client may also withdraw its own pending proposal
+(``withdraw``, or ``supersedes`` on a new one); a withdrawn proposal never runs. Stdlib only.
 """
 
 import json
@@ -16,6 +17,7 @@ from typing import Any, Dict, List, Optional
 TOOLS = ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset")
 MAX_PENDING = 20
 PER_QUESTION = 6
+WITHDRAW_PER_QUESTION = 6
 EXPIRY_S = 24 * 3600
 ARGS_CAP = 4000  # characters of JSON
 KEEP = 200  # decided proposals kept, newest, so the next question can read what became of them
@@ -76,8 +78,42 @@ class ProposalStore:
     def pending(self) -> List[Dict[str, Any]]:
         return [p for p in self.list() if p["status"] == "pending"]
 
+    def get(self, pid: str) -> Dict[str, Any]:
+        with self.lock:
+            return dict(self._find(pid))
+
+    def _withdrawable(self, pid: str, question: str) -> Dict[str, Any]:
+        """The Ask bar's own pending proposal, from this question or an earlier one; call under the lock."""
+        p = self._find(pid)
+        if p.get("origin") != "ask":
+            raise ProposalError("only a proposal the Ask bar made can be withdrawn", 403)
+        if p["status"] != "pending":
+            raise ProposalError(f"this proposal is {p['status']}, not pending", 409)
+        if sum(q.get("withdrawn_in") == question for q in self.items) >= WITHDRAW_PER_QUESTION:
+            raise ProposalError(f"at most {WITHDRAW_PER_QUESTION} withdrawals per question", 429)
+        return p
+
+    @staticmethod
+    def _close(p: Dict[str, Any], question: str, reason: str, by: Optional[str] = None) -> None:
+        p.update(status="withdrawn", decided=time.time(), reason=reason[:300], superseded_by=by, withdrawn_in=question)
+
+    def withdraw(self, pid: str, question: str, reason: str = "") -> Dict[str, Any]:
+        """Close a pending Ask proposal without running it. Same lock as claim, so a running one cannot be withdrawn."""
+        with self.lock:
+            self._expire()
+            p = self._withdrawable(pid, question)
+            self._close(p, question, reason or "withdrawn by the Ask bar")
+            self._save()
+            return dict(p)
+
     def add(
-        self, tool: str, args: Dict[str, Any], summary: str, question: str, diff: Optional[list] = None
+        self,
+        tool: str,
+        args: Dict[str, Any],
+        summary: str,
+        question: str,
+        diff: Optional[list] = None,
+        supersedes: Optional[str] = None,
     ) -> Dict[str, Any]:
         if tool not in TOOLS:
             raise ProposalError(f"unknown tool {tool!r}")
@@ -92,6 +128,7 @@ class ProposalStore:
                 )
             if sum(p.get("question") == question for p in self.items) >= PER_QUESTION:
                 raise ProposalError(f"at most {PER_QUESTION} proposals per question", 429)
+            old = self._withdrawable(supersedes, question) if supersedes else None
             p = {
                 "id": uuid.uuid4().hex[:12],
                 "tool": tool,
@@ -105,8 +142,11 @@ class ProposalStore:
                 "decided": None,
                 "result": None,
                 "error": None,
+                "supersedes": supersedes,
             }
             self.items.append(p)
+            if old:
+                self._close(old, question, "replaced by a revised proposal", p["id"])
             decided = [q for q in self.items if q["status"] != "pending"]
             if len(decided) > KEEP:
                 drop = {q["id"] for q in decided[: len(decided) - KEEP]}
