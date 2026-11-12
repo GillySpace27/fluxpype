@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Copy } from "lucide-react";
+import { ArrowLeft, Ban, Copy, Sparkles } from "lucide-react";
+import { openAsk } from "../components/AskBar";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
@@ -119,6 +120,16 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
         {bad && (
           <button className="mt-2 block text-left text-[13px] text-fail hover:underline" onClick={() => failedStage && select(failedStage.id)}>
             {failedStage ? `${failedStage.label} failed` : "Task failed"}: {reason ? `${reason}. ` : ""}Exit code {t.exit_code ?? "?"}. The Log tab shows where it stopped.
+          </button>
+        )}
+        {bad && (
+          <button
+            className="btn btn-sm mt-2"
+            onClick={() =>
+              openAsk(`Why did task ${t.id} of job ${t.job_id} (CR ${t.cr}, ${t.nflux} fluxons) ${failedStage ? `fail at the ${failedStage.label} stage` : `end as ${t.status}`}? Read its log and suggest a fix.`)
+            }
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Ask why this failed
           </button>
         )}
         {warnings.length > 0 && (

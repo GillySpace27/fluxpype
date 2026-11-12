@@ -1,8 +1,8 @@
 import * as RDialog from "@radix-ui/react-dialog";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, CornerDownLeft, Database, Gauge, Layers, ListChecks, Loader2, Moon, Pause, Play, Plus, Search, Settings, Sparkles, Sun } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, CornerDownLeft, Database, Gauge, Layers, ListChecks, Loader2, MessageSquarePlus, Moon, Pause, Play, Plus, Search, Settings, Sparkles, Sun } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { fuzzyMatch } from "../lib/fuzzy";
@@ -34,7 +34,76 @@ interface Turn {
   state: "running" | "done" | "error";
   error?: string;
   cost?: number;
+  model?: string;
 }
+
+/** GET /api/ask: whether the CLI is there, and whether the MCP SDK is (without it answers cannot read live state). */
+interface AskStatus {
+  available: boolean;
+  reason: string | null;
+  model: string;
+  tools: boolean;
+}
+
+// The conversation lives outside the palette so closing it keeps the turns (and a running answer keeps streaming).
+let turns: Turn[] = [];
+let ctrl: AbortController | null = null;
+const subs = new Set<() => void>();
+const setTurns = (f: (ts: Turn[]) => Turn[]) => {
+  turns = f(turns);
+  subs.forEach((s) => s());
+};
+const useTurns = () => useSyncExternalStore((s) => (subs.add(s), () => subs.delete(s)), () => turns);
+
+async function ask(question: string) {
+  ctrl?.abort();
+  const c = (ctrl = new AbortController());
+  const history = turns.filter((t) => t.state === "done").map((t) => ({ q: t.q, a: t.text }));
+  const n = turns.length;
+  const patch = (p: Partial<Turn> | ((t: Turn) => Partial<Turn>)) =>
+    !c.signal.aborted && setTurns((ts) => ts.map((t, i) => (i === n ? { ...t, ...(typeof p === "function" ? p(t) : p) } : t)));
+  setTurns((ts) => [...ts.map((t) => (t.state === "running" ? { ...t, state: "error" as const, error: "Stopped." } : t)), { q: question, text: "", tools: [], state: "running" }]);
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, page: window.location.pathname, history }),
+      signal: c.signal,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? res.statusText);
+    for await (const e of events(res)) {
+      if (e.type === "text") patch((t) => ({ text: t.text + e.text }));
+      else if (e.type === "tool") patch((t) => ({ tools: [...t.tools, e.name] }));
+      else if (e.type === "done") patch({ state: "done", cost: e.cost ?? undefined, model: e.model ?? undefined });
+      else if (e.type === "error") patch({ state: "error", error: e.message });
+    }
+    patch((t) => (t.state === "running" ? { state: "done" } : {}));
+  } catch (e) {
+    patch({ state: "error", error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+function newChat() {
+  ctrl?.abort();
+  setTurns(() => []);
+}
+
+/** Open the palette; with a question, ask it straight away (the "Ask why this failed" buttons use this). */
+export function openAsk(question?: string) {
+  if (question) ask(question);
+  window.dispatchEvent(new CustomEvent("flux:ask"));
+}
+
+// Shown when the box is empty; each one is asked as written. They lean on the read tools that exist today.
+const EXAMPLES = [
+  "Why did my most recent failed job fail?",
+  "What do the settings in the light preset do?",
+  "Which preset should I use for a CR2160 ADAPT run?",
+  "Compare my two most recent jobs: which settings differ?",
+  "What is in the cache, and which rotations does it cover?",
+];
+const exampleItems: Item[] = EXAMPLES.map((q, i) => ({ id: `ex-${i}`, group: "Try asking", title: q, icon: Sparkles, run: () => ask(q) }));
 
 /** What the box can do without a model: go places, flip switches, jump to a job or preset. */
 function useItems(close: () => void): Item[] {
@@ -126,14 +195,13 @@ async function* events(res: Response): AsyncGenerator<Record<string, any>> {
 }
 
 function Palette({ onClose }: { onClose: () => void }) {
-  const loc = useLocation();
   const items = useItems(onClose);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const abort = useRef<AbortController | null>(null);
+  const turns = useTurns();
+  const { data: status } = useQuery({ queryKey: ["ask-status"], queryFn: () => api.get<AskStatus>("/api/ask"), staleTime: 30_000 });
   const body = useRef<HTMLDivElement>(null);
-  const hits = useMemo(() => rank(items, q), [items, q]);
+  const hits = useMemo(() => (q.trim() ? rank(items, q) : [...exampleItems, ...rank(items, q)]), [items, q]);
   const rows = q.trim() ? [...hits, null] : hits; // null is the "Ask Claude" row
   const asking = turns.length > 0;
   const running = turns[turns.length - 1]?.state === "running";
@@ -142,43 +210,17 @@ function Palette({ onClose }: { onClose: () => void }) {
     // a question, or nothing that matches, goes to Ask by default
     setSel(q.trim() && (/\?\s*$/.test(q) || !hits.length) ? hits.length : 0);
   }, [q, hits.length]);
-  useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => {
     body.current?.scrollTo({ top: body.current.scrollHeight });
   }, [turns]);
 
-  const ask = async (question: string) => {
-    abort.current?.abort();
-    const ctrl = (abort.current = new AbortController());
-    const history = turns.filter((t) => t.state === "done").map((t) => ({ q: t.q, a: t.text }));
-    const patch = (p: Partial<Turn> | ((t: Turn) => Partial<Turn>)) =>
-      setTurns((ts) => ts.map((t, i) => (i === ts.length - 1 ? { ...t, ...(typeof p === "function" ? p(t) : p) } : t)));
-    setTurns((ts) => [...ts, { q: question, text: "", tools: [], state: "running" }]);
+  const submit = (question: string) => {
     setQ("");
-    try {
-      const res = await fetch("/api/ask", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, page: loc.pathname, history }),
-        signal: ctrl.signal,
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? res.statusText);
-      for await (const e of events(res)) {
-        if (e.type === "text") patch((t) => ({ text: t.text + e.text }));
-        else if (e.type === "tool") patch((t) => ({ tools: [...t.tools, e.name] }));
-        else if (e.type === "done") patch({ state: "done", cost: e.cost });
-        else if (e.type === "error") patch({ state: "error", error: e.message });
-      }
-      patch((t) => (t.state === "running" ? { state: "done" } : {}));
-    } catch (e) {
-      if (!ctrl.signal.aborted) patch({ state: "error", error: e instanceof Error ? e.message : String(e) });
-    }
+    ask(question);
   };
-
   const choose = (i: number) => {
     const row = rows[i];
-    if (row === null || (row === undefined && q.trim())) ask(q.trim());
+    if (row === null || (row === undefined && q.trim())) submit(q.trim());
     else row?.run();
   };
   const onKey = (e: React.KeyboardEvent) => {
@@ -188,7 +230,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (running) return;
-      if (asking) q.trim() && ask(q.trim()); // a follow-up, never a command
+      if (asking) q.trim() && submit(q.trim()); // a follow-up, never a command
       else if (q.trim() || rows.length) choose(sel);
     }
   };
@@ -204,26 +246,32 @@ function Palette({ onClose }: { onClose: () => void }) {
         >
           <RDialog.Title className="sr-only">Ask or search</RDialog.Title>
           <div className="flex items-center gap-3 border-b hair px-4 py-3">
-            {asking ? (
-              <button className="btn btn-ghost btn-icon !h-6 !w-6" aria-label="Back to search" onClick={() => (abort.current?.abort(), setTurns([]))}>
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-            ) : (
-              <Search className="h-4 w-4 text-faint" />
-            )}
+            {asking ? <Sparkles className="h-4 w-4 text-accent" /> : <Search className="h-4 w-4 text-faint" />}
             <input
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={onKey}
-              placeholder={asking ? "Ask a follow-up" : "Search, run a command, or ask about FLUX and Plumber"}
+              placeholder={asking ? "Ask a follow-up" : "Search, or ask: it reads your jobs, logs and docs, and proposes changes you approve"}
               className="min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder:text-faint focus:outline-none focus-visible:ring-0"
               aria-label="Ask or search"
               spellCheck={false}
             />
             {running && <Loader2 className="h-4 w-4 animate-spin text-accent" />}
+            {asking && (
+              <button className="btn btn-ghost btn-sm" onClick={newChat} title="Clear this conversation and go back to search">
+                <MessageSquarePlus className="h-3.5 w-3.5" /> New chat
+              </button>
+            )}
             <kbd className="rounded border border-line px-1.5 py-0.5 text-[10px] text-faint">esc</kbd>
           </div>
+          {status && (!status.available || !status.tools) && (
+            <p className="border-b hair bg-run/10 px-4 py-2 text-[11.5px] text-muted">
+              {!status.available
+                ? `Ask is unavailable: ${status.reason ?? "the Claude Code CLI was not found."}`
+                : 'Plumber\'s Python lacks the MCP SDK, so answers come from the docs only and cannot read your jobs, logs or cache. Install it with pip install -e ".[mcp]" and restart Plumber.'}
+            </p>
+          )}
           <div ref={body} className="min-h-0 flex-1 overflow-y-auto">
             {asking ? (
               <div className="space-y-5 px-5 py-4">
@@ -233,7 +281,11 @@ function Palette({ onClose }: { onClose: () => void }) {
                     {t.tools.length > 0 && <p className="mt-1 text-[11px] text-faint">Looked at: {[...new Set(t.tools)].join(", ")}</p>}
                     {t.text ? <AskAnswer text={t.text} streaming={t.state === "running"} /> : t.state === "running" && <p className="mt-2 text-xs text-faint">Thinking...</p>}
                     {t.state === "error" && <p className="mt-2 rounded-lg border border-fail/30 bg-fail/10 px-3 py-2 text-xs">{t.error}</p>}
-                    {t.state === "done" && t.cost != null && <p className="mt-1 text-[10.5px] text-faint">Answered by Sonnet from the FLUX reference; check anything you will act on. About ${t.cost.toFixed(3)}.</p>}
+                    {t.state === "done" && (
+                      <p className="mt-1 text-[10.5px] text-faint">
+                        {t.model ? `Answered by ${t.model}. ` : ""}Check anything you will act on.{t.cost != null ? ` About $${t.cost.toFixed(3)}.` : ""}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -279,8 +331,13 @@ export function AskBar() {
         setOpen((o) => !o);
       }
     };
+    const show = () => setOpen(true);
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener("flux:ask", show);
+    return () => {
+      window.removeEventListener("keydown", key);
+      window.removeEventListener("flux:ask", show);
+    };
   }, []);
   return (
     <>
