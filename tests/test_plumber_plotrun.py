@@ -357,7 +357,9 @@ def test_a_late_plot_does_not_change_a_finished_tasks_stages(client):
 
 
 def test_settings_are_parsed_never_passed_through():
-    ok = plotrun.clean_settings("light", {"light_method": "voronoi", "fov": "3", "nxy": "401", "observer_lon": " ", "nz": ""})
+    ok = plotrun.clean_settings(
+        "light", {"light_method": "voronoi", "fov": "3", "nxy": "401", "observer_lon": " ", "nz": ""}
+    )
     assert ok == {"light_method": '"voronoi"', "fov": "3.0", "nxy": "401"}
     assert plotrun.clean_settings("wind", {"flow_method": "wsa"}) == {"flow_method": "[wsa]"}
     for bad in (
@@ -381,7 +383,11 @@ def test_light_remake_takes_settings_into_its_own_copy_of_the_config(client):
     assert opts["light"]["can"] and light["light_method"]["choices"] and light["fov"]["value"]
     url = f"/api/tasks/{tid}/plots"
     assert client.post(url, json={"plots": ["bmag_scatter"], "settings": {"fov": "3"}}, headers=H).status_code == 400
-    assert client.post(url, json={"plots": ["light_triplot"], "settings": {"fov": "evil()"}}, headers=H).status_code == 400
+    assert (
+        client.post(url, json={"plots": ["light_triplot"], "settings": {"fov": "evil()"}}, headers=H).status_code == 400
+    )
+    job_path = client.sched.store.get_job(job["id"])["snapshot_path"]
+    before = open(job_path).read()
     body = {"plots": ["light_triplot"], "settings": {"fov": "3", "light_method": "voronoi"}, "overwrite": True}
     dry = client.post(url, json={**body, "dry_run": True}, headers=H).json()["plan"][0]
     assert dry["argv"][-1] == "--force"
@@ -391,8 +397,7 @@ def test_light_remake_takes_settings_into_its_own_copy_of_the_config(client):
     assert view["status"] == "ok" and view["settings"] == {"fov": "3.0", "light_method": "voronoi"}
     snap = open(os.path.join(client.sched.plot_run_dir(tid, view["id"]), "config.snapshot.ini")).read()
     assert re.search(r"^fov\s*=\s*3\.0\s*$", snap, re.M) and re.search(r'^light_method\s*=\s*"voronoi"\s*$', snap, re.M)
-    job_snap = open(client.sched.store.get_job(job["id"])["snapshot_path"]).read()
-    assert "light_method" not in job_snap or '"voronoi"' not in job_snap.split("[t_light]")[-1]  # the job's own record is untouched
+    assert open(job_path).read() == before  # the job's own record is untouched
 
 
 def test_wind_rerun_queues_a_wind_only_job_from_the_jobs_own_config(client):
@@ -405,13 +410,21 @@ def test_wind_rerun_queues_a_wind_only_job_from_the_jobs_own_config(client):
     assert r.status_code == 201, r.text
     new = r.json()
     assert new["id"] != job["id"] and new["extra"]["from_task"] == tid and len(new["tasks"]) == 1
-    assert new["tasks"][0]["method"] == "wsa" and new["tasks"][0]["cr"] == client.get(f"/api/tasks/{tid}", headers=H).json()["cr"]
+    assert (
+        new["tasks"][0]["method"] == "wsa"
+        and new["tasks"][0]["cr"] == client.get(f"/api/tasks/{tid}", headers=H).json()["cr"]
+    )
     snap = open(client.sched.store.get_job(new["id"])["snapshot_path"]).read()
     assert re.search(r"^wind_only\s*=\s*1\s*$", snap, re.M) and re.search(r"^light\s*=\s*0\s*$", snap, re.M)
     end = time.time() + 60
-    while time.time() < end and client.get(f"/api/jobs/{new['id']}", headers=H).json()["status"] not in ("ok", "failed"):
+    while time.time() < end and client.get(f"/api/jobs/{new['id']}", headers=H).json()["status"] not in (
+        "ok",
+        "failed",
+    ):
         time.sleep(0.1)
     done = client.get(f"/api/jobs/{new['id']}", headers=H).json()
     assert done["status"] == "ok", done
-    stages = {s["id"]: s["status"] for s in client.get(f"/api/tasks/{done['tasks'][0]['id']}", headers=H).json()["stages"]}
+    stages = {
+        s["id"]: s["status"] for s in client.get(f"/api/tasks/{done['tasks'][0]['id']}", headers=H).json()["stages"]
+    }
     assert stages["wind"] != "skipped" and stages["relax"] == "skipped"  # only the end of the pipeline ran

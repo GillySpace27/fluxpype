@@ -820,7 +820,8 @@ class Scheduler:
     ):
         """Remake plots of a finished task from the files on disk. Never changes the task's or job's status.
 
-        `settings` (plotrun.SETTINGS) are written into this run's own copy of the job's config, so the job's snapshot stays as it ran."""
+        `settings` (plotrun.SETTINGS) are written into this run's own copy of the job's config, so the job's snapshot stays as it ran.
+        """
         from . import plotrun
         from .plotcatalog import PLOTS
 
