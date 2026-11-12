@@ -320,6 +320,8 @@ def create_app(
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             client = request.headers.get("x-flux-client")
+            if client == "ask" and request.method not in ("GET", "HEAD", "OPTIONS"):  # a second lock behind the CLI
+                return JSONResponse({"detail": "the Ask bar is read-only; a person clicks a card"}, status_code=403)
             if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
                 agent_alive()
             elif client in ("mcp", "ask"):  # an AI agent via the MCP server, or the Ask bar's own copy of it

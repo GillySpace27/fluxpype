@@ -13,7 +13,7 @@ interface Action {
 
 const str = (v: unknown) => (typeof v === "boolean" ? (v ? "1" : "0") : Array.isArray(v) ? `[${v.join(", ")}]` : String(v)); // as the MCP server writes overrides
 
-/** The four changes the model may propose; the click is the approval. Returns a line for the person and a link if there is one. */
+/** The changes the model may propose; the click is the approval. Returns a line for the person and a link if there is one. */
 const RUNNERS: Record<string, { title: string; danger?: boolean; run: (a: Record<string, any>) => Promise<{ done: string; to?: string }> }> = {
   submit_job: {
     title: "Queue a job",
@@ -50,6 +50,14 @@ const RUNNERS: Record<string, { title: string; danger?: boolean; run: (a: Record
       const { paused, max_parallel, cpu_budget } = a;
       await api.patch("/api/queue", Object.fromEntries(Object.entries({ paused, max_parallel, cpu_budget }).filter(([, v]) => v != null)));
       return { done: "Queue updated" };
+    },
+  },
+  create_preset: {
+    title: "Save a preset",
+    run: async (a) => {
+      const values = Object.fromEntries(Object.entries(a.values ?? {}).map(([k, v]) => [k, str(v)]));
+      const { name } = await api.post<{ name: string }>("/api/profiles", { name: a.name, base: a.base, values });
+      return { done: `Saved preset ${name}`, to: `/presets/${encodeURIComponent(name)}` };
     },
   },
 };

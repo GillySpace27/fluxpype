@@ -107,13 +107,15 @@ def command(cli: str, home: str, tools: bool) -> List[str]:
         "--setting-sources", "", "--disable-slash-commands", "--max-budget-usd", MAX_BUDGET_USD,
         "--system-prompt", system_prompt(),
     ]
-    allowed = ([REPO_TOOLS] if repo_root() else []) + ([f"mcp__fluxpype__{t}" for t in READ_TOOLS] if tools else [])
+    # Read, Grep and Glob stay out of the allow list: a bare allow rule lets them read any path (the token in the
+    # Plumber home included); unlisted, they reach only the cwd and --add-dir. The deny rule locks the home as well.
+    allowed = [f"mcp__fluxpype__{t}" for t in READ_TOOLS] if tools else []
     if repo_root():
         cmd += ["--add-dir", str(repo_root())]
     if allowed:
         cmd += ["--allowedTools", ",".join(allowed)]
-    if tools:
-        cmd += ["--disallowedTools", ",".join(f"mcp__fluxpype__{t}" for t in NO_TOOLS)]
+    denied = [f"Read(/{os.path.abspath(home)}/**)"] + ([f"mcp__fluxpype__{t}" for t in NO_TOOLS] if tools else [])
+    cmd += ["--disallowedTools", ",".join(denied)]
     return cmd
 
 

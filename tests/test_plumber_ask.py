@@ -1,8 +1,10 @@
 """The Ask bar's backend, with a stand-in for the Claude CLI (no network, no quota)."""
 
 import json
+import re
 import stat
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -52,15 +54,23 @@ def test_parse_maps_cli_events_and_ignores_the_rest():
     assert ask.parse(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.02, "duration_ms": 9}))["cost"] == 0.02
 
 
+def flag(cmd, name):
+    return cmd[cmd.index(name) + 1]
+
+
 def test_the_cli_is_stripped_down_and_never_given_write_tools():
     cmd = ask.command("claude", "/home", True)
-    assert cmd[cmd.index("--tools") + 1] == "Read,Grep,Glob" and "--strict-mcp-config" in cmd and "--setting-sources" in cmd
-    assert "Bash" not in " ".join(cmd) and "Edit" not in " ".join(cmd) and "--add-dir" in cmd  # the repo, read-only
-    allowed = cmd[cmd.index("--allowedTools") + 1]
-    assert "mcp__fluxpype__status" in allowed and "submit_job" not in allowed and "cancel" not in allowed
-    assert "submit_job" in cmd[cmd.index("--disallowedTools") + 1]
+    assert flag(cmd, "--tools") == "Read,Grep,Glob" and "--strict-mcp-config" in cmd and "--setting-sources" in cmd
+    tools = " ".join(flag(cmd, f) for f in ("--tools", "--allowedTools", "--disallowedTools"))
+    assert not any(t in tools for t in ("Bash", "Edit", "Write")) and "--add-dir" in cmd  # the repo, read-only
+    allowed = flag(cmd, "--allowedTools").split(",")
+    assert "mcp__fluxpype__status" in allowed and not any("submit_job" in a or "cancel" in a for a in allowed)
+    assert not {"Read", "Grep", "Glob"} & set(allowed)  # a bare allow rule reaches every path; unlisted, only the repo
+    denied = flag(cmd, "--disallowedTools").split(",")
+    assert "mcp__fluxpype__submit_job" in denied and "Read(//home/**)" in denied  # never the Plumber home (its token)
     bare = ask.command("claude", "/home", False)  # without the MCP SDK: the docs and the repo, no live state
-    assert "mcp__fluxpype" not in " ".join(bare) and bare[bare.index("--allowedTools") + 1] == "Read,Grep,Glob"
+    assert "mcp__fluxpype" not in " ".join(bare) and "--allowedTools" not in bare
+    assert flag(bare, "--disallowedTools") == "Read(//home/**)"
     sp = cmd[cmd.index("--system-prompt") + 1]
     assert "VNEIGHBOR" in sp and "flux-action" in sp  # the reference and the guide are both in
     assert "flux-plumb-mcp" in sp and "relax_threshold" in sp  # and the MCP tools doc and the config.ini defaults
@@ -118,3 +128,27 @@ def test_ask_refuses_a_second_question_while_one_runs(client):
 def test_ask_needs_the_token_and_a_question(client):
     assert client.post("/api/ask", json={"question": "hi"}).status_code == 401
     assert client.post("/api/ask", json={"question": ""}, headers=H).status_code == 422
+
+
+def test_the_ask_bars_mcp_server_cannot_write(client):
+    ask_h = {**H, "X-Flux-Client": "ask", "X-Flux-Tool": "submit_job"}
+    r = client.post("/api/jobs", json={"profile": "quickstart"}, headers=ask_h)
+    assert r.status_code == 403 and "read-only" in r.json()["detail"]
+    assert client.get("/api/jobs", headers=ask_h).status_code == 200  # reads still work
+
+
+def test_a_preset_takes_profile_only_keys_that_a_job_override_cannot(client):
+    # the body the create_preset card builds: values stringified, lists as "[a, b]"
+    body = {"name": "ask_light", "base": "quickstart", "values": {"light": "1", "rotations": "[2150]"}}
+    assert client.post("/api/profiles", json=body, headers=H).status_code == 201
+    assert client.post("/api/profiles", json=body, headers=H).status_code == 400  # the name is taken
+    r = client.post("/api/jobs", json={"profile": "quickstart", "overrides": {"light": "1"}}, headers=H)
+    assert r.status_code == 400 and "light" in r.text
+
+
+def test_the_guide_lists_exactly_the_actions_the_answer_card_can_run():
+    tsx = (Path(ask.__file__).parent / "web" / "src" / "components" / "AskAnswer.tsx").read_text(encoding="utf-8")
+    runners = set(re.findall(r"^  (\w+): \{", tsx.split("const RUNNERS", 1)[1].split("\n};", 1)[0], re.M))
+    guide = (ask.DOCS / "plumber_guide.md").read_text(encoding="utf-8")
+    listed = set(re.findall(r"\w+", guide.split("Actions:", 1)[1].split(".", 1)[0]))
+    assert runners == listed == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset"}
