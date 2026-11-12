@@ -9,7 +9,7 @@ description = "A Python wrapper and installer for the FLUX modeling framework"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-  { name = "Gilly", email = "gilly@swri.org" }
+  { name = "Chris R Gilly", email = "gilly@nwra.com" }
 ]
 keywords = ["FLUX", "modeling", "data analysis"]
 classifiers = [
