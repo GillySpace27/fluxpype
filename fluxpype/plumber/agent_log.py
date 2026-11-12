@@ -90,7 +90,9 @@ class AgentLog:
         if len(c["paths"]) < 4:
             c["paths"].append(f"{r.get('method', '')} {r.get('path', '')}".strip())
 
-    def record(self, call: str, tool: str, args: str, method: str, path: str, status: int, ms: float, via: str = "mcp") -> None:
+    def record(
+        self, call: str, tool: str, args: str, method: str, path: str, status: int, ms: float, via: str = "mcp"
+    ) -> None:
         r = {
             "ts": time.time(),
             "call": call,
@@ -120,7 +122,12 @@ class AgentLog:
             p["errors"] += c["status"] >= 400
             p["last"], p["last_status"] = c["ts"], c["status"]
         tools = [
-            {"name": n, "kind": k, "what": w, **per.pop(n, {"calls": 0, "errors": 0, "last": None, "last_status": None})}
+            {
+                "name": n,
+                "kind": k,
+                "what": w,
+                **per.pop(n, {"calls": 0, "errors": 0, "last": None, "last_status": None}),
+            }
             for n, k, w in TOOLS
         ]
         # tools this table does not know (a newer MCP server): still shown, so the record is complete

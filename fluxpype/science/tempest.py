@@ -1166,7 +1166,7 @@ def reinterpolate_velocity(tempest_file, original_data_file):
             reinterpolated_velocity = interpolator(original_radius)
 
             if np.any(reinterpolated_velocity <= 10**-2) or np.any(reinterpolated_velocity > 2500):
-                reinterpolated_velocity = np.ones_like(reinterpolated_velocity)*np.NAN
+                reinterpolated_velocity = np.ones_like(reinterpolated_velocity) * np.NAN
                 print(f"Invalid values for velocity detected and excluded on {fnum = }")
                 continue
 
@@ -1296,7 +1296,7 @@ def run_tempest():
     # print(filename)
     tempest_file = filename.replace("bmag_all.dat", "tempest.dat")
     result_file = filename.replace("bmag_all.dat", "tempest_result_inputs.npz")
-    if True: #not os.path.exists(tempest_file) or not os.path.exists(result_file):
+    if True:  # not os.path.exists(tempest_file) or not os.path.exists(result_file):
         print(f"Tempest file does not exist. Creating one at {tempest_file}")
         write_interpolated_file(filename, tempest_file)
         main(tempest_file)

@@ -35,7 +35,9 @@ def client(make_scheduler, tmp_path, monkeypatch):
     cli.write_text(FAKE.format(py=sys.executable))
     cli.chmod(cli.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("FLUX_PLUMBER_CLAUDE", str(cli))
-    with TestClient(create_app(make_scheduler(), TOKEN, demo=True, tick_interval=0.1), base_url="http://localhost") as c:
+    with TestClient(
+        create_app(make_scheduler(), TOKEN, demo=True, tick_interval=0.1), base_url="http://localhost"
+    ) as c:
         yield c
 
 
@@ -44,17 +46,30 @@ def events(resp):
 
 
 def test_parse_maps_cli_events_and_ignores_the_rest():
-    delta = {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}}}
-    think = {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "x"}}}
+    delta = {
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}},
+    }
+    think = {
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "x"}},
+    }
     assert ask.parse(json.dumps(delta)) == {"type": "text", "text": "hi"}
     assert ask.parse(json.dumps(think)) is None and ask.parse("not json") is None
     assert ask.parse(json.dumps({"type": "result", "is_error": True, "result": "Not logged in"}))["type"] == "error"
-    assert ask.parse(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.02, "duration_ms": 9}))["cost"] == 0.02
+    assert (
+        ask.parse(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.02, "duration_ms": 9}))["cost"]
+        == 0.02
+    )
 
 
 def test_the_cli_is_stripped_down_and_never_given_write_tools():
     cmd = ask.command("claude", "/home", True)
-    assert cmd[cmd.index("--tools") + 1] == "Read,Grep,Glob" and "--strict-mcp-config" in cmd and "--setting-sources" in cmd
+    assert (
+        cmd[cmd.index("--tools") + 1] == "Read,Grep,Glob"
+        and "--strict-mcp-config" in cmd
+        and "--setting-sources" in cmd
+    )
     assert "Bash" not in " ".join(cmd) and "Edit" not in " ".join(cmd) and "--add-dir" in cmd  # the repo, read-only
     allowed = cmd[cmd.index("--allowedTools") + 1]
     assert "mcp__fluxpype__status" in allowed and "submit_job" not in allowed and "cancel" not in allowed
@@ -70,30 +85,58 @@ def test_ask_streams_text_tool_and_done(client):
     r = client.post("/api/ask", json={"question": "which end is positive?", "page": "/jobs"}, headers=H)
     ev = events(r)
     assert [e["type"] for e in ev] == ["tool", "text", "text", "text", "done"]
-    assert ev[0]["name"] == "status" and "".join(e["text"] for e in ev if e["type"] == "text").startswith("Hello|tools-off|")
+    assert ev[0]["name"] == "status" and "".join(e["text"] for e in ev if e["type"] == "text").startswith(
+        "Hello|tools-off|"
+    )
     assert "write-listed" in "".join(e.get("text", "") for e in ev)  # listed only in --disallowedTools
     assert ev[-1]["cost"] == 0.01
 
 
 def test_ask_keeps_model_tokens_and_plan_limits_for_the_agent_dialog(client):
-    assert client.get("/api/agent", headers=H).json()["ask"] == {"model": None, "today": {"questions": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost": 0}, "limits": None}
+    assert client.get("/api/agent", headers=H).json()["ask"] == {
+        "model": None,
+        "today": {"questions": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost": 0},
+        "limits": None,
+    }
     client.post("/api/ask", json={"question": "hi"}, headers=H)
     client.post("/api/ask", json={"question": "again"}, headers=H)
     a = client.get("/api/agent", headers=H).json()["ask"]
     assert a["model"] == "claude-sonnet-5-5" and a["today"]["questions"] == 2
-    assert (a["today"]["input"], a["today"]["output"], a["today"]["cache_read"], a["today"]["cache_write"]) == (4, 12, 200, 1710)
+    assert (a["today"]["input"], a["today"]["output"], a["today"]["cache_read"], a["today"]["cache_write"]) == (
+        4,
+        12,
+        200,
+        1710,
+    )
     assert a["today"]["cost"] == pytest.approx(0.02)
     w = a["limits"]["windows"]
     assert w["five_hour"]["utilization"] == 0.23 and w["seven_day"]["resets_at"] == 4102444900
 
 
 def test_token_rate_and_plan_share_left_feed_the_system_monitor(client, tmp_path):
-    ev = {"type": "done", "cost": 0.01, "ms": 5, "model": "m", "tokens": {"input": 2, "output": 6, "cache_read": 9000, "cache_write": 52}}
+    ev = {
+        "type": "done",
+        "cost": 0.01,
+        "ms": 5,
+        "model": "m",
+        "tokens": {"input": 2, "output": 6, "cache_read": 9000, "cache_write": 52},
+    }
     ask._note(str(tmp_path), ev)
     assert ask.token_rate() >= 60 / 60  # 2 + 52 + 6 new tokens in the last minute; cache reads are not counted
-    ask._note(str(tmp_path), {"type": "limits", "windows": {"five_hour": {"utilization": 0.25, "resets_at": 4102444800}, "seven_day": {"utilization": 0.5, "resets_at": 1}}})
+    ask._note(
+        str(tmp_path),
+        {
+            "type": "limits",
+            "windows": {
+                "five_hour": {"utilization": 0.25, "resets_at": 4102444800},
+                "seven_day": {"utilization": 0.5, "resets_at": 1},
+            },
+        },
+    )
     p = ask.plan(str(tmp_path))
-    assert p["five_hour"]["left"] == pytest.approx(0.75) and p["seven_day"]["left"] is None  # that window has rolled over
+    assert (
+        p["five_hour"]["left"] == pytest.approx(0.75) and p["seven_day"]["left"] is None
+    )  # that window has rolled over
     client.post("/api/ask", json={"question": "hi"}, headers=H)
     d = client.get("/api/system", headers=H).json()
     assert d["plan"]["five_hour"]["left"] == pytest.approx(0.77) and d["now"]["tok"] > 0

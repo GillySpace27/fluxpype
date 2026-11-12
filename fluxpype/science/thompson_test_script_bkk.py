@@ -9,10 +9,12 @@ from matplotlib.colors import LogNorm, ListedColormap
 
 print("Starting Forward Model of Solar Coronal Thomson Scattering")
 
+
 # Load custom colormap
 def load_scientific_colormap(filepath):
     data = np.loadtxt(filepath)
-    return ListedColormap(data, name='scientific_colormap', N=data.shape[0])
+    return ListedColormap(data, name="scientific_colormap", N=data.shape[0])
+
 
 colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
 scientific_cmap = load_scientific_colormap(colormap_path)
@@ -27,7 +29,7 @@ print("Constants initialized.")
 
 # Simulation parameters
 observer_distance = AU
-fov = 32.
+fov = 32.0
 viggy = 5.75
 npix = 4000
 nz = 500
@@ -49,11 +51,13 @@ position_angle = np.arctan2(Y, X)
 z = np.linspace(-z_max, z_max, nz)
 print("Coordinate grid created.")
 
+
 # Electron density model
 def electron_density(r):
     r_sr = r / R_sun
     n0 = 4.2e8
-    return n0 * 10**(4.32 / r_sr)
+    return n0 * 10 ** (4.32 / r_sr)
+
 
 # Thomson geometry factors
 def thomson_geometry(r, z):
@@ -61,10 +65,12 @@ def thomson_geometry(r, z):
     sin2_chi = 1 - cos_chi**2
     return 1 + cos_chi**2, sin2_chi
 
+
 # Solar intensity drop-off
 def incident_solar_intensity(r):
-    omega_sun = np.pi * (R_sun / r)**2
+    omega_sun = np.pi * (R_sun / r) ** 2
     return I_solar_surface * omega_sun / np.pi
+
 
 # Initialize outputs
 B_total = np.zeros((npix, npix))
@@ -75,12 +81,13 @@ print("Output arrays initialized.")
 # Simulation loop
 print("Starting simulation loop...")
 from tqdm import tqdm
+
 for ix in tqdm(range(npix)):
     # if ix % 50 == 0:
-        # print(f"Processing row {ix+1}/{npix}")
+    # print(f"Processing row {ix+1}/{npix}")
 
     rho_row = impact_parameter[ix, :][:, np.newaxis]
-    r_LOS = np.sqrt(rho_row**2 + z[np.newaxis, :]**2)
+    r_LOS = np.sqrt(rho_row**2 + z[np.newaxis, :] ** 2)
     ne = electron_density(r_LOS)
 
     G_tot, G_pol = thomson_geometry(r_LOS, z[np.newaxis, :])
@@ -91,7 +98,7 @@ for ix in tqdm(range(npix)):
     B_polarized[ix, :] = simpson(factor * G_pol, z, axis=1)
     Polarization_angle[ix, :] = 0.5 * np.arctan2(
         simpson(factor * G_pol * np.sin(2 * position_angle[ix, :][:, None]), z, axis=1),
-        simpson(factor * G_pol * np.cos(2 * position_angle[ix, :][:, None]), z, axis=1)
+        simpson(factor * G_pol * np.cos(2 * position_angle[ix, :][:, None]), z, axis=1),
     )
 print("Simulation loop completed.")
 
@@ -117,38 +124,38 @@ fig, axs = plt.subplots(2, 2, figsize=(12, 10), sharex=True, sharey=True)
 brightness_norm = LogNorm(vmin=np.nanmin([B_total, B_polarized]), vmax=np.nanmax([B_total, B_polarized]))
 
 # Total Brightness
-im1 = axs[0, 0].imshow(B_total, origin='lower', extent=extent, cmap='plasma', norm=brightness_norm)
-axs[0, 0].set_title('Log Total Brightness')
+im1 = axs[0, 0].imshow(B_total, origin="lower", extent=extent, cmap="plasma", norm=brightness_norm)
+axs[0, 0].set_title("Log Total Brightness")
 
 # Polarized Brightness
-im2 = axs[0, 1].imshow(B_polarized, origin='lower', extent=extent, cmap='plasma', norm=brightness_norm)
-axs[0, 1].set_title('Log Polarized Brightness (pB)')
+im2 = axs[0, 1].imshow(B_polarized, origin="lower", extent=extent, cmap="plasma", norm=brightness_norm)
+axs[0, 1].set_title("Log Polarized Brightness (pB)")
 
 # Add shared colorbar for brightness plots
-fig.colorbar(im1, ax=axs[0, 0], label='Intensity')
-fig.colorbar(im2, ax=axs[0, 1], label='Intensity')
+fig.colorbar(im1, ax=axs[0, 0], label="Intensity")
+fig.colorbar(im2, ax=axs[0, 1], label="Intensity")
 
 # Polarization Angle
-im3 = axs[1, 0].imshow(Polarization_angle, origin='lower', extent=extent, cmap=scientific_cmap)
-axs[1, 0].set_title('Linear Polarization Angle')
-fig.colorbar(im3, ax=axs[1, 0], label='Radians')
+im3 = axs[1, 0].imshow(Polarization_angle, origin="lower", extent=extent, cmap=scientific_cmap)
+axs[1, 0].set_title("Linear Polarization Angle")
+fig.colorbar(im3, ax=axs[1, 0], label="Radians")
 
 # Polarization Fraction
-im4 = axs[1, 1].imshow(Polarization_fraction, origin='lower', extent=extent, cmap='viridis')
-axs[1, 1].set_title('Polarization Fraction (pB/tB)')
+im4 = axs[1, 1].imshow(Polarization_fraction, origin="lower", extent=extent, cmap="viridis")
+axs[1, 1].set_title("Polarization Fraction (pB/tB)")
 fig.colorbar(im4, ax=axs[1, 1])
 
 # Draw Sun circle
 for ax in axs.flat:
-    ax.set_facecolor('black')
-    sun_circle = plt.Circle((0, 0), 1, color='yellow', fill=True, alpha=0.8)
+    ax.set_facecolor("black")
+    sun_circle = plt.Circle((0, 0), 1, color="yellow", fill=True, alpha=0.8)
     ax.add_artist(sun_circle)
 
 # Axis labels
 for ax in axs[1, :]:
-    ax.set_xlabel('Solar Radii')
+    ax.set_xlabel("Solar Radii")
 for ax in axs[:, 0]:
-    ax.set_ylabel('Solar Radii')
+    ax.set_ylabel("Solar Radii")
 
 plt.tight_layout()
 plt.show()

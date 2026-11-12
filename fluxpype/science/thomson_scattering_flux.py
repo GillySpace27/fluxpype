@@ -16,8 +16,10 @@ def ensure_rsun_quantity(val):
 sigma_T = 6.652e-25 * u.cm**2
 
 # Specific intensity of the sun center
-I_sp_solar_surface = (L_sun / (4 * np.pi**2 * R_sun**2)).to(u.erg / u.cm**2 / u.s / u.sr, equivalencies=u.dimensionless_angles())
-u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": "$I_{\odot}$", "unicode": "I☉"})
+I_sp_solar_surface = (L_sun / (4 * np.pi**2 * R_sun**2)).to(
+    u.erg / u.cm**2 / u.s / u.sr, equivalencies=u.dimensionless_angles()
+)
+u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": "$I_{\\odot}$", "unicode": "I☉"})
 I_sp_solar_surface = 1.0 * u.I_sun
 
 
@@ -132,7 +134,7 @@ def simulate_thomson_scattering(
     # Initialize outputs
     B_total = np.zeros((npix, npix)) * (u.erg / u.cm**2 / u.s / u.sr)
     B_polarized = np.zeros((npix, npix)) * (u.erg / u.cm**2 / u.s / u.sr)
-    Polarization_angle = np.zeros((npix, npix)) #* u.rad
+    Polarization_angle = np.zeros((npix, npix))  # * u.rad
     Column_Density = np.zeros((npix, npix)) * u.cm**-2
 
     # Precompute segment geometry once (before parallel block)
@@ -149,7 +151,10 @@ def simulate_thomson_scattering(
         try:
             # Ensure areas exist for basal-B0 proxying.
             # This prevents `get_basal_B0()` from repeatedly triggering area computation.
-            if getattr(flux_world, "areas_by_fluxon", None) is None or getattr(flux_world, "method", None) != voronoi_area_method:
+            if (
+                getattr(flux_world, "areas_by_fluxon", None) is None
+                or getattr(flux_world, "method", None) != voronoi_area_method
+            ):
                 flux_world.compute_cross_sectional_areas(method=voronoi_area_method, smooth=True)
 
             # Compute a stable reference B0 once and pass it into density calls.
@@ -171,7 +176,7 @@ def simulate_thomson_scattering(
         pos_ang_row = position_angle[ix, :]
 
         # r_LOS: sqrt(rho^2 + z^2) for each pixel's line of sight
-        r_LOS = np.sqrt(rho_row[:, None]**2 + z_array[None, :]**2)
+        r_LOS = np.sqrt(rho_row[:, None] ** 2 + z_array[None, :] ** 2)
 
         # Electron density along LOS
         if flux_world is not None:
@@ -179,11 +184,14 @@ def simulate_thomson_scattering(
             X_row = X[ix, :].reshape(-1, 1)
             Y_row = Y[ix, :].reshape(-1, 1)
             Z_grid = z_array[None, :]
-            coords = np.stack([
-                np.repeat(X_row, nz, axis=1),
-                np.repeat(Y_row, nz, axis=1),
-                np.repeat(Z_grid, rho_row.shape[0], axis=0),
-            ], axis=-1)  # (npix, nz, 3)
+            coords = np.stack(
+                [
+                    np.repeat(X_row, nz, axis=1),
+                    np.repeat(Y_row, nz, axis=1),
+                    np.repeat(Z_grid, rho_row.shape[0], axis=0),
+                ],
+                axis=-1,
+            )  # (npix, nz, 3)
             coords_flat = coords.reshape(-1, 3)
             if observer_lon is not None:
                 # FLUX worlds have z along the solar rotation axis, so the default
@@ -191,7 +199,9 @@ def simulate_thomson_scattering(
                 # from Carrington longitude observer_lon: image x -> west (lon+90),
                 # image y -> north, LOS -> toward the observer. Ignores B0.
                 c, s = np.cos(observer_lon), np.sin(observer_lon)
-                e = np.array([-s, c, 0.0]); nhat = np.array([c, s, 0.0]); zhat = np.array([0.0, 0.0, 1.0])
+                e = np.array([-s, c, 0.0])
+                nhat = np.array([c, s, 0.0])
+                zhat = np.array([0.0, 0.0, 1.0])
                 cf = coords_flat.to_value(u.R_sun) if hasattr(coords_flat, "unit") else coords_flat
                 cf = cf[:, :1] * e + cf[:, 1:2] * zhat + cf[:, 2:3] * nhat
                 coords_flat = cf * u.R_sun if hasattr(coords_flat, "unit") else cf
@@ -206,14 +216,14 @@ def simulate_thomson_scattering(
                     base_offsets = np.array(
                         [
                             [0.0, 0.0, 0.0],
-                            [ d,  0.0, 0.0],
-                            [-d,  0.0, 0.0],
-                            [0.0,  d,  0.0],
-                            [0.0, -d,  0.0],
-                            [ d,  d,  0.0],
-                            [ d, -d,  0.0],
-                            [-d,  d,  0.0],
-                            [-d, -d,  0.0],
+                            [d, 0.0, 0.0],
+                            [-d, 0.0, 0.0],
+                            [0.0, d, 0.0],
+                            [0.0, -d, 0.0],
+                            [d, d, 0.0],
+                            [d, -d, 0.0],
+                            [-d, d, 0.0],
+                            [-d, -d, 0.0],
                         ],
                         dtype=float,
                     )
@@ -258,7 +268,7 @@ def simulate_thomson_scattering(
         factor = ne * sigma_T / (4.0 * np.pi) * solar_int / (r_LOS**2)
 
         # Integrate along the LOS
-        intensity_unit = (u.erg / u.cm**2 / u.s / u.sr)
+        intensity_unit = u.erg / u.cm**2 / u.s / u.sr
         B_total_row = simpson((factor * G_tot).value, z_array.value, axis=1) * intensity_unit
         B_polarized_row = simpson((factor * G_pol).value, z_array.value, axis=1) * intensity_unit
         num = simpson((factor * G_pol * np.sin(2 * pos_ang_row[:, None])).value, z_array.value, axis=1)
@@ -325,7 +335,6 @@ def load_scientific_colormap(filepath):
 
 if __name__ == "__main__":
 
-
     import sys
 
     if len(sys.argv) > 1:
@@ -334,8 +343,6 @@ if __name__ == "__main__":
         the_world_file = "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype/data/batches/fluxlight/data/cr2230/world/cr2230_f1000_hmi_relaxed_s800.flux"
 
     from fluxpype.science.open_world_python import read_flux_world
+
     f_world = read_flux_world(the_world_file)
     f_world.plot_all(save=True)
-
-
-

@@ -25,11 +25,24 @@ DOCS = Path(__file__).parent / "ask"
 MODEL = "sonnet"
 TIMEOUT_S = 120
 MAX_BUDGET_USD = "1"
-READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series", "read_task_log", "cache_summary"]
+READ_TOOLS = [
+    "status",
+    "list_profiles",
+    "get_profile",
+    "list_jobs",
+    "get_job",
+    "get_task",
+    "get_relax_series",
+    "read_task_log",
+    "cache_summary",
+]
 NO_TOOLS = ["submit_job", "cancel", "retry_failed", "set_queue", "wait_for_task", "get_task_image"]
 # Repo documents added to the prompt when the checkout has them (a pip install has only the shipped ask/*.md). The
 # rest of the repo is reachable through the read-only tools.
-REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
+REPO_DOCS = [
+    ("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"),
+    ("docs/PORTABILITY.md", "Install and environment notes"),
+]
 REPO_TOOLS = "Read,Grep,Glob"
 USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
 _recent: Deque[Tuple[float, int]] = deque(maxlen=200)  # (time, new tokens) of answered questions, for the spend rate
@@ -45,7 +58,10 @@ def find_cli() -> Optional[str]:
     env = os.environ.get("FLUX_PLUMBER_CLAUDE")
     if env:
         return env
-    for p in (shutil.which("claude"), *(os.path.expanduser(x) for x in ("~/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude"))):
+    for p in (
+        shutil.which("claude"),
+        *(os.path.expanduser(x) for x in ("~/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude")),
+    ):
         if p and os.access(p, os.X_OK):
             return p
     return None
@@ -55,7 +71,11 @@ def availability() -> Dict[str, Any]:
     cli = find_cli()
     return {
         "available": cli is not None,
-        "reason": None if cli else "The Claude Code CLI was not found. Install it and sign in, or set FLUX_PLUMBER_CLAUDE to its path.",
+        "reason": (
+            None
+            if cli
+            else "The Claude Code CLI was not found. Install it and sign in, or set FLUX_PLUMBER_CLAUDE to its path."
+        ),
         "model": MODEL,
         "tools": importlib.util.find_spec("mcp") is not None,  # live state needs the MCP SDK in Plumber's Python
     }
@@ -81,7 +101,9 @@ def system_prompt() -> str:
                 parts.append(f"## {title} ({rel})\n\n{f.read_text(encoding='utf-8')}")
         ini = root / "fluxpype" / "config.ini"
         if ini.is_file():
-            head = ini.read_text(encoding="utf-8").split("\n[quickstart]")[0]  # the [DEFAULT] section: each setting with its comment
+            head = ini.read_text(encoding="utf-8").split("\n[quickstart]")[
+                0
+            ]  # the [DEFAULT] section: each setting with its comment
             parts.append(f"## config.ini defaults (fluxpype/config.ini)\n\n```ini\n{head}\n```")
     parts.append((DOCS / "flux_reference.md").read_text(encoding="utf-8"))
     return PREAMBLE + "\n\n".join(parts)
@@ -89,7 +111,9 @@ def system_prompt() -> str:
 
 def user_prompt(question: str, page: str, history: List[Dict[str, str]]) -> str:
     # the page and earlier turns go in the user message so the system prompt stays identical and caches
-    earlier = "".join(f"Earlier question: {h.get('q', '')[:500]}\nEarlier answer: {h.get('a', '')[:1500]}\n\n" for h in history[-3:])
+    earlier = "".join(
+        f"Earlier question: {h.get('q', '')[:500]}\nEarlier answer: {h.get('a', '')[:1500]}\n\n" for h in history[-3:]
+    )
     return f"{earlier}The person is on this page: {page or 'unknown'}.\n\nQuestion: {question}"
 
 
@@ -102,10 +126,27 @@ def command(cli: str, home: str, tools: bool) -> List[str]:
             "env": {"FLUX_MCP_CLIENT": "ask"},
         }
     cmd = [
-        cli, "-p", "--model", MODEL, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-        "--no-session-persistence", "--tools", REPO_TOOLS if repo_root() else "", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
-        "--setting-sources", "", "--disable-slash-commands", "--max-budget-usd", MAX_BUDGET_USD,
-        "--system-prompt", system_prompt(),
+        cli,
+        "-p",
+        "--model",
+        MODEL,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--no-session-persistence",
+        "--tools",
+        REPO_TOOLS if repo_root() else "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        json.dumps(mcp),
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--max-budget-usd",
+        MAX_BUDGET_USD,
+        "--system-prompt",
+        system_prompt(),
     ]
     allowed = ([REPO_TOOLS] if repo_root() else []) + ([f"mcp__fluxpype__{t}" for t in READ_TOOLS] if tools else [])
     if repo_root():
@@ -130,17 +171,33 @@ def parse(line: str) -> Optional[Dict[str, Any]]:
         b = e.get("content_block", {})
         if e.get("type") == "content_block_start" and b.get("type") == "tool_use":
             return {"type": "tool", "name": b.get("name", "").replace("mcp__fluxpype__", "")}
-    if d.get("type") == "rate_limit_event":  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
+    if (
+        d.get("type") == "rate_limit_event"
+    ):  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
         w = (d.get("rate_limit_info") or {}).get("unifiedWindows") or {}
-        return {"type": "limits", "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()}}
+        return {
+            "type": "limits",
+            "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()},
+        }
     if d.get("type") == "result":
         if d.get("is_error"):
             return {"type": "error", "message": str(d.get("result") or "the model returned an error")[:500]}
         usage = d.get("modelUsage") or {}
         model = next(iter(usage), None)
         u = usage.get(model) or {}
-        tokens = {"input": u.get("inputTokens", 0), "output": u.get("outputTokens", 0), "cache_read": u.get("cacheReadInputTokens", 0), "cache_write": u.get("cacheCreationInputTokens", 0)}
-        return {"type": "done", "cost": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "model": model, "tokens": tokens}
+        tokens = {
+            "input": u.get("inputTokens", 0),
+            "output": u.get("outputTokens", 0),
+            "cache_read": u.get("cacheReadInputTokens", 0),
+            "cache_write": u.get("cacheCreationInputTokens", 0),
+        }
+        return {
+            "type": "done",
+            "cost": d.get("total_cost_usd"),
+            "ms": d.get("duration_ms"),
+            "model": model,
+            "tokens": tokens,
+        }
     return None
 
 
@@ -151,7 +208,18 @@ def _note(home: str, ev: Dict[str, Any]) -> None:
             t = ev["tokens"]
             _recent.append((time.time(), t["input"] + t["cache_write"] + t["output"]))
             with open(os.path.join(home, USAGE_FILE), "a") as f:
-                f.write(json.dumps({"ts": time.time(), "model": ev["model"], "cost": ev["cost"] or 0, "ms": ev["ms"], **ev["tokens"]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "ts": time.time(),
+                            "model": ev["model"],
+                            "cost": ev["cost"] or 0,
+                            "ms": ev["ms"],
+                            **ev["tokens"],
+                        }
+                    )
+                    + "\n"
+                )
         elif ev["type"] == "limits" and ev["windows"]:
             with open(os.path.join(home, LIMITS_FILE), "w") as f:
                 json.dump({"ts": time.time(), "windows": ev["windows"]}, f)
@@ -230,7 +298,13 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         cwd = Path(home) / "ask"  # empty, so no project CLAUDE.md is picked up
         cwd.mkdir(parents=True, exist_ok=True)
         proc = subprocess.Popen(
-            command(cli, home, availability()["tools"]), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1
+            command(cli, home, availability()["tools"]),
+            cwd=cwd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=errfile,
+            text=True,
+            bufsize=1,
         )
         timer = threading.Timer(TIMEOUT_S, proc.kill)
         timer.start()

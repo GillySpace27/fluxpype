@@ -56,9 +56,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Initialize Rich console and logger
 console = Console()
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 def validate_configurations(configurations):
@@ -86,13 +84,12 @@ def validate_configurations(configurations):
     missing_keys = [key for key in required_keys if key not in configurations]
     # list-valued keys that parse to [] would silently schedule zero jobs
     missing_keys += [
-        key for key in ("rotations", "fluxon_count", "adapts", "flow_method")
+        key
+        for key in ("rotations", "fluxon_count", "adapts", "flow_method")
         if key in configurations and not [v for v in configurations[key] if str(v).strip()]
     ]
     if missing_keys:
-        raise KeyError(
-            f"Profile [{configurations.get('config_name', '?')}] must set: {', '.join(missing_keys)}"
-        )
+        raise KeyError(f"Profile [{configurations.get('config_name', '?')}] must set: {', '.join(missing_keys)}")
 
 
 def display_splash_screen(configs, log_path=None):
@@ -176,9 +173,7 @@ def _task_timeout():
 def _fluxpype_sha():
     """Best-effort git sha of the checkout, None on any failure."""
     try:
-        r = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=5
-        )
+        r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, timeout=5)
         return r.stdout.strip() or None if r.returncode == 0 else None
     except Exception:
         return None
@@ -270,6 +265,7 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
         If the script execution fails.
     """
     from fluxpype.pipe_helper import configurations, get_flux_perl_lib
+
     configs = configurations(debug=False)
 
     ok, pdl_msg = _check_pdl_available()
@@ -305,7 +301,9 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     if not flux_ok:
         flux_perl_lib = get_flux_perl_lib(configs)
         if flux_perl_lib:
-            env["PERL5LIB"] = flux_perl_lib + (os.pathsep + env.get("PERL5LIB", "")) if env.get("PERL5LIB") else flux_perl_lib
+            env["PERL5LIB"] = (
+                flux_perl_lib + (os.pathsep + env.get("PERL5LIB", "")) if env.get("PERL5LIB") else flux_perl_lib
+            )
         else:
             emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
 
@@ -388,12 +386,15 @@ def _reap_group(pgid):
     except (ProcessLookupError, PermissionError):
         pass
 
+
 def view():
     # Import configurations
     from fluxpype.pipe_helper import configurations
+
     configs = configurations(debug=False)
 
     display_splash_screen(configs)
+
 
 # def open():
 
@@ -401,6 +402,7 @@ def view():
 import os
 import subprocess
 import platform
+
 
 def open_config(path=None):
     return open_path(path or os.path.join(REPO_ROOT, "fluxpype", "config.ini"))
@@ -412,6 +414,7 @@ def gallery():
     """
     # Define the path to the batches directory
     from fluxpype.pipe_helper import configurations
+
     directory_path = os.path.join(configurations(debug=False)["data_dir"], "batches")
 
     # Ensure the directory exists before attempting to open it
@@ -478,7 +481,7 @@ def open_path_mac(path):
 
         # Try opening the file with the default application
         returncode = subprocess.call(["open", path])
-        if not returncode ==0:
+        if not returncode == 0:
             raise ValueError("No default application found")
 
     except (subprocess.CalledProcessError, ValueError):
@@ -551,17 +554,13 @@ def run(argv=None):
     124 when the only failures were timeouts.
     """
     parser = argparse.ArgumentParser(prog="flux-config-run")
-    parser.add_argument(
-        "--config", help="config.ini profile to run (overrides config_name in the file)"
-    )
+    parser.add_argument("--config", help="config.ini profile to run (overrides config_name in the file)")
     parser.add_argument(
         "--only",
         metavar="CR,NFLUX,ADAPT,METHOD",
         help="run exactly this one task of the profile",
     )
-    parser.add_argument(
-        "--capabilities", action="store_true", help="print supported features as JSON and exit"
-    )
+    parser.add_argument("--capabilities", action="store_true", help="print supported features as JSON and exit")
     args, _ = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
     if args.capabilities:
         print(json.dumps(_capabilities()))
@@ -578,6 +577,7 @@ def run(argv=None):
         signal.signal(signal.SIGTERM, _raise_on_sigterm)
 
     from fluxpype.pipe_helper import configurations
+
     configs = configurations(debug=False)
 
     batch_name = configs.get("batch_name", "run")
@@ -598,9 +598,7 @@ def run(argv=None):
         sys.exit(2)
     total_jobs = len(tasks)
     try:
-        with tqdm(
-            total=total_jobs, unit="runs", colour="green", desc="Processing"
-        ) as progress_bar:
+        with tqdm(total=total_jobs, unit="runs", colour="green", desc="Processing") as progress_bar:
             for adaptation, rotation, fluxon_count, method in tasks:
                 job = f"Rotation {rotation}, Fluxon {fluxon_count}, Adapt {adaptation}, Method {method}"
                 progress_bar.set_description(job)

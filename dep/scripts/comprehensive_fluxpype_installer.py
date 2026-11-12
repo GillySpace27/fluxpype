@@ -258,6 +258,7 @@ def install_homebrew_packages():
     except Exception as e:
         run_command("arch -arm64 brew install " + " ".join(packages), shell=True)
 
+
 def append_to_file_if_not_exists(file_path, content):
     """
     Appends content to a file if it doesn't already exist in the file.
@@ -499,6 +500,7 @@ def install_fluxpype():
 
     log("Attempting to install FluxPype Package")
     run_command([str(venv_python), "-m", "pip", "install", "-e", str(script_dir)])
+
 
 def append_flux_env_vars_to_rc(fl_prefix, pl_prefix, shell_rc):
     """

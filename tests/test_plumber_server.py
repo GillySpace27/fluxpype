@@ -218,7 +218,13 @@ def test_agent_heartbeat_marks_alive_without_a_tool_call(client):
 
 
 def test_agent_calls_are_recorded_per_call_and_survive_a_restart(client, tmp_path):
-    a = {**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "get_job", "X-Flux-Call": "c1", "X-Flux-Args": '{"job_id": "nope"}'}
+    a = {
+        **H,
+        "X-Flux-Client": "mcp",
+        "X-Flux-Tool": "get_job",
+        "X-Flux-Call": "c1",
+        "X-Flux-Args": '{"job_id": "nope"}',
+    }
     client.get("/api/queue", headers=a)
     client.get("/api/jobs/nope", headers=a)  # a second request of the same call, and a failing one
     client.get("/api/queue", headers={**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "status", "X-Flux-Call": "c2"})
@@ -479,4 +485,8 @@ def test_untagged_requests_of_one_tool_fold_into_one_call(tmp_path):
     log.record("abc", "get_task", "", "GET", "/api/tasks/t", 200, 3)  # another tool is not folded into the wait
     s = AgentLog(str(tmp_path / "log.jsonl")).summary()  # and the same holds when the file is read back
     assert s["total"] == 3
-    assert sorted((c["tool"], c["requests"]) for c in s["calls"]) == [("get_task", 1), ("wait_for_task", 1), ("wait_for_task", 5)]
+    assert sorted((c["tool"], c["requests"]) for c in s["calls"]) == [
+        ("get_task", 1),
+        ("wait_for_task", 1),
+        ("wait_for_task", 5),
+    ]

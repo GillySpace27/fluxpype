@@ -1,4 +1,5 @@
 """Minimal setup.py for fluxpype; metadata and dependencies are in pyproject.toml."""
+
 import os
 import subprocess
 import sys
