@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fluxpype"
-version = "0.2.0"
+version = "0.4.0"
 description = "A Python wrapper and installer for the FLUX modeling framework"
 readme = "README.md"
 license = { text = "MIT" }
@@ -40,6 +40,8 @@ dependencies = [
   "sunkit-magex>=1.0.0",
   "PyQt5>=5.15.11",
   "opencv-python>=4.10.0.84",
+  "joblib>=1.2",  # thomson_scattering_flux.py
+  "sunkit-image>=0.5",  # fluxlight.py: RHEF on column density
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "FLUXpype"
+version: 0.4.0
+date-released: 2026-11-12
+license: MIT
+repository-code: "https://github.com/GillySpace27/fluxpype"
+abstract: "A Python wrapper and installer for the FLUX (Field Line Universal relaXer) solar magnetic field model. This release is the last before the Plumber web app and MCP server."
+authors:
+  - family-names: Gilbert
+    given-names: Chris
+    affiliation: "NorthWest Research Associates"
