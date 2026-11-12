@@ -15,8 +15,9 @@ import sys
 import tempfile
 import threading
 import time
+from collections import deque
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
 from . import paths
 
@@ -31,6 +32,7 @@ NO_TOOLS = ["submit_job", "cancel", "retry_failed", "set_queue", "wait_for_task"
 REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
 REPO_TOOLS = "Read,Grep,Glob"
 USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
+_recent: Deque[Tuple[float, int]] = deque(maxlen=200)  # (time, new tokens) of answered questions, for the spend rate
 _busy = threading.Lock()  # one question at a time: each one is a process and spends the user's quota
 
 PREAMBLE = (
@@ -146,6 +148,8 @@ def _note(home: str, ev: Dict[str, Any]) -> None:
     """Keep what the CLI reports: one line per answered question, and the latest plan usage windows."""
     try:
         if ev["type"] == "done":
+            t = ev["tokens"]
+            _recent.append((time.time(), t["input"] + t["cache_write"] + t["output"]))
             with open(os.path.join(home, USAGE_FILE), "a") as f:
                 f.write(json.dumps({"ts": time.time(), "model": ev["model"], "cost": ev["cost"] or 0, "ms": ev["ms"], **ev["tokens"]}) + "\n")
         elif ev["type"] == "limits" and ev["windows"]:
@@ -153,6 +157,32 @@ def _note(home: str, ev: Dict[str, Any]) -> None:
                 json.dump({"ts": time.time(), "windows": ev["windows"]}, f)
     except OSError:
         pass  # the readout just misses a point
+
+
+def token_rate(window: float = 60.0) -> float:
+    """New tokens (input, cache writes and output; cache reads excluded) the Ask bar spent per second over the last minute."""
+    now = time.time()
+    return sum(n for t, n in list(_recent) if now - t <= window) / window
+
+
+def _limits(home: str) -> Optional[Dict[str, Any]]:
+    try:
+        with open(os.path.join(home, LIMITS_FILE)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def plan(home: str) -> Optional[Dict[str, Any]]:
+    """Share of each plan usage window still left, from the CLI's last report; None for a window that has since rolled over."""
+    lim = _limits(home)
+    if not lim:
+        return None
+    out: Dict[str, Any] = {"ts": lim["ts"]}
+    for k, w in lim["windows"].items():
+        u, r = w.get("utilization"), w.get("resets_at")
+        out[k] = {"left": None if u is None or (r and r < time.time()) else max(0.0, 1 - u), "resets_at": r}
+    return out
 
 
 def usage(home: str) -> Dict[str, Any]:
@@ -171,11 +201,7 @@ def usage(home: str) -> Dict[str, Any]:
     midnight = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
     today = [r for r in rows if r["ts"] >= midnight]
     keys = ("input", "output", "cache_read", "cache_write", "cost")
-    try:
-        with open(os.path.join(home, LIMITS_FILE)) as f:
-            limits = json.load(f)
-    except (OSError, ValueError):
-        limits = None
+    limits = _limits(home)
     return {
         "model": rows[-1]["model"] if rows else None,
         "today": {"questions": len(today), **{k: sum(r.get(k, 0) or 0 for r in today) for k in keys}},

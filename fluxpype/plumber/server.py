@@ -485,7 +485,9 @@ def create_app(
         """Process-group id -> label for each running task (a task's pid leads its group)."""
         return {t["pid"]: f"CR{t['cr']} f{t['nflux']}" for t in sched.store.tasks_with_status("running") if t["pid"]}
 
-    sysmon = SysMon(volumes, job_groups)
+    from . import ask as ask_mod
+
+    sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
 
     @app.get("/api/system")
     def system(procs: bool = False):

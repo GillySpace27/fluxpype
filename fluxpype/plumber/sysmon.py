@@ -55,9 +55,13 @@ class SysMon:
     """`volumes` returns [(label, path)] to report storage for; `jobs` returns {process-group id: task label}."""
 
     def __init__(
-        self, volumes: Callable[[], List[Tuple[str, str]]], jobs: Callable[[], Dict[int, str]] = lambda: {}
+        self,
+        volumes: Callable[[], List[Tuple[str, str]]],
+        jobs: Callable[[], Dict[int, str]] = lambda: {},
+        tok: Callable[[], float] = lambda: 0.0,
+        plan: Callable[[], Optional[Dict[str, Any]]] = lambda: None,
     ):
-        self.volumes, self.jobs = volumes, jobs
+        self.volumes, self.jobs, self.tok, self.plan = volumes, jobs, tok, plan
         self.hist: Deque[Dict[str, Any]] = deque(maxlen=HISTORY)
         self._t = 0.0
         self._cores: List[float] = []
@@ -72,7 +76,7 @@ class SysMon:
         if self.hist and now - self._t < 1.0:
             return self.hist[-1]
         self._t = now
-        s: Dict[str, Any] = {"t": now, "cpu": None, "mem": None, "net_rx": None, "net_tx": None, "disk_r": None, "disk_w": None, "gpu": None}
+        s: Dict[str, Any] = {"t": now, "cpu": None, "mem": None, "net_rx": None, "net_tx": None, "disk_r": None, "disk_w": None, "gpu": None, "tok": None}
         if psutil:
             cores = self._cores = psutil.cpu_percent(None, percpu=True)
             s["cpu"] = sum(cores) / len(cores) if cores else None
@@ -89,6 +93,7 @@ class SysMon:
         if now - self._gpu[0] > 2.0:
             self._gpu = (now, read_gpu())
         s["gpu"] = self._gpu[1]["pct"] if self._gpu[1] else None
+        s["tok"] = self.tok()
         self.hist.append(s)
         return s
 
@@ -102,6 +107,7 @@ class SysMon:
             "cpu_count": os.cpu_count(),
             "load": list(os.getloadavg()),
             "gpu": self._gpu[1],
+            "plan": self.plan(),
             "storage": self.storage(),
         }
         if psutil:

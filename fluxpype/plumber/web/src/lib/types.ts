@@ -621,6 +621,12 @@ export interface SysSample {
   disk_r: number | null;
   disk_w: number | null;
   gpu: number | null;
+  /** new tokens per second the Ask bar spent over the last minute */
+  tok: number | null;
+}
+export interface PlanWindow {
+  left: number | null;
+  resets_at: number | null;
 }
 export interface SysSnapshot {
   psutil: boolean;
@@ -629,6 +635,8 @@ export interface SysSnapshot {
   cpu_count: number | null;
   load: number[];
   gpu: { name: string; pct: number; mem_used: number | null; mem_total: number | null } | null;
+  /** share of each plan usage window left (a fraction), from the CLI's last report; null before the first one */
+  plan: { ts: number; five_hour?: PlanWindow; seven_day?: PlanWindow } | null;
   storage: { label: string; path: string; total: number; used: number; free: number; pct: number }[];
   cores?: number[];
   memory?: { total: number; used: number; swap_used: number; swap_total: number };

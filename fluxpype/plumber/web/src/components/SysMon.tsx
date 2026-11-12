@@ -1,8 +1,8 @@
 import { useEffect, useId, useState } from "react";
 import { cn } from "../lib/cn";
-import { bytes } from "../lib/format";
+import { bytes, duration } from "../lib/format";
 import { useSystem } from "../lib/hooks";
-import type { SysSample, SysSnapshot } from "../lib/types";
+import type { PlanWindow, SysSample, SysSnapshot } from "../lib/types";
 import { Badge, Dialog } from "./ui";
 
 type Tone = "accent" | "info" | "ok" | "run" | "fail";
@@ -12,6 +12,9 @@ const hot = (p: number | null | undefined): Tone => (p == null ? "accent" : p >=
 const pct = (v: number | null | undefined) => (v == null ? "n/a" : `${v.toFixed(0)}%`);
 const rate = (v: number | null | undefined) => (v == null ? "n/a" : `${bytes(Math.round(v))}/s`);
 const sum = (a: number | null, b: number | null) => (a == null || b == null ? null : a + b);
+const tps = (v: number | null | undefined) => (v == null ? "n/a" : v === 0 ? "0/s" : v < 10 ? `${v.toFixed(1)}/s` : `${Math.round(v)}/s`);
+/** Remaining plan share is bad news when low, so the tone runs the other way from the load readouts. */
+const lowIsBad = (left: number | null | undefined): Tone => (left == null ? "accent" : left <= 0.1 ? "fail" : left <= 0.3 ? "run" : "accent");
 
 /** Lines over the recent samples; `max` fixes the scale (100 for percentages), else it follows the data. */
 export function Spark({ series, max, height = 18, className }: { series: { values: (number | null)[]; tone: Tone }[]; max?: number; height?: number; className?: string }) {
@@ -54,9 +57,9 @@ export function Spark({ series, max, height = 18, className }: { series: { value
 
 const col = (h: SysSample[], k: keyof SysSample) => h.map((s) => s[k] as number | null);
 
-function Row({ label, value, tone, children }: { label: string; value: string; tone?: Tone; children: React.ReactNode }) {
+function Row({ label, value, tone, title, children }: { label: string; value: string; tone?: Tone; title?: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[30px_1fr_74px] items-center gap-2">
+    <div className="grid grid-cols-[30px_1fr_84px] items-center gap-2" title={title}>
       <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-faint">{label}</span>
       <div className="min-w-0">{children}</div>
       <span className="num text-right text-[11.5px] font-medium" style={{ color: tone ? rgb(tone) : undefined }}>
@@ -100,6 +103,14 @@ export function SysMonPanel() {
         <Row label="DSK" value={rate(sum(now?.disk_r ?? null, now?.disk_w ?? null))}>
           <Spark series={[{ values: col(h, "disk_r"), tone: "accent" }, { values: col(h, "disk_w"), tone: "info" }]} />
         </Row>
+        <Row
+          label="TOK"
+          value={`${data?.plan?.five_hour?.left == null ? "n/a" : `${Math.round(data.plan.five_hour.left * 100)}%`} · ${tps(now?.tok)}`}
+          tone={lowIsBad(data?.plan?.five_hour?.left)}
+          title="Share of the 5-hour plan window left (your whole account), and the Ask bar's spend in new tokens per second over the last minute"
+        >
+          <Spark series={[{ values: col(h, "tok"), tone: "info" }]} />
+        </Row>
         <Row label="STO" value={pct(data1?.pct)} tone={hot(data1?.pct)}>
           <div className="h-1.5 overflow-hidden rounded-full bg-line">
             <div className="h-full rounded-full" style={{ width: `${data1?.pct ?? 0}%`, background: rgb(hot(data1?.pct)) }} />
@@ -133,6 +144,45 @@ function Legend({ items }: { items: [string, Tone][] }) {
         </span>
       ))}
     </p>
+  );
+}
+
+function PlanBar({ name, w }: { name: string; w?: PlanWindow }) {
+  if (!w) return null;
+  const left = w.left;
+  return (
+    <div>
+      <div className="flex justify-between text-[11.5px]">
+        <span className="text-muted">{name}</span>
+        <span className="num">
+          {left == null ? "n/a" : `${Math.round(left * 100)}% left`}
+          <span className="text-faint">{left == null ? " · reset since" : w.resets_at ? ` · resets in ${duration(w.resets_at - Date.now() / 1000)}` : ""}</span>
+        </span>
+      </div>
+      <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-line">
+        <div className="h-full rounded-full" style={{ width: `${(left ?? 0) * 100}%`, background: rgb(lowIsBad(left)) }} />
+      </div>
+    </div>
+  );
+}
+
+function TokensCard({ d }: { d: SysSnapshot }) {
+  const left = d.plan?.five_hour?.left;
+  return (
+    <Card title="Tokens" value={left == null ? "n/a" : `${Math.round(left * 100)}% left`} sub={`Ask bar spend ${tps(d.now.tok)} new tokens, last minute`}>
+      <Spark series={[{ values: col(d.history, "tok"), tone: "info" }]} height={52} />
+      {d.plan ? (
+        <div className="mt-2 space-y-2">
+          <PlanBar name="5 hour window" w={d.plan.five_hour} />
+          <PlanBar name="7 day window" w={d.plan.seven_day} />
+        </div>
+      ) : (
+        <p className="mt-2 text-[11px] text-faint">The plan windows arrive with the Ask bar's next answer.</p>
+      )}
+      <p className="mt-2 text-[10.5px] leading-snug text-faint">
+        The plan reports shares of a window, not token counts, so Plumber cannot say how many tokens remain; the windows cover your whole account. The rate counts only Ask bar answers (cache reads excluded).
+      </p>
+    </Card>
   );
 }
 
@@ -178,6 +228,7 @@ function Body({ d }: { d: SysSnapshot }) {
           <Spark series={[{ values: col(h, "disk_r"), tone: "accent" }, { values: col(h, "disk_w"), tone: "info" }]} height={52} />
           <Legend items={[["read", "accent"], ["write", "info"]]} />
         </Card>
+        <TokensCard d={d} />
         <Card title="Storage" value={pct(d.storage[0]?.pct)} sub="Volumes Plumber uses">
           <div className="space-y-2.5">
             {d.storage.map((v) => (

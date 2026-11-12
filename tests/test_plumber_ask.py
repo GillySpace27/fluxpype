@@ -87,6 +87,18 @@ def test_ask_keeps_model_tokens_and_plan_limits_for_the_agent_dialog(client):
     assert w["five_hour"]["utilization"] == 0.23 and w["seven_day"]["resets_at"] == 4102444900
 
 
+def test_token_rate_and_plan_share_left_feed_the_system_monitor(client, tmp_path):
+    ev = {"type": "done", "cost": 0.01, "ms": 5, "model": "m", "tokens": {"input": 2, "output": 6, "cache_read": 9000, "cache_write": 52}}
+    ask._note(str(tmp_path), ev)
+    assert ask.token_rate() >= 60 / 60  # 2 + 52 + 6 new tokens in the last minute; cache reads are not counted
+    ask._note(str(tmp_path), {"type": "limits", "windows": {"five_hour": {"utilization": 0.25, "resets_at": 4102444800}, "seven_day": {"utilization": 0.5, "resets_at": 1}}})
+    p = ask.plan(str(tmp_path))
+    assert p["five_hour"]["left"] == pytest.approx(0.75) and p["seven_day"]["left"] is None  # that window has rolled over
+    client.post("/api/ask", json={"question": "hi"}, headers=H)
+    d = client.get("/api/system", headers=H).json()
+    assert d["plan"]["five_hour"]["left"] == pytest.approx(0.77) and d["now"]["tok"] > 0
+
+
 def test_ask_without_the_cli_says_why(client, monkeypatch):
     monkeypatch.setattr(ask, "find_cli", lambda: None)
     assert client.get("/api/ask", headers=H).json()["available"] is False

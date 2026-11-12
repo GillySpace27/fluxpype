@@ -239,6 +239,7 @@ def test_agent_calls_are_recorded_per_call_and_survive_a_restart(client, tmp_pat
 def test_system_snapshot_has_history_and_storage(client):
     d = client.get("/api/system", headers=H).json()
     assert d["now"]["cpu"] is not None and d["history"] and d["storage"][0]["total"] > 0
+    assert "tok" in d["now"] and d["plan"] is None  # no Ask bar answer yet, so no plan windows to show
     if d["psutil"]:
         assert "processes" not in d
         assert client.get("/api/system?procs=1", headers=H).json()["processes"]["top"]
