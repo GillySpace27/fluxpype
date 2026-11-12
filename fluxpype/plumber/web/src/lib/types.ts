@@ -447,6 +447,8 @@ export interface CatalogPlot {
   /** inputs written after the task ended */
   inputs_later: string[];
   last_run: { id: string; status: string; detail: string | null } | null;
+  /** which regenerate settings it takes ("light"), when it takes any */
+  settings?: string;
   files: ResultFile[];
   n_files: number;
 }
@@ -473,8 +475,25 @@ export interface PlotRun {
   ended: number | null;
   exit_code: number | null;
   overwrite: boolean;
+  /** settings changed for this run, as the user chose them */
+  settings: Record<string, string>;
   plots: PlotRunPlot[];
   log_size: number;
+}
+
+/** One setting the wind or FLUXlight regenerate panel offers, with the value this job ran with. */
+export interface RerunField {
+  key: string;
+  label: string;
+  hint: string;
+  kind: "choice" | "int" | "float";
+  choices?: string[];
+  min?: number;
+  max?: number;
+  value: string;
+}
+export interface RerunOptions {
+  [group: string]: { fields: RerunField[]; can: boolean; missing: string[] };
 }
 
 export interface PlotPlanItem {
@@ -573,6 +592,10 @@ export interface AgentCall {
   /** worst HTTP status among the call's requests */
   status: number;
   paths: string[];
+  /** "mcp" for an agent, "ask" for the Ask bar's own reads */
+  via: string;
+  /** time of the call's last request */
+  last: number;
 }
 export interface AgentRecord {
   tools: AgentTool[];

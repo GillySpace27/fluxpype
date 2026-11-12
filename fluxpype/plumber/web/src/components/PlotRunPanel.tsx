@@ -65,6 +65,9 @@ export function PlotRunPanel({ runs, focus }: { runs: PlotRun[]; focus?: { id: s
           )}
         </span>
       </div>
+      {Object.keys(run.settings ?? {}).length > 0 && (
+        <p className="num text-xs text-muted">With {Object.entries(run.settings).map(([k, v]) => `${k} = ${v}`).join(", ")}</p>
+      )}
       <ul className="flex flex-wrap gap-1.5">
         {run.plots.map((p) => (
           <li key={p.id} title={p.detail ?? p.title} className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11.5px]", p.status === "failed" ? "border-fail/40 text-fail" : "border-line/80 text-muted")}>

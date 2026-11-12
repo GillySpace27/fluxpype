@@ -6,6 +6,7 @@ line per request so the record survives a restart. Stdlib only.
 """
 
 import json
+import re
 import time
 from collections import OrderedDict
 from typing import Any, Dict, List
@@ -31,12 +32,15 @@ TOOLS = [
 
 MAX_CALLS = 1000  # calls kept in memory (and the file is trimmed to about twice the request lines this implies)
 FILE_LINES = 4000
+LEGACY_GAP_S = 10  # requests of one tool this close together, with no call id, are one call
+_REAL_ID = re.compile(r"^[0-9a-f]{12}$")
 
 
 class AgentLog:
     def __init__(self, path: str):
         self.path = path
         self.calls: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._legacy: Dict[str, str] = {}  # tool -> the untagged call its latest request joined
         lines: List[str] = []
         try:
             with open(path, "r", errors="replace") as f:
@@ -57,11 +61,18 @@ class AgentLog:
                 continue
 
     def _add(self, r: Dict[str, Any]) -> None:
-        c = self.calls.get(r["call"])
+        cid = r["call"]
+        if not _REAL_ID.match(cid):  # an MCP server from before calls were tagged sends one id per request
+            prev = self._legacy.get(r["tool"])
+            if prev in self.calls and r["ts"] - self.calls[prev]["last"] <= LEGACY_GAP_S:
+                cid = prev  # a wait_for_task that polls every 1.5 s is one call, not one a poll
+            self._legacy[r["tool"]] = cid
+        c = self.calls.get(cid)
         if c is None:
-            c = self.calls[r["call"]] = {
-                "call": r["call"],
+            c = self.calls[cid] = {
+                "call": cid,
                 "ts": r["ts"],
+                "last": r["ts"],
                 "tool": r["tool"],
                 "args": r.get("args", ""),
                 "requests": 0,
@@ -73,6 +84,7 @@ class AgentLog:
             while len(self.calls) > MAX_CALLS:
                 self.calls.popitem(last=False)
         c["requests"] += 1
+        c["last"] = r["ts"]
         c["ms"] += int(r.get("ms", 0))
         c["status"] = max(c["status"], int(r.get("status", 0)))
         if len(c["paths"]) < 4:

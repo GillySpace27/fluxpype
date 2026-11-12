@@ -9,6 +9,7 @@ import { FileViewer, fileUrl } from "./FileViewer";
 import { FileIcons, FileRows, ViewSwitch, useFileView } from "./FileBrowser";
 import { PlotCatalog } from "./PlotCatalog";
 import { PlotRunPanel } from "./PlotRunPanel";
+import { RerunPanel } from "./RerunPanel";
 import { OriginTag, RelaxViews } from "./ResultsPane";
 import { useProgress } from "./StageTimeline";
 import { Badge, Card, StatusIcon } from "./ui";
@@ -200,6 +201,9 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
           </div>
         )}
         <PlotRunPanel runs={runs} focus={logFocus} />
+        {(stageId === "wind" || stageId === "wind_plots" || stageId === "fluxlight") && (
+          <RerunPanel task={task} group={stageId === "fluxlight" ? "light" : "wind"} blocked={generating} onLight={(settings) => generate.mutate({ plots: ["light_triplot"], settings })} />
+        )}
         {stage?.verified === false && <p className="text-xs text-run">Events say it finished, but its output file was not found.</p>}
 
         {stageId === "wind" && wind && (

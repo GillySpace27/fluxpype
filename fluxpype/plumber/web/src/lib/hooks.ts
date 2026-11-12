@@ -20,6 +20,7 @@ import type {
   ProfileSummary,
   QueueState,
   RelaxSeries,
+  RerunOptions,
   StatusInfo,
   SysSnapshot,
   TaskResults,
@@ -199,8 +200,8 @@ export function useGeneratePlots(taskId: string) {
   const qc = useQueryClient();
   const toast = useToast();
   return useMutation({
-    mutationFn: async ({ plots, stage }: { plots: string[] | "all_possible"; stage?: string }) => {
-      const base = { plots, stage: stage ?? null, include_legacy: false };
+    mutationFn: async ({ plots, stage, settings }: { plots: string[] | "all_possible"; stage?: string; settings?: Record<string, string> }) => {
+      const base = { plots, stage: stage ?? null, include_legacy: false, settings: settings ?? {} };
       const { plan } = await api.post<{ plan: PlotPlanItem[] }>(`/api/tasks/${taskId}/plots`, { ...base, dry_run: true });
       const clash = plan.filter((p) => p.conflicts.length || p.inputs_later.length);
       let overwrite = false;
@@ -221,5 +222,24 @@ export function useGeneratePlots(taskId: string) {
       qc.invalidateQueries({ queryKey: ["plotruns", taskId] });
     },
     onError: (e) => toast("error", e instanceof Error ? e.message : "Could not start the plot run"),
+  });
+}
+
+/** The settings the wind and FLUXlight regenerate panels offer for a task. */
+export const useRerunOptions = (taskId: string) =>
+  useQuery({ queryKey: ["rerun", taskId], queryFn: () => api.get<RerunOptions>(`/api/tasks/${taskId}/rerun`), staleTime: 30_000 });
+
+/** Queue a job that redoes only the wind and wind plots of a task. */
+export function useRerunWind(taskId: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: (settings: Record<string, string>) => api.post<{ id: string }>(`/api/tasks/${taskId}/rerun/wind`, { settings }),
+    onSuccess: () => {
+      toast("info", "Queued a run that redoes only the wind and its plots");
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["overview"] });
+    },
+    onError: (e) => toast("error", e instanceof Error ? e.message : "Could not queue the wind run"),
   });
 }

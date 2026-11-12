@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Bot, Check, ChevronRight, Copy } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { ago, clock, dateTime } from "../lib/format";
 import { useAgentRecord, useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import type { AgentCall, AgentTool } from "../lib/types";
-import { Badge, Dialog, EmptyState, ErrorNote, Segmented, Skeleton, useToast } from "./ui";
+import { Badge, Checkbox, Dialog, EmptyState, ErrorNote, Segmented, Skeleton, useToast } from "./ui";
 
 interface AgentPrompt {
   name: string;
@@ -102,41 +102,87 @@ function Abilities({ tools }: { tools: AgentTool[] }) {
   );
 }
 
-/** Every call the agent has made, newest first. */
-function ActivityLog({ calls, total, since }: { calls: AgentCall[]; total: number; since: number | null }) {
+type Filter = "all" | "changes" | "errors";
+type Row = AgentCall & { n: number; first: number };
+
+/** Every call the agent has made, newest first. Repeats of one tool with the same arguments can be folded into one row. */
+function ActivityLog({ calls, total, since, tools }: { calls: AgentCall[]; total: number; since: number | null; tools: AgentTool[] }) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const [fold, setFold] = useState(true);
+  const rows = useMemo(() => {
+    const kind = new Map(tools.map((t) => [t.name, t.kind]));
+    const keep = calls.filter((c) => (filter === "errors" ? c.status >= 400 : filter === "changes" ? (kind.get(c.tool) ?? "read") !== "read" : true));
+    const out: Row[] = [];
+    for (const c of keep) {
+      const p = out[out.length - 1];
+      if (fold && p && p.tool === c.tool && p.args === c.args && p.via === c.via) {
+        p.n += 1;
+        p.first = c.ts;
+        p.status = Math.max(p.status, c.status);
+        p.ms += c.ms;
+      } else out.push({ ...c, n: 1, first: c.ts });
+    }
+    return out;
+  }, [calls, tools, filter, fold]);
   if (!calls.length) return <EmptyState title="No agent calls yet" body="Every command an agent sends through the MCP server is recorded here." />;
   return (
     <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          label="Show"
+          options={[
+            { value: "all", label: "All" },
+            { value: "changes", label: "Changes only" },
+            { value: "errors", label: "Errors" },
+          ]}
+        />
+        <span className="flex items-center gap-2 text-xs text-muted">
+          <Checkbox checked={fold} onChange={setFold} label="Fold repeats" /> Fold repeats
+        </span>
+      </div>
       <p className="text-xs text-muted">
         {total} call{total === 1 ? "" : "s"} since {dateTime(since)}. Kept in the Plumber home folder (agent_log.jsonl), newest 1000.
       </p>
-      <div className="overflow-hidden rounded-xl border border-line bg-bg/40">
-        <table className="w-full text-[12px]">
-          <tbody className="divide-y divide-line/50">
-            {calls.map((c) => (
-              <tr key={c.call} className="align-top">
-                <td className="num whitespace-nowrap px-3 py-1.5 text-faint" title={dateTime(c.ts)}>
-                  {clock(c.ts)}
-                </td>
-                <td className="px-2 py-1.5">
-                  <span className="font-mono font-medium">{c.tool || "?"}</span>
-                  {c.args && c.args !== "{}" && (
-                    <span className="mt-0.5 block max-w-[360px] truncate font-mono text-[11px] text-muted" title={c.args}>
-                      {c.args}
+      {!rows.length ? (
+        <p className="rounded-xl border border-line bg-bg/40 px-3 py-6 text-center text-xs text-muted">Nothing matches this filter.</p>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-line bg-bg/40">
+          <table className="w-full text-[12px]">
+            <tbody className="divide-y divide-line/50">
+              {rows.map((c, i) => (
+                <tr key={`${c.call}-${i}`} className="align-top">
+                  <td className="num whitespace-nowrap px-3 py-1.5 text-faint" title={dateTime(c.ts)}>
+                    {clock(c.ts)}
+                    {c.n > 1 && <span className="block text-[10.5px]">from {clock(c.first)}</span>}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span className="font-mono font-medium">{c.tool || "?"}</span>
+                    {c.n > 1 && <span className="num ml-1.5 text-faint">x{c.n}</span>}
+                    {c.via === "ask" && (
+                      <Badge className="ml-2" tone="info">
+                        Ask bar
+                      </Badge>
+                    )}
+                    {c.args && c.args !== "{}" && (
+                      <span className="mt-0.5 block max-w-[360px] truncate font-mono text-[11px] text-muted" title={c.args}>
+                        {c.args}
+                      </span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-1.5 text-right">
+                    <Badge tone={c.status >= 400 ? "fail" : "ok"}>{c.status >= 400 ? `error ${c.status}` : "ok"}</Badge>
+                    <span className="num mt-0.5 block text-[10.5px] text-faint" title={c.paths.join("\n")}>
+                      {c.ms} ms{c.requests > 1 ? ` · ${c.requests} requests` : ""}
                     </span>
-                  )}
-                </td>
-                <td className="whitespace-nowrap px-3 py-1.5 text-right">
-                  <Badge tone={c.status >= 400 ? "fail" : "ok"}>{c.status >= 400 ? `error ${c.status}` : "ok"}</Badge>
-                  <span className="num mt-0.5 block text-[10.5px] text-faint" title={c.paths.join("\n")}>
-                    {c.ms} ms{c.requests > 1 ? ` · ${c.requests} requests` : ""}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -185,7 +231,7 @@ export function ConnectAgentDialog({ open, onOpenChange, idle, setup }: { open: 
         ) : tab === "can" ? (
           <Abilities tools={record.data.tools} />
         ) : (
-          <ActivityLog calls={record.data.calls} total={record.data.total} since={record.data.since} />
+          <ActivityLog calls={record.data.calls} total={record.data.total} since={record.data.since} tools={record.data.tools} />
         ))}
       {tab === "connect" && (error ? (
         <ErrorNote error={error} retry={() => refetch()} />

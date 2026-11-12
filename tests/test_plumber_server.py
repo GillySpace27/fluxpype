@@ -465,3 +465,17 @@ def test_custom_cookie_name_keeps_instances_apart(make_scheduler):
         c.cookies.set("flux_plumber", TOKEN)  # another instance's cookie does not count here
         c.cookies.delete("flux_plumber_abc")
         assert c.get("/api/status").status_code == 401
+
+
+def test_untagged_requests_of_one_tool_fold_into_one_call(tmp_path):
+    """An MCP server from before calls were tagged sends no call id: a 1.5 s wait_for_task poll must not look like 40 calls."""
+    from fluxpype.plumber.agent_log import AgentLog
+
+    log = AgentLog(str(tmp_path / "log.jsonl"))
+    for i in range(5):
+        log.record(f"{1000 + i}.5", "wait_for_task", "", "GET", "/api/tasks/t", 200, 3)
+    log.record("a1b2c3d4e5f6", "wait_for_task", "{}", "GET", "/api/tasks/t", 200, 3)  # a tagged call stays its own
+    log.record("abc", "get_task", "", "GET", "/api/tasks/t", 200, 3)  # another tool is not folded into the wait
+    s = AgentLog(str(tmp_path / "log.jsonl")).summary()  # and the same holds when the file is read back
+    assert s["total"] == 3
+    assert sorted((c["tool"], c["requests"]) for c in s["calls"]) == [("get_task", 1), ("wait_for_task", 1), ("wait_for_task", 5)]
