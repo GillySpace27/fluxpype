@@ -428,19 +428,63 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 15 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 17 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
         assert tools[name].annotations.read_only_hint is True, name
     assert tools["cancel"].annotations.destructive_hint is True
-    for name in ("submit_job", "retry_failed", "set_queue"):
+    assert tools["list_proposals"].annotations.read_only_hint is True
+    for name in ("submit_job", "retry_failed", "set_queue", "create_preset"):
         a = tools[name].annotations
         assert a.read_only_hint is False and a.destructive_hint is False, name
     assert tools["submit_job"].annotations.idempotent_hint is False
     assert tools["retry_failed"].annotations.idempotent_hint is False
     for name in ("read_task_log", "get_task", "wait_for_task", "get_job", "status"):
         assert "untrusted" in tools[name].description, name
+
+
+# ------------------------------------------------------------------ presets and the Ask bar's proposals
+
+
+def test_create_preset_saves_through_the_presets_route(rig):
+    out = rig.ok("create_preset", name="agent_p", base="t_one", values={"fluxon_count": [300], "light": True})
+    assert out == {"name": "agent_p"}
+    own = {p["name"]: p["own"] for p in rig.tc.get("/api/profiles?cache=false", headers=H).json()["profiles"]}
+    assert own["agent_p"]["fluxon_count"] == "[300]" and own["agent_p"]["light"] == "1"
+    err, msg = rig.call("create_preset", name="agent_q", values={"run_script": "x.py"})
+    assert err and "run_script" in msg
+
+
+def test_the_ask_bars_copy_only_proposes(rig, monkeypatch):
+    from fluxpype.plumber import ask
+
+    monkeypatch.setattr(ask, "_question", "q9")
+    monkeypatch.setenv("FLUX_ASK_QUESTION", "q9")
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    rig.tc.patch("/api/queue", json={"paused": True}, headers=H)
+    asker = Rig(rig.tc, rig.sched)
+    asker.server = build_server(asker.client, propose=True)
+    n = len(rig.tc.get("/api/jobs", headers=H).json()["jobs"])
+    out = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [200]})
+    assert out["status"] == "pending" and len(out["proposal_id"]) == 12 and "Nothing has changed" in out["next"]
+    err, msg = asker.call("submit_job", profile="t_one", overrides={"light": 1})
+    assert err and "light" in msg  # checked by the server now, so the model can correct itself
+    assert asker.ok("set_queue", paused=False)["status"] == "pending"
+    assert asker.ok("create_preset", name="ask_p", base="t_one", values={"fluxon_count": [300]})["status"] == "pending"
+    assert len(rig.tc.get("/api/jobs", headers=H).json()["jobs"]) == n and rig.tc.get("/api/queue", headers=H).json()["paused"]
+    assert "ask_p" not in {p["name"] for p in rig.tc.get("/api/profiles?cache=false", headers=H).json()["profiles"]}
+    listed = asker.ok("list_proposals")["proposals"]
+    assert [p["tool"] for p in listed] == ["create_preset", "set_queue", "submit_job"]
+    assert listed[2]["args"] == {"profile": "t_one", "overrides": {"fluxon_count": "[200]"}, "backend": "fake"}
+
+    async def descriptions():
+        async with Client(asker.server) as c:
+            return {t.name: t.description for t in (await c.list_tools()).tools}
+
+    d = anyio.run(descriptions)
+    assert all("changes nothing" in d[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
+    assert "changes nothing" not in d["status"]
 
 
 # ------------------------------------------------------------------ images

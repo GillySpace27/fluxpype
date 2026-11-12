@@ -2,8 +2,8 @@
 
 It uses the CLI's own login (no key for Plumber to hold). The CLI is stripped down: no built-in tools, no user
 settings, and only Plumber's MCP server with its read-only tools, so a question costs about a cent. The FLUX reference
-and the Plumber guide (``ask/*.md``) are the system prompt. Nothing here changes Plumber: the model proposes changes as a
-``flux-action`` block and the person clicks to run one. See docs/plumber-ask-bar-scope.md.
+and the Plumber guide (``ask/*.md``) are the system prompt. Nothing here changes Plumber: the MCP server's write tools
+only store proposals (proposals.py), and a person runs one with a click after the answer. See docs/plumber-ask-bar-scope.md.
 """
 
 import importlib.util
@@ -15,18 +15,20 @@ import sys
 import tempfile
 import threading
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, Iterator, List, Optional, Tuple
 
-from . import paths
+from . import paths, proposals
 
 DOCS = Path(__file__).parent / "ask"
 MODEL = "sonnet"
 TIMEOUT_S = 120
 MAX_BUDGET_USD = "1"
-READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series", "read_task_log", "cache_summary"]
-NO_TOOLS = ["submit_job", "cancel", "retry_failed", "set_queue", "wait_for_task", "get_task_image"]
+READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series", "read_task_log", "cache_summary", "get_task_image", "list_proposals"]
+PROPOSE_TOOLS = list(proposals.TOOLS)  # in the Ask bar's MCP server these only store a proposal (mcp_server.build_server)
+NO_TOOLS = ["wait_for_task"]  # polls for up to 300 s, past the 120 s a question may take
 # Repo documents added to the prompt when the checkout has them (a pip install has only the shipped ask/*.md). The
 # rest of the repo is reachable through the read-only tools.
 REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
@@ -34,6 +36,11 @@ REPO_TOOLS = "Read,Grep,Glob"
 USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
 _recent: Deque[Tuple[float, int]] = deque(maxlen=200)  # (time, new tokens) of answered questions, for the spend rate
 _busy = threading.Lock()  # one question at a time: each one is a process and spends the user's quota
+_question = ""  # id of the question running now; a proposal must carry it (server.py, POST /api/proposals)
+
+
+def current_question() -> str:
+    return _question
 
 PREAMBLE = (
     "You are the assistant built into Fluxpype Plumber, a web app for running the fluxpype pipeline, used by solar "
@@ -93,13 +100,13 @@ def user_prompt(question: str, page: str, history: List[Dict[str, str]]) -> str:
     return f"{earlier}The person is on this page: {page or 'unknown'}.\n\nQuestion: {question}"
 
 
-def command(cli: str, home: str, tools: bool) -> List[str]:
+def command(cli: str, home: str, tools: bool, question: str = "") -> List[str]:
     mcp: Dict[str, Any] = {"mcpServers": {}}
     if tools:
         mcp["mcpServers"]["fluxpype"] = {
             "command": sys.executable,
             "args": ["-m", "fluxpype.plumber.mcp_server", "--home", home, "--no-autostart"],
-            "env": {"FLUX_MCP_CLIENT": "ask"},
+            "env": {"FLUX_MCP_CLIENT": "ask", "FLUX_ASK_QUESTION": question},  # "ask": its write tools only propose
         }
     cmd = [
         cli, "-p", "--model", MODEL, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
@@ -109,7 +116,7 @@ def command(cli: str, home: str, tools: bool) -> List[str]:
     ]
     # Read, Grep and Glob stay out of the allow list: a bare allow rule lets them read any path (the token in the
     # Plumber home included); unlisted, they reach only the cwd and --add-dir. The deny rule locks the home as well.
-    allowed = [f"mcp__fluxpype__{t}" for t in READ_TOOLS] if tools else []
+    allowed = [f"mcp__fluxpype__{t}" for t in READ_TOOLS + PROPOSE_TOOLS] if tools else []
     if repo_root():
         cmd += ["--add-dir", str(repo_root())]
     if allowed:
@@ -224,6 +231,8 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
     if not _busy.acquire(blocking=False):
         yield sse({"type": "error", "message": "Another question is still running; wait for it to finish."})
         return
+    global _question
+    _question = uuid.uuid4().hex[:12]
     proc: Optional[subprocess.Popen] = None
     timer: Optional[threading.Timer] = None
     errfile = tempfile.TemporaryFile()
@@ -232,7 +241,7 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         cwd = Path(home) / "ask"  # empty, so no project CLAUDE.md is picked up
         cwd.mkdir(parents=True, exist_ok=True)
         proc = subprocess.Popen(
-            command(cli, home, availability()["tools"]), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1
+            command(cli, home, availability()["tools"], _question), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1
         )
         timer = threading.Timer(TIMEOUT_S, proc.kill)
         timer.start()
@@ -246,6 +255,9 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
                 if ev["type"] == "limits":
                     continue  # kept for the dashboard, nothing for the answer panel
                 finished = finished or ev["type"] in ("done", "error")
+                ids = proposals.for_question(os.path.join(home, "proposals.json"), _question) if ev["type"] == "done" else []
+                if ids:  # written by Plumber, not the model: the answer panel draws a card per id from GET /api/proposals
+                    yield sse({"type": "text", "text": f"\n\n```flux-proposals\n{json.dumps(ids)}\n```\n"})
                 yield sse(ev)
         proc.wait()
         if not finished:
@@ -258,4 +270,5 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         if proc and proc.poll() is None:
             proc.kill()
         errfile.close()
+        _question = ""
         _busy.release()

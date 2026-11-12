@@ -7,6 +7,7 @@ import math
 import os
 import sys
 import time
+import uuid
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,7 +16,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import config_io, paths, plotrun
 from .agent_log import AgentLog
@@ -23,6 +24,7 @@ from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
 from .health import Health
 from .presets import PresetError
+from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
 from .monitor import STAGES, first_match_for_context
 from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
 from .sysmon import SysMon
@@ -100,6 +102,12 @@ class PlotRunIn(BaseModel):
     dry_run: bool = False
     include_legacy: bool = False
     settings: Dict[str, str] = Field(default_factory=dict)  # plotrun.SETTINGS keys, for plots that take them
+
+
+class ProposalIn(BaseModel):
+    tool: Literal[PROPOSAL_TOOLS]  # type: ignore[valid-type]
+    args: Dict[str, Any] = Field(default_factory=dict)
+    question: str = Field(default="", max_length=64)
 
 
 class QueueIn(BaseModel):
@@ -238,6 +246,7 @@ def create_app(
         pass
 
     agent_log = AgentLog(str(Path(scheduler.home) / "agent_log.jsonl"))  # every agent call, kept across restarts
+    proposals = ProposalStore(str(Path(scheduler.home) / "proposals.json"))  # changes the Ask bar asked for
 
     def agent_alive() -> None:
         now = time.time()
@@ -320,7 +329,12 @@ def create_app(
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
             client = request.headers.get("x-flux-client")
-            if client == "ask" and request.method not in ("GET", "HEAD", "OPTIONS"):  # a second lock behind the CLI
+            # a second lock behind the CLI: the Ask bar's MCP server may only read and store proposals
+            if (
+                client == "ask"
+                and request.method not in ("GET", "HEAD", "OPTIONS")
+                and (request.method, path) != ("POST", "/api/proposals")
+            ):
                 return JSONResponse({"detail": "the Ask bar is read-only; a person clicks a card"}, status_code=403)
             if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
                 agent_alive()
@@ -686,10 +700,8 @@ def create_app(
             }
         )
 
-    @app.post("/api/jobs")
-    def create_job(body: JobIn):
+    def job_extra(body: JobIn, backend: str) -> Dict[str, str]:
         extra: Dict[str, str] = {}
-        backend = body.backend or sched.active_backend
         if body.scenario is not None or body.speed is not None:
             if not sched.is_sandboxed(backend):
                 raise HTTPException(400, "scenario and speed only apply to the fake backend")
@@ -701,6 +713,12 @@ def create_app(
                 if not 0.1 <= body.speed <= 1000:
                     raise HTTPException(400, "speed must be between 0.1 and 1000")
                 extra["speed"] = str(body.speed)
+        return extra
+
+    @app.post("/api/jobs")
+    def create_job(body: JobIn):
+        backend = body.backend or sched.active_backend
+        extra = job_extra(body, backend)
         try:
             return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra), 201)
         except SchedulerError as e:
@@ -1053,6 +1071,172 @@ def create_app(
             return reply(sched.set_queue(body.paused, body.max_parallel, body.cpu_budget))
         except SchedulerError as e:
             fail(e)
+
+    # ------------------------------------------------------------------ proposals (see proposals.py)
+    RETRYABLE = ("failed", "timeout", "cancelled", "crashed")
+
+    def check_proposal(tool: str, args: Dict[str, Any]):
+        """`(normalized args, plain summary, diff rows)` with the checks the real route makes; writes nothing."""
+        diff: List[Dict[str, Any]] = []
+        try:
+            if tool == "submit_job":
+                b = JobIn(**args)
+                backend = b.backend or sched.active_backend
+                extra = job_extra(b, backend)
+                n = sched.create_job(b.profile, b.overrides, backend, b.tasks, extra, dry_run=True)["task_count"]
+                eff = sched.parsed().effective(b.profile)
+                diff = [{"key": k, "from": eff[k].value if k in eff else None, "to": v} for k, v in b.overrides.items()]
+                norm = {
+                    **b.model_dump(exclude_none=True),
+                    "backend": backend,
+                }  # the backend is fixed now, not at the click
+                return (
+                    norm,
+                    f"Queue {n} task(s) from preset {b.profile} on the {backend} backend"
+                    + (", with the overrides below" if diff else ""),
+                    diff,
+                )
+            if tool == "cancel":
+                if set(args) not in ({"job_id"}, {"task_id"}):
+                    raise HTTPException(400, "give exactly one of job_id or task_id")
+                if "job_id" in args:
+                    jid = str(args["job_id"])
+                    if not sched.store.get_job(jid):
+                        raise HTTPException(400, f"unknown job {jid!r}")
+                    live = [t for t in sched.store.tasks_for_job(jid) if t["status"] in ("pending", "running")]
+                    if not live:
+                        raise HTTPException(400, f"job {jid} has nothing pending or running to cancel")
+                    return {"job_id": jid}, f"Cancel job {jid}: stops its {len(live)} pending or running task(s)", diff
+                tid = str(args["task_id"])
+                t = sched.store.get_task(tid)
+                if not t:
+                    raise HTTPException(400, f"unknown task {tid!r}")
+                if t["status"] not in ("pending", "running"):
+                    raise HTTPException(400, f"task {tid} is {t['status']}, not pending or running")
+                return (
+                    {"task_id": tid},
+                    f"Cancel task {tid} (CR{t['cr']}, {t['nflux']} fluxons), which is {t['status']}",
+                    diff,
+                )
+            if tool == "retry_failed":
+                if set(args) != {"job_id"}:
+                    raise HTTPException(400, "give job_id only")
+                jid = str(args["job_id"])
+                if not sched.store.get_job(jid):
+                    raise HTTPException(400, f"unknown job {jid!r}")
+                n = sum(t["status"] in RETRYABLE for t in sched.store.tasks_for_job(jid))
+                if not n:
+                    raise HTTPException(400, f"job {jid} has nothing to retry")
+                return (
+                    {"job_id": jid},
+                    f"Re-queue the {n} failed, crashed, timed out or cancelled task(s) of job {jid}",
+                    diff,
+                )
+            if tool == "set_queue":
+                q = QueueIn(**args)
+                norm = q.model_dump(exclude_none=True)
+                if not norm:
+                    raise HTTPException(400, "give at least one of paused, max_parallel, cpu_budget")
+                sched.check_queue(q.max_parallel, q.cpu_budget)
+                now = sched.queue_state()
+                diff = [{"key": k, "from": str(now[k]), "to": str(v)} for k, v in norm.items()]
+                return norm, "Change the queue settings below (running tasks continue)", diff
+            if tool == "create_preset":
+                p = PresetIn(**args)
+                name, start, values = sched.presets.check(p.name, p.base, p.values)
+                if any(x["tool"] == "create_preset" and x["args"]["name"] == name for x in proposals.pending()):
+                    raise HTTPException(400, f"a pending proposal already saves a preset named {name!r}")
+                diff = [{"key": k, "from": start.get(k), "to": v} for k, v in values.items()]
+                norm = {"name": name, "base": p.base, "values": values}
+                return (
+                    norm,
+                    f"Save a new preset {name}"
+                    + (f", a copy of {p.base}" if p.base else "")
+                    + f" with {len(values)} setting(s) changed; it runs nothing",
+                    diff,
+                )
+        except ValidationError as e:
+            raise HTTPException(400, "; ".join(f"{'.'.join(str(x) for x in d['loc'])}: {d['msg']}" for d in e.errors()))
+        except (SchedulerError, PresetError) as e:
+            raise HTTPException(400, str(e))
+        raise HTTPException(400, f"unknown tool {tool!r}")
+
+    def run_proposal(tool: str, a: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute stored arguments through the normal route; returns the small result the card links to."""
+        if tool == "submit_job":
+            return {"job_id": json.loads(create_job(JobIn(**a)).body)["id"]}
+        if tool == "cancel":
+            if "job_id" in a:
+                return {"job_id": json.loads(cancel_job(a["job_id"]).body)["id"]}
+            return {"task_id": a["task_id"], "status": json.loads(cancel_task(a["task_id"]).body).get("status")}
+        if tool == "retry_failed":
+            return {"job_id": json.loads(retry_job(a["job_id"]).body)["id"]}
+        if tool == "set_queue":
+            return {
+                k: v
+                for k, v in json.loads(patch_queue(QueueIn(**a)).body).items()
+                if k in ("paused", "max_parallel", "cpu_budget")
+            }
+        return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}
+
+    def decided(request: Request, p: Dict[str, Any], what: str, status: int = 200) -> None:
+        args = json.dumps({"proposal": p["id"], "decision": what})
+        agent_log.record(uuid.uuid4().hex[:12], p["tool"], args, "POST", request.url.path, status, 0, "ask")
+        hub.publish("agent_call", {})
+
+    @app.get("/api/proposals")
+    def proposals_list():
+        return reply({"proposals": proposals.list()})
+
+    @app.post("/api/proposals")
+    def proposal_add(request: Request, body: ProposalIn):
+        """Only the Ask bar's MCP server, during its question: check and store, never run."""
+        from . import ask
+
+        if request.headers.get("x-flux-client") != "ask":
+            raise HTTPException(403, "proposals come from the Ask bar; act through the normal routes")
+        if not body.question or body.question != ask.current_question():
+            raise HTTPException(409, "no Ask question is running with this id")
+        norm, summary, diff = check_proposal(body.tool, body.args)
+        try:
+            p = proposals.add(body.tool, norm, summary, body.question, diff)
+        except ProposalError as e:
+            fail(e, e.code)
+        hub.publish("proposals", {})
+        return reply(p, 201)
+
+    @app.post("/api/proposals/{pid}/approve")
+    def proposal_approve(request: Request, pid: str):
+        """The person's click. Runs the stored arguments once; nothing in this request's body is read."""
+        if request.headers.get("x-flux-client"):
+            raise HTTPException(403, "only a person can approve a proposal, from the card")
+        try:
+            p = proposals.claim(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        try:
+            out = proposals.finish(pid, "approved", result=run_proposal(p["tool"], p["args"]))
+        except HTTPException as e:
+            proposals.finish(pid, "failed", error=str(e.detail))
+            decided(request, p, "failed", e.status_code)
+            raise
+        except Exception as e:  # noqa: BLE001 - never leave a proposal marked running
+            proposals.finish(pid, "failed", error=f"{type(e).__name__}: {e}")
+            decided(request, p, "failed", 500)
+            raise HTTPException(500, f"the proposal failed: {type(e).__name__}") from None
+        decided(request, p, "approved")
+        hub.publish("proposals", {})
+        return reply(out)
+
+    @app.post("/api/proposals/{pid}/reject")
+    def proposal_reject(request: Request, pid: str):
+        try:
+            p = proposals.reject(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        decided(request, p, "rejected")
+        hub.publish("proposals", {})
+        return reply(p)
 
     @app.get("/api/overview")
     def overview():

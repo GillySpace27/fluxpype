@@ -195,17 +195,21 @@ class Scheduler:
             "active_backend": self.active_backend,
         }
 
+    @staticmethod
+    def check_queue(max_parallel=None, cpu_budget=None) -> None:
+        if max_parallel is not None and not 1 <= int(max_parallel) <= 64:
+            raise SchedulerError("max_parallel must be between 1 and 64")
+        if cpu_budget is not None and not 1 <= int(cpu_budget) <= 4096:
+            raise SchedulerError("cpu_budget must be between 1 and 4096")
+
     def set_queue(self, paused=None, max_parallel=None, cpu_budget=None) -> Dict[str, Any]:
+        self.check_queue(max_parallel, cpu_budget)
         with self.lock:
             if paused is not None:
                 self.store.set_setting("paused", bool(paused))
             if max_parallel is not None:
-                if not 1 <= int(max_parallel) <= 64:
-                    raise SchedulerError("max_parallel must be between 1 and 64")
                 self.store.set_setting("max_parallel", int(max_parallel))
             if cpu_budget is not None:
-                if not 1 <= int(cpu_budget) <= 4096:
-                    raise SchedulerError("cpu_budget must be between 1 and 4096")
                 self.store.set_setting("cpu_budget", int(cpu_budget))
         state = self.queue_state()
         self.on_change("queue_state", state)
@@ -226,8 +230,11 @@ class Scheduler:
         tasks: Optional[List[List[str]]] = None,
         extra: Optional[Dict[str, str]] = None,
         base_text: Optional[str] = None,
+        dry_run: bool = False,
     ) -> Dict[str, Any]:
-        """Snapshot the config (`base_text`, else the preset file as it is now), expand the profile into tasks and queue them."""
+        """Snapshot the config (`base_text`, else the preset file as it is now), expand the profile into tasks and queue them.
+
+        `dry_run` runs every check and returns {"task_count": n} without writing or queueing anything."""
         backend = backend or self.active_backend
         if backend not in self.backends:
             raise SchedulerError(f"unknown backend {backend!r}")
@@ -266,6 +273,8 @@ class Scheduler:
             chosen = [t for t in plan.tasks if (t[1], t[2], t[0], t[3]) in wanted]  # wanted: (cr, nflux, adapt, method)
             if not chosen:
                 raise SchedulerError("none of the requested tasks are in this profile")
+        if dry_run:
+            return {"task_count": len(chosen)}
         job_id = "j" + uuid.uuid4().hex[:8]
         job_dir = os.path.join(paths.runs_dir(self.home), job_id)
         os.makedirs(job_dir, exist_ok=True)
