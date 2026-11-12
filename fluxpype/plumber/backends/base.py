@@ -40,13 +40,18 @@ class Handle:
 
 @dataclass
 class TaskStatus:
-    """state: starting | running | exited | lost.
+    """state: starting | queued | running | exited | lost | unknown.
 
+    ``queued`` means a remote scheduler accepted the task but has not started it.
+    ``unknown`` means the backend cannot tell right now (unreachable); the
+    scheduler keeps the task running and never finalizes it on ``unknown``.
     ``lost`` means the process is gone with no exit code (the launcher died or
-    the machine rebooted); the scheduler records that as ``crashed``.
+    the machine rebooted); the scheduler records that as ``crashed`` unless the
+    task's events.jsonl holds a ``run.end`` record, which then decides.
+    The local and fake backends never return ``queued`` or ``unknown``.
     """
 
-    state: str
+    state: str  # starting | queued | running | exited | lost | unknown
     pid: Optional[int] = None
     pid_start: Optional[str] = None
     exit_code: Optional[int] = None

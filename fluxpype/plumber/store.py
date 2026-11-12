@@ -43,7 +43,30 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
 CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    t REAL NOT NULL,
+    kind TEXT NOT NULL,
+    sev TEXT NOT NULL,
+    key TEXT NOT NULL UNIQUE,
+    job_id TEXT,
+    task_id TEXT,
+    origin_kind TEXT,
+    session TEXT,
+    tab TEXT,
+    f_json TEXT NOT NULL DEFAULT '{}',
+    acked INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS events_job ON events(job_id);
+CREATE INDEX IF NOT EXISTS events_session ON events(session, seq);
 """
+# columns added after the first release: CREATE TABLE IF NOT EXISTS never alters an existing table
+NEW_COLUMNS = (
+    ("jobs", "origin_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("jobs", "notified", "TEXT"),
+    ("tasks", "notified", "TEXT"),
+)
+SEV_RANK = {"info": 0, "success": 1, "warn": 2, "error": 3}
 
 ACTIVE = ("pending", "running")
 FINISHED = ("ok", "failed", "timeout", "cancelled", "crashed")
@@ -57,6 +80,17 @@ class Store:
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self):
+        """Add missing columns. A new `notified` starts equal to `status`, so an upgrade announces nothing old."""
+        with self._lock:
+            for table, col, decl in NEW_COLUMNS:
+                have = {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})")}
+                if col not in have:
+                    self._db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+                    if col == "notified":
+                        self._db.execute(f"UPDATE {table} SET notified = status")
 
     def close(self):
         with self._lock:
@@ -92,8 +126,8 @@ class Store:
             self._db.execute("BEGIN")
             try:
                 self._db.execute(
-                    "INSERT INTO jobs(id, profile, overrides_json, backend, status, created, snapshot_path, extra_json) "  # noqa: E501
-                    "VALUES(?,?,?,?,?,?,?,?)",
+                    "INSERT INTO jobs(id, profile, overrides_json, backend, status, created, snapshot_path, extra_json, origin_json) "  # noqa: E501
+                    "VALUES(?,?,?,?,?,?,?,?,?)",
                     (
                         job["id"],
                         job["profile"],
@@ -103,6 +137,7 @@ class Store:
                         job["created"],
                         job["snapshot_path"],
                         json.dumps(job.get("extra", {})),
+                        json.dumps(job.get("origin") or {}),
                     ),
                 )
                 for t in tasks:
@@ -135,6 +170,8 @@ class Store:
             return None
         row["overrides"] = json.loads(row.pop("overrides_json"))
         row["extra"] = json.loads(row.pop("extra_json"))
+        row["origin"] = json.loads(row.pop("origin_json", None) or "{}")
+        row.pop("notified", None)
         return row
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
@@ -215,6 +252,128 @@ class Store:
         if "ok" in statuses:
             return "partial"
         return "failed"
+
+    # -- events (see notify.py)
+    @staticmethod
+    def _event_row(r: Dict[str, Any]) -> Dict[str, Any]:
+        origin = {"kind": r["origin_kind"]} if r["origin_kind"] else {}
+        origin.update({k: r[k] for k in ("session", "tab") if r[k]})
+        return {
+            "seq": r["seq"],
+            "t": r["t"],
+            "kind": r["kind"],
+            "sev": r["sev"],
+            "key": r["key"],
+            "job_id": r["job_id"],
+            "task_id": r["task_id"],
+            "origin": origin,
+            "f": json.loads(r["f_json"]),
+            "acked": bool(r["acked"]),
+        }
+
+    def add_event(self, ev: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Insert one event; None when its key already exists (INSERT OR IGNORE).
+
+        The NOT EXISTS guard keeps a known duplicate from using up a seq (an ignored AUTOINCREMENT insert does), so
+        seqs stay contiguous and a client can treat a gap as missed events."""
+        origin = ev.get("origin") or {}
+        with self._lock:
+            cur = self._db.execute(
+                "INSERT OR IGNORE INTO events(t, kind, sev, key, job_id, task_id, origin_kind, session, tab, f_json) "
+                "SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM events WHERE key = ?)",
+                (
+                    ev.get("t") or time.time(),
+                    ev["kind"],
+                    ev["sev"],
+                    ev["key"],
+                    ev.get("job_id"),
+                    ev.get("task_id"),
+                    origin.get("kind"),
+                    origin.get("session"),
+                    origin.get("tab"),
+                    json.dumps(ev.get("f") or {}, sort_keys=True),
+                    ev["key"],
+                ),
+            )
+            if not cur.rowcount:
+                return None
+            row = self._db.execute("SELECT * FROM events WHERE seq=?", (cur.lastrowid,)).fetchone()
+        return self._event_row(dict(row))
+
+    def events(
+        self,
+        since: Optional[int] = None,
+        before: Optional[int] = None,
+        limit: int = 100,
+        min_sev: Optional[str] = None,
+        job: Optional[str] = None,
+        session: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """`since`: ascending after it; `before`: descending below it; neither: the newest, descending."""
+        where, args = [], []
+        if since is not None:
+            where.append("seq > ?")
+            args.append(since)
+        elif before is not None:
+            where.append("seq < ?")
+            args.append(before)
+        if min_sev in SEV_RANK:
+            sevs = [s for s, r in SEV_RANK.items() if r >= SEV_RANK[min_sev]]
+            where.append(f"sev IN ({','.join('?' for _ in sevs)})")
+            args += sevs
+        if job:
+            where.append("job_id = ?")
+            args.append(job)
+        if session:
+            where.append("session = ?")
+            args.append(session)
+        sql = "SELECT * FROM events" + (" WHERE " + " AND ".join(where) if where else "")
+        sql += " ORDER BY seq " + ("ASC" if since is not None else "DESC") + " LIMIT ?"
+        return [self._event_row(r) for r in self._all(sql, (*args, limit))]
+
+    def last_seq(self) -> int:
+        return (self._one("SELECT MAX(seq) AS m FROM events") or {}).get("m") or 0
+
+    def count_events(self, key_prefix: str) -> int:
+        """Events whose key starts with `key_prefix` (episode numbers for stalls, backends and the queue)."""
+        like = key_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        return self._one("SELECT COUNT(*) AS n FROM events WHERE key LIKE ? ESCAPE '\\'", (like,))["n"]
+
+    def event_counts(self) -> Dict[str, int]:
+        upto = int(self.get_setting("events_read_upto", 0) or 0)
+        unread = self._one("SELECT COUNT(*) AS n FROM events WHERE sev IN ('warn','error') AND seq > ?", (upto,))["n"]
+        attention = self._one("SELECT COUNT(*) AS n FROM events WHERE sev = 'error' AND acked = 0")["n"]
+        return {"unread": unread, "attention": attention, "read_upto": upto}
+
+    def mark_read(self, upto: int) -> None:
+        if int(upto) > int(self.get_setting("events_read_upto", 0) or 0):
+            self.set_setting("events_read_upto", int(upto))
+
+    def ack_events(self, seqs: Iterable[int] = (), all_: bool = False, job: Optional[str] = None) -> int:
+        with self._lock:
+            if all_ or job:
+                sql, args = "UPDATE events SET acked=1 WHERE acked=0", []
+                if job:
+                    sql, args = sql + " AND job_id=?", [job]
+                return self._db.execute(sql, args).rowcount
+            seqs = [int(s) for s in seqs][:1000]
+            if not seqs:
+                return 0
+            marks = ",".join("?" for _ in seqs)
+            return self._db.execute(f"UPDATE events SET acked=1 WHERE seq IN ({marks})", seqs).rowcount
+
+    def trim_events(self, now: Optional[float] = None, keep: int = 50000) -> int:
+        """Drop info/success older than 7 days and anything older than 30 days, then keep the newest `keep`."""
+        now = now or time.time()
+        with self._lock:
+            n = self._db.execute(
+                "DELETE FROM events WHERE (sev IN ('info','success') AND t < ?) OR t < ?",
+                (now - 7 * 86400, now - 30 * 86400),
+            ).rowcount
+            n += self._db.execute(
+                "DELETE FROM events WHERE seq <= (SELECT seq FROM events ORDER BY seq DESC LIMIT 1 OFFSET ?)", (keep,)
+            ).rowcount
+        return n
 
     @staticmethod
     def now() -> float:

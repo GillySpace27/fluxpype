@@ -14,6 +14,11 @@ about a minute). Scenarios exercise the plumber's failure and fallback paths:
 * ``no_events``       no events at all: only the log and files tell the story
 * ``events_dropout``  events stop partway through relaxation while the log goes on
 * ``cached_relax``    the relaxed world already exists, so relaxation is skipped
+* ``stall``           writes nothing for ``--stall-s`` wall seconds (default 6, not scaled by speed) in relaxation, then
+                      finishes ok
+* ``timeout``         the task timeout fires in relaxation: ``run.end`` with status timeout, exit 124
+* ``crash``           SIGKILLs its launcher, then itself: no exit code, no ``run.end``
+* ``launcher_lost``   SIGKILLs its launcher, then finishes ok normally (``run.end`` decides the outcome)
 
 Used by ``flux-plumb --demo`` and by the tests; stdlib only.
 """
@@ -224,6 +229,17 @@ class Fake:
                 self.end("relax", detail="reused relaxed world", started=t)
             else:
                 self.say("\tNo relaxed file found, so we will relax the world (fairly slow).\n")
+                if self.scenario == "stall":
+                    time.sleep(self.a.stall_s)  # wall seconds: the point is real silence
+                elif self.scenario == "timeout":
+                    self.say("Task timed out")
+                    self.end("relax", status="failed", detail="timeout", started=t)
+                    self.event("run.end", status="timeout", exit_code=124, elapsed_s=round(time.time() - self.t0, 2))
+                    return 124
+                elif self.scenario in ("crash", "launcher_lost"):
+                    os.kill(os.getppid(), signal.SIGKILL)  # the launcher started us and waits on us
+                    if self.scenario == "crash":
+                        os.kill(os.getpid(), signal.SIGKILL)
                 steps = self.relax(n_actual)
                 self.touch(f"{world_dir}/cr{cr}_f{n}_{inst}_relaxed_s{steps}.flux", size=n_actual * 3400)
                 self.say(f"\n\n\tSaving the World to cr{cr}_f{n}_{inst}_relaxed_s{steps}.flux")
@@ -404,6 +420,7 @@ def main(argv=None):
     p.add_argument("--method", default="parker")
     p.add_argument("--scenario", default="ok")
     p.add_argument("--speed", default="1")
+    p.add_argument("--stall-s", type=float, default=6.0)
     args = p.parse_args(argv)
     fake = Fake(args)
 

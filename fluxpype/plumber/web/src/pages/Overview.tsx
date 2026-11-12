@@ -1,12 +1,20 @@
 import { Activity, ArrowRight, CheckCircle2, Clock, Layers, Rocket } from "lucide-react";
 import { Link } from "react-router-dom";
 import { StageStrip, toneOf } from "../components/StageStrip";
+import { ActivityList, AttentionPanel } from "../components/Notifications";
 import { TaskCard } from "../components/TaskCard";
 import { Card, EmptyState, ErrorNote, PageHeader, SectionTitle, Skeleton, StatusBadge } from "../components/ui";
 import { artifactUrl } from "../lib/api";
 import { ago, dateTime, instOf } from "../lib/format";
 import { useNow, useOverview } from "../lib/hooks";
 import type { RecentTask } from "../lib/types";
+
+/** Why a queued task waits (Scheduler.queue_explain). */
+export function waitLabel(reason: string | null | undefined): string {
+  if (!reason) return "waiting";
+  if (reason.startsWith("lock:")) return `waits for ${reason.slice(5)} (same output)`;
+  return { paused: "queue paused", max_parallel: "all run slots busy", cpu_budget: "CPU budget full", next: "starts next" }[reason] ?? "waiting";
+}
 
 function Stat({ label, value, sub, icon }: { label: string; value: React.ReactNode; sub?: string; icon: React.ReactNode }) {
   return (
@@ -76,6 +84,8 @@ export function Overview() {
         <Stat label="Recent success" value={`${okCount}/${recent.length}`} sub="of the latest finished tasks" icon={<CheckCircle2 className="h-5 w-5" />} />
       </div>
 
+      <AttentionPanel />
+
       <section>
         <SectionTitle title="Running now" />
         {running.length === 0 ? (
@@ -103,7 +113,9 @@ export function Overview() {
                 <span>
                   CR {t.cr} <span className="text-muted">· {t.nflux} fluxons · {instOf(t.adapt)} · {t.method}</span>
                 </span>
-                <span className="num text-xs text-faint">{t.slots} slot{t.slots === 1 ? "" : "s"}</span>
+                <span className="num text-xs text-faint">
+                  {waitLabel(t.wait_reason)} · {t.slots} slot{t.slots === 1 ? "" : "s"}
+                </span>
               </Link>
             ))}
             {pending.length > 6 && <p className="px-4 py-2 text-xs text-muted">and {pending.length - 6} more</p>}
@@ -120,6 +132,12 @@ export function Overview() {
             {recent.slice(0, 8).map((t) => <RecentRow key={t.id} t={t} now={now} />)}
           </Card>
         )}
+      </section>
+      <section>
+        <SectionTitle title="Activity" hint="The latest job events, kept whether or not a page was open." />
+        <Card className="p-1">
+          <ActivityList limit={10} />
+        </Card>
       </section>
       <p className="text-center text-[11px] text-faint">Last updated {dateTime(now)}</p>
     </div>

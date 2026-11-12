@@ -17,6 +17,8 @@ pytest.importorskip("httpx")
 pytest.importorskip("mcp")
 
 import anyio  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(__file__))
 import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from mcp import Client, StdioServerParameters  # noqa: E402
@@ -428,7 +430,7 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 17 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 18 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
@@ -440,8 +442,74 @@ def test_tool_annotations(rig):
         assert a.read_only_hint is False and a.destructive_hint is False, name
     assert tools["submit_job"].annotations.idempotent_hint is False
     assert tools["retry_failed"].annotations.idempotent_hint is False
-    for name in ("read_task_log", "get_task", "wait_for_task", "get_job", "status"):
+    for name in ("read_task_log", "get_task", "wait_for_task", "get_job", "status", "get_notifications"):
         assert "untrusted" in tools[name].description, name
+    assert tools["get_notifications"].annotations.read_only_hint is True
+
+
+def test_mcp_tool_surface_matches_the_golden_master(rig, monkeypatch):
+    import mcp_tools_golden as g
+
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    now = {"agent": g.surface(rig.server), "ask": g.surface(build_server(rig.client, propose=True))}
+    golden = json.load(open(g.GOLDEN))
+    moved = {k: (golden.get(k), now.get(k)) for k in ("agent", "ask") if golden.get(k) != now.get(k)}
+    assert not moved, "MCP tool surface changed; run tests/mcp_tools_golden.py --update if intended: " + json.dumps(
+        moved, indent=1
+    )
+
+
+# ------------------------------------------------------------------ notifications
+
+
+def test_submit_and_retry_carry_a_watch_hint_and_the_ask_copy_does_not(rig, monkeypatch):
+    out = rig.ok("submit_job", profile="t_one", backend="fake", scenario="fail_in_pfss", speed=300)
+    hint = out["notify"]
+    argv = hint["command"].split()
+    assert hint["timeout_ms"] == 1800000 and hint["rearm"] is True
+    assert os.path.isabs(argv[0]) and argv[1:5] == ["-m", "fluxpype.plumber.watch", "--job", out["id"]]
+    assert TOKEN not in hint["command"]
+    end = time.time() + 60
+    while rig.tc.get(f"/api/jobs/{out['id']}", headers=H).json()["status"] not in ("failed", "partial"):
+        assert time.time() < end
+        time.sleep(0.1)
+    assert rig.ok("retry_failed", job_id=out["id"])["notify"]["command"] == hint["command"]
+    home_hint = mcp_server.watch_hint(out["id"], Path("/tmp/other-home"))
+    assert home_hint["command"].endswith("--home /tmp/other-home")
+
+    from fluxpype.plumber import ask
+
+    monkeypatch.setattr(ask, "_question", "q9")
+    monkeypatch.setenv("FLUX_ASK_QUESTION", "q9")
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    asker = Rig(rig.tc, rig.sched)
+    asker.server = build_server(asker.client, propose=True)
+    assert "notify" not in asker.ok("submit_job", profile="t_one")
+
+
+def test_get_notifications_lines_and_only_mine(rig):
+    import notify_line_golden  # noqa: F401  (the line format itself is pinned there)
+
+    mine = rig.ok("submit_job", profile="t_one", backend="fake", scenario="ok", speed=300)
+    other = rig.run_job()  # started over HTTP without the MCP session
+    end = time.time() + 60
+    while rig.tc.get(f"/api/jobs/{mine['id']}", headers=H).json()["status"] != "ok":
+        assert time.time() < end
+        time.sleep(0.1)
+    time.sleep(0.4)  # one more loop pass writes the job's end event
+    out = rig.ok("get_notifications", limit=100)
+    assert out["session"] == mcp_server.SESSION and out["last_seq"] >= 1 and len(out["log_id"]) == 12
+    lines = out["lines"]
+    assert all(ln.startswith("flux seq=") and "\n" not in ln for ln in lines)
+    seqs = [int(ln.split()[1].split("=")[1]) for ln in lines]
+    assert seqs == sorted(seqs)
+    assert any(f"kind=job_ok sev=success job={mine['id']}" in ln for ln in lines)
+    assert any(f"job={other['id']}" in ln for ln in lines)
+    own = rig.ok("get_notifications", only_mine=True, limit=100)["lines"]
+    assert own and all(f"job={mine['id']}" in ln for ln in own)
+    later = rig.ok("get_notifications", since=out["last_seq"])
+    assert later["lines"] == []
+    assert rig.ok("status")["notifications"]["last_seq"] == out["last_seq"]
 
 
 # ------------------------------------------------------------------ presets and the Ask bar's proposals
@@ -503,9 +571,9 @@ def test_the_ask_bars_copy_supersedes_and_withdraws_its_own_proposals(rig, monke
             return {t.name: t.input_schema["properties"] for t in (await c.list_tools()).tools}
 
     s = anyio.run(schemas, asker.server)
-    assert set(s) == {n for n, _, _ in TOOLS} | {"withdraw_proposal"}
+    assert set(s) == {n for n, _, _ in TOOLS} - {"get_notifications"} | {"withdraw_proposal"}
     assert all("supersedes" in s[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
-    plain = anyio.run(schemas, rig.server)  # the agents' copy is unchanged: 17 tools, no supersedes
+    plain = anyio.run(schemas, rig.server)  # the agents' copy: 18 tools, no supersedes
     assert "withdraw_proposal" not in plain and "supersedes" not in plain["submit_job"]
     a = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [200]})["proposal_id"]
     b = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [300]}, supersedes=a)

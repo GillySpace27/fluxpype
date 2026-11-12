@@ -1,0 +1,432 @@
+{
+ "agent": {
+  "cache_summary": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "cr",
+    "kind",
+    "limit",
+    "nflux",
+    "offset",
+    "profile",
+    "rescan"
+   ]
+  },
+  "cancel": {
+   "annotations": {
+    "destructive_hint": true,
+    "idempotent_hint": true,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "job_id",
+    "task_id"
+   ]
+  },
+  "create_preset": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "base",
+    "name",
+    "values"
+   ]
+  },
+  "get_job": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "job_id"
+   ]
+  },
+  "get_notifications": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "job_id",
+    "limit",
+    "only_mine",
+    "since"
+   ]
+  },
+  "get_profile": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "name"
+   ]
+  },
+  "get_relax_series": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "max_points",
+    "task_id"
+   ]
+  },
+  "get_task": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "task_id"
+   ]
+  },
+  "get_task_image": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "index",
+    "max_edge",
+    "task_id"
+   ]
+  },
+  "list_jobs": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "profile",
+    "status"
+   ]
+  },
+  "list_profiles": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
+  },
+  "list_proposals": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "status"
+   ]
+  },
+  "read_task_log": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "context",
+    "grep",
+    "tail_lines",
+    "task_id"
+   ]
+  },
+  "retry_failed": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "job_id"
+   ]
+  },
+  "set_queue": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "cpu_budget",
+    "max_parallel",
+    "paused"
+   ]
+  },
+  "status": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
+  },
+  "submit_job": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "backend",
+    "overrides",
+    "profile",
+    "scenario",
+    "speed",
+    "tasks"
+   ]
+  },
+  "wait_for_task": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "task_id",
+    "timeout_s",
+    "until"
+   ]
+  }
+ },
+ "ask": {
+  "cache_summary": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "cr",
+    "kind",
+    "limit",
+    "nflux",
+    "offset",
+    "profile",
+    "rescan"
+   ]
+  },
+  "cancel": {
+   "annotations": {
+    "destructive_hint": true,
+    "idempotent_hint": true,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "job_id",
+    "supersedes",
+    "task_id"
+   ]
+  },
+  "create_preset": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "base",
+    "name",
+    "supersedes",
+    "values"
+   ]
+  },
+  "get_job": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "job_id"
+   ]
+  },
+  "get_profile": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "name"
+   ]
+  },
+  "get_relax_series": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "max_points",
+    "task_id"
+   ]
+  },
+  "get_task": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "task_id"
+   ]
+  },
+  "get_task_image": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "index",
+    "max_edge",
+    "task_id"
+   ]
+  },
+  "list_jobs": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "profile",
+    "status"
+   ]
+  },
+  "list_profiles": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
+  },
+  "list_proposals": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "status"
+   ]
+  },
+  "read_task_log": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "context",
+    "grep",
+    "tail_lines",
+    "task_id"
+   ]
+  },
+  "retry_failed": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "job_id",
+    "supersedes"
+   ]
+  },
+  "set_queue": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "cpu_budget",
+    "max_parallel",
+    "paused",
+    "supersedes"
+   ]
+  },
+  "status": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
+  },
+  "submit_job": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "backend",
+    "overrides",
+    "profile",
+    "scenario",
+    "speed",
+    "supersedes",
+    "tasks"
+   ]
+  },
+  "wait_for_task": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "task_id",
+    "timeout_s",
+    "until"
+   ]
+  },
+  "withdraw_proposal": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": true,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "proposal_id",
+    "reason"
+   ]
+  }
+ }
+}

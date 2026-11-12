@@ -8,13 +8,14 @@ import { QueuePill } from "./QueuePill";
 import { AskBar } from "./AskBar";
 import { SysMonPanel } from "./SysMon";
 import { ConnectAgentButton } from "./ConnectAgent";
+import { NotificationsBell } from "./Notifications";
 import { BackendSwitcher, StatusLight } from "./SystemBar";
 import { UpdatePill } from "./Updates";
 
 const NAV_PRESETS = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
   { to: "/presets", label: "Presets", icon: Layers },
-  { to: "/jobs", label: "Jobs", icon: ListChecks },
+  { to: "/jobs", label: "Runs", icon: ListChecks },
   { to: "/cache", label: "Cache", icon: Database },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
@@ -89,6 +90,7 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <UpdatePill />
             <StatusLight />
+            <NotificationsBell />
             <ConnectAgentButton live />
             <QueuePill />
           </div>

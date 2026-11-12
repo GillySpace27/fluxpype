@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
-import { useProfiles } from "../lib/hooks";
+import { useJob, useProfiles } from "../lib/hooks";
+import { StatusBadge } from "./ui";
 
 interface Proposal {
   id: string;
@@ -132,6 +133,12 @@ function WithdrawnCard({ p, by }: { p: Proposal; by?: Proposal }) {
   );
 }
 
+/** An approved submit_job card follows its job live (job_state pushes update this query). */
+function LiveJob({ id }: { id: string }) {
+  const { data } = useJob(id);
+  return data ? <StatusBadge status={data.status} className="ml-1" /> : null;
+}
+
 function ProposalCard({ p }: { p: Proposal }) {
   const t = TITLES[p.tool] ?? { title: p.tool };
   const qc = useQueryClient();
@@ -174,6 +181,7 @@ function ProposalCard({ p }: { p: Proposal }) {
           <p className={cn("flex items-center gap-1.5 text-xs", p.status === "approved" ? "text-ok" : p.status === "failed" ? "text-fail" : "text-muted")}>
             {p.status === "approved" && <Check className="h-3.5 w-3.5" />}
             {p.status === "approved" ? "Done" : p.status === "failed" ? `Failed: ${p.error ?? ""}` : p.status[0].toUpperCase() + p.status.slice(1)}
+            {p.status === "approved" && p.tool === "submit_job" && typeof p.result?.job_id === "string" && <LiveJob id={p.result.job_id} />}
             {to && (
               <Link to={to} className="ml-1 underline">
                 open

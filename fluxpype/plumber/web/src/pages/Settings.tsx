@@ -7,6 +7,7 @@ import { DataFolderCard } from "../components/DataFolder";
 import { UpdatesCard } from "../components/Updates";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
+import { notifyEnabled, notifySupported, setNotifyEnabled } from "../lib/events";
 import { useHealth, useQueue, useStatus } from "../lib/hooks";
 import { Dot, useSetBackend } from "../components/SystemBar";
 import { useTheme } from "../lib/theme";
@@ -33,6 +34,25 @@ function Stepper({ value, min, max, onCommit }: { value: number; min: number; ma
       <input className="input num w-14 text-center" value={v} inputMode="numeric" onChange={(e) => setV(e.target.value)} onBlur={() => commit(Number(v))} onKeyDown={(e) => e.key === "Enter" && commit(Number(v))} aria-label="Value" />
       <button className="btn btn-icon" aria-label="Increase" onClick={() => commit(value + 1)} disabled={value >= max}>+</button>
     </div>
+  );
+}
+
+/** Opt-in browser notifications for errors, stalls and this tab's finished jobs, while the tab is hidden. */
+function BrowserNotifications() {
+  const [on, setOn] = useState(notifyEnabled());
+  if (!notifySupported())
+    return <p className="text-xs text-muted">This browser does not offer notifications on this address (it needs a secure context such as localhost).</p>;
+  if (Notification.permission === "denied") return <p className="text-xs text-muted">Blocked in the browser's site settings.</p>;
+  return (
+    <Switch
+      checked={on}
+      label="Browser notifications"
+      onChange={async (v) => {
+        if (v && Notification.permission !== "granted" && (await Notification.requestPermission()) !== "granted") return;
+        setNotifyEnabled(v);
+        setOn(v);
+      }}
+    />
   );
 }
 
@@ -100,6 +120,15 @@ export function SettingsPage() {
         <Card>
           <Row title="Connect an agent" hint="Get a prompt to paste into Claude Code, Claude Desktop or another MCP agent. It registers Plumber's MCP server so the agent can queue runs, watch progress and read logs in this same queue.">
             <ConnectAgentButton label="Get prompt" />
+          </Row>
+        </Card>
+      </section>
+
+      <section>
+        <SectionTitle title="Notifications" hint="Job events are kept by Plumber whether or not a page is open; the bell at the top lists them." />
+        <Card>
+          <Row title="Browser notifications" hint="Show a system notification for errors, stalls and jobs started from this tab, only while this tab is in the background. Each open tab shows its own.">
+            <BrowserNotifications />
           </Row>
         </Card>
       </section>
