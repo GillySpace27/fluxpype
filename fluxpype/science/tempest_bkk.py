@@ -1005,7 +1005,7 @@ def plot_tempest(file, ax=None):
     plt.legend()
     plt.yscale("log")
     plt.xscale("log")
-    plt.xlabel("Height above photosphere ($R_{\odot}$)")
+    plt.xlabel("Height above photosphere ($R_{\\odot}$)")
     plt.ylabel("Solar Wind Velocity (km/s)")
 
     plt.savefig(f"{this_dir}/tempest_cr{cr}.png")

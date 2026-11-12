@@ -19,7 +19,7 @@ sigma_T = 6.652e-25 * u.cm**2
 I_sp_solar_surface = (L_sun / (4 * np.pi**2 * R_sun**2)).to(
     u.erg / u.cm**2 / u.s / u.sr, equivalencies=u.dimensionless_angles()
 )
-u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": "$I_{\odot}$", "unicode": "I☉"})
+u.I_sun = u.def_unit("I_sun", I_sp_solar_surface, format={"latex": "$I_{\\odot}$", "unicode": "I☉"})
 I_sp_solar_surface = 1.0 * u.I_sun
 
 

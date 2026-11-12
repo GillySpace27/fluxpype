@@ -347,28 +347,28 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     median_radial_height = np.median(radial_heights)
     std_radial_height = np.std(radial_heights)
     ax_diff.axhline(
-        mean_radial_height, ls="--", c="k", zorder=1000000, label="Mean: {:.2f} R$_\odot$".format(mean_radial_height)
+        mean_radial_height, ls="--", c="k", zorder=1000000, label="Mean: {:.2f} R$_\\odot$".format(mean_radial_height)
     )
     ax_diff.axhline(
         median_radial_height,
         ls=":",
         c="k",
         zorder=1000000,
-        label="Median: {:.2f} R$_\odot$".format(median_radial_height),
+        label="Median: {:.2f} R$_\\odot$".format(median_radial_height),
     )
     ax_diff.axhline(
         mean_radial_height + 2 * std_radial_height,
         ls="-.",
         c="k",
         zorder=1000000,
-        label="2 Sigma: {:.2f} R$_\odot$".format(mean_radial_height + 2 * std_radial_height),
+        label="2 Sigma: {:.2f} R$_\\odot$".format(mean_radial_height + 2 * std_radial_height),
     )
     ax_diff.axvline(
         straight_pt,
         ls=":",
         c="grey",
         zorder=1000000,
-        label=f'"Straight": {straight_pt*180/np.pi:.2f} Degrees per R$_\odot$',
+        label=f'"Straight": {straight_pt*180/np.pi:.2f} Degrees per R$_\\odot$',
     )
     ax_diff.set_xlim(-0.01, 0.11)
 
@@ -378,7 +378,7 @@ def plot_bmag_fill(args, r0=0, r1=-1, maxlist=None):
     ax_diff.set_xlabel(r"$\frac{d\phi}{dr}$ [radians per R$_\odot$]")
     ax_diff.set_ylabel(r"Heliocentric Radius [R$_\odot$]", color="red")
     ax_diff.set_title(
-        f"Fields become radial at... \nMean: {mean_radial_height:.2f} R$_\odot$, Median: {median_radial_height:.2f} R$_\odot$, Most: {mean_radial_height+2*std_radial_height:.2f} R$_\odot$",
+        f"Fields become radial at... \nMean: {mean_radial_height:.2f} R$_\\odot$, Median: {median_radial_height:.2f} R$_\\odot$, Most: {mean_radial_height+2*std_radial_height:.2f} R$_\\odot$",
         fontsize="medium",
     )
     # ax_diff.legend()
