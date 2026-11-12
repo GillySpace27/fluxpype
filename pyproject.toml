@@ -68,7 +68,7 @@ where = ["."]
 include = ["fluxpype*"]
 
 [tool.setuptools.package-data]
-fluxpype = ["config.ini", "plumber/web/dist/**/*", "events.pm"]
+fluxpype = ["config.ini", "plumber/web/dist/**/*", "plumber/ask/*.md", "events.pm"]
 
 [tool.pytest.ini_options]
 addopts = "--cov-report xml:coverage.xml --cov fluxpype --cov-fail-under 0 --cov-append -m 'not integration'"

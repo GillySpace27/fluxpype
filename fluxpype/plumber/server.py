@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import config_io, paths
@@ -317,22 +317,24 @@ def create_app(
             client = request.headers.get("x-flux-client")
             if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
                 agent_alive()
-            elif client == "mcp":  # an AI agent via the MCP server
-                agent_alive()
-                agent["ts"], agent["count"] = time.time(), agent["count"] + 1
-                agent["tool"] = request.headers.get("x-flux-tool", "")[:64]
-                hub.publish("agent_activity", {"tool": agent["tool"], "count": agent["count"]})
+            elif client in ("mcp", "ask"):  # an AI agent via the MCP server, or the Ask bar's own copy of it
+                tool = request.headers.get("x-flux-tool", "")[:64]
+                if client == "mcp":  # the Ask bar is not an agent being present, so it does not flash or count
+                    agent_alive()
+                    agent["ts"], agent["count"], agent["tool"] = time.time(), agent["count"] + 1, tool
+                    hub.publish("agent_activity", {"tool": tool, "count": agent["count"]})
                 t0 = time.perf_counter()
                 resp = await call_next(request)
                 h = request.headers  # the MCP server tags each request with its tool call and that call's arguments
                 agent_log.record(
                     h.get("x-flux-call") or f"{time.time():.6f}",
-                    agent["tool"],
+                    tool,
                     h.get("x-flux-args", "")[:400],
                     request.method,
                     path,
                     resp.status_code,
                     (time.perf_counter() - t0) * 1000,
+                    client,
                 )
                 hub.publish("agent_call", {})
                 return resp
@@ -482,6 +484,28 @@ def create_app(
     def system(procs: bool = False):
         """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes."""
         return reply(sysmon.snapshot(procs))
+
+    class AskIn(BaseModel):
+        question: str = Field(min_length=1, max_length=2000)
+        page: str = Field(default="", max_length=200)
+        history: List[Dict[str, str]] = Field(default_factory=list, max_length=6)
+
+    @app.get("/api/ask")
+    def ask_status():
+        from . import ask
+
+        return reply(ask.availability())
+
+    @app.post("/api/ask")
+    def ask_post(body: AskIn):
+        """Answer a question about FLUX or Plumber (server-sent events); see ask.py."""
+        from . import ask
+
+        return StreamingResponse(
+            ask.stream(body.question, body.page, body.history, str(sched.home)),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
 
     @app.get("/api/agent-prompt")
     def agent_prompt_():

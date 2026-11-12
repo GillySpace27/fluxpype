@@ -5,6 +5,7 @@ import { useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
 import { FlaskConical } from "lucide-react";
 import { QueuePill } from "./QueuePill";
+import { AskBar } from "./AskBar";
 import { SysMonPanel } from "./SysMon";
 import { ConnectAgentButton } from "./ConnectAgent";
 import { BackendSwitcher, StatusLight } from "./SystemBar";
@@ -81,6 +82,9 @@ export function Layout() {
               <Logo compact />
             </div>
             <BackendSwitcher />
+          </div>
+          <div className="hidden min-w-0 flex-1 justify-center px-2 md:flex">
+            <AskBar />
           </div>
           <div className="flex items-center gap-2">
             <UpdatePill />

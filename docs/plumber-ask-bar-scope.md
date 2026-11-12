@@ -1,6 +1,8 @@
 # Plumber Ask bar and Cmd+K: scope
 
-Status: proposal, nothing built. Written 2026-11-11.
+Status: phases 1 to 3 built with the Claude CLI (2026-11-11): palette and Cmd+K, `/api/ask` (`ask.py`), read-only tools, and click-to-run action cards. Phase 4 (history across sessions, a page context chip, the evaluation set) is not done.
+
+Spike result that shaped the build: a bare `claude -p` loads every connected MCP server's tools (one trivial question used 234k tokens, about $0.94, 20 s). With `--tools ""`, `--strict-mcp-config` and an MCP config holding only Plumber's own server it is about 7 s and under a cent for a short question, one to two cents with the reference as the cached prefix.
 
 ## What it is
 

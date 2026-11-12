@@ -270,6 +270,12 @@ export function ConnectAgentButton({
 }) {
   const [open, setOpen] = useState(false);
   const { agent } = useLive();
+  useEffect(() => {
+    if (!live) return;
+    const on = (e: Event) => (e as CustomEvent).detail === "agent" && setOpen(true); // from the Ask bar
+    window.addEventListener("flux:open", on);
+    return () => window.removeEventListener("flux:open", on);
+  }, [live]);
   const { data: status, dataUpdatedAt } = useStatus(live ? 30_000 : undefined); // the heartbeat only shows up in /api/status
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

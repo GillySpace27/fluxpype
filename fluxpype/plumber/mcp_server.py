@@ -123,7 +123,7 @@ class PlumberClient:
             try:
                 # tells Plumber an agent is acting, so the UI can show it (see "Agent connected")
                 call, args = CURRENT_CALL.get()  # groups this call's requests in Plumber's record of agent activity
-                headers = {"X-Flux-Client": "mcp", "X-Flux-Tool": CURRENT_TOOL.get(), "X-Flux-Call": call, "X-Flux-Args": args}
+                headers = {"X-Flux-Client": os.environ.get("FLUX_MCP_CLIENT", "mcp"), "X-Flux-Tool": CURRENT_TOOL.get(), "X-Flux-Call": call, "X-Flux-Args": args}
                 resp = http.request(method, path, params=params, json=body, headers=headers)
             except httpx.TransportError as e:
                 if attempt == 0 and self._resolver:
@@ -903,7 +903,8 @@ def main(argv=None) -> int:
         )
         client = PlumberClient(resolver=resolver)
         find = functools.partial(discover_existing, home)
-    threading.Thread(target=heartbeat, args=(find,), daemon=True).start()
+    if os.environ.get("FLUX_MCP_CLIENT", "mcp") == "mcp":  # the Ask bar's copy is not an agent being present
+        threading.Thread(target=heartbeat, args=(find,), daemon=True).start()
     build_server(client).run(transport="stdio")
     return 0
 

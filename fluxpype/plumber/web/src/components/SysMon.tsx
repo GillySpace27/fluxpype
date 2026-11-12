@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { cn } from "../lib/cn";
 import { bytes } from "../lib/format";
 import { useSystem } from "../lib/hooks";
@@ -70,6 +70,11 @@ function Row({ label, value, tone, children }: { label: string; value: string; t
 export function SysMonPanel() {
   const { data } = useSystem(false);
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => (e as CustomEvent).detail === "sysmon" && setOpen(true); // from the Ask bar
+    window.addEventListener("flux:open", on);
+    return () => window.removeEventListener("flux:open", on);
+  }, []);
   const h = data?.history ?? [];
   const now = data?.now;
   const data1 = data?.storage[0];

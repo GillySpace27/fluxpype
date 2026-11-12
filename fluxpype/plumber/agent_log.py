@@ -68,6 +68,7 @@ class AgentLog:
                 "ms": 0,
                 "status": 0,
                 "paths": [],
+                "via": r.get("via", "mcp"),
             }
             while len(self.calls) > MAX_CALLS:
                 self.calls.popitem(last=False)
@@ -77,7 +78,7 @@ class AgentLog:
         if len(c["paths"]) < 4:
             c["paths"].append(f"{r.get('method', '')} {r.get('path', '')}".strip())
 
-    def record(self, call: str, tool: str, args: str, method: str, path: str, status: int, ms: float) -> None:
+    def record(self, call: str, tool: str, args: str, method: str, path: str, status: int, ms: float, via: str = "mcp") -> None:
         r = {
             "ts": time.time(),
             "call": call,
@@ -87,6 +88,7 @@ class AgentLog:
             "path": path,
             "status": status,
             "ms": round(ms),
+            "via": via,
         }
         self._add(r)
         try:
@@ -99,6 +101,8 @@ class AgentLog:
         calls = list(self.calls.values())
         per: Dict[str, Dict[str, Any]] = {}
         for c in calls:
+            if c["via"] == "ask":  # the Ask bar's own reads are not the agent's doing
+                continue
             p = per.setdefault(c["tool"], {"calls": 0, "errors": 0, "last": None, "last_status": None})
             p["calls"] += 1
             p["errors"] += c["status"] >= 400
