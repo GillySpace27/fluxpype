@@ -20,7 +20,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
-from . import config_io, paths
+from . import config_io, notify, paths
 from .backends.base import Backend, Handle, TaskSpec
 from .monitor import ProbeContext, TaskMonitor
 from .store import FINISHED, Store
@@ -71,6 +71,8 @@ class Scheduler:
         self._cancel_at: Dict[str, float] = {}
         self._features: Dict[str, List[str]] = {}
         self._plotruns: Dict[str, Dict[str, Any]] = {}  # active post-hoc plot runs by id
+        self.backend_unknown: Dict[str, float] = {}  # backend -> when it first answered `unknown` (notify.py)
+        self.poll_state: Dict[str, str] = {}  # running task -> the state its last poll returned
         self._find_plot_runs()
         if self.store.get_setting("cpu_budget") is None:
             self.store.set_setting("cpu_budget", cpu_budget or os.cpu_count() or 1)
@@ -231,6 +233,7 @@ class Scheduler:
         extra: Optional[Dict[str, str]] = None,
         base_text: Optional[str] = None,
         dry_run: bool = False,
+        origin: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Snapshot the config (`base_text`, else the preset file as it is now), expand the profile into tasks and queue them.
 
@@ -310,6 +313,7 @@ class Scheduler:
             "created": time.time(),
             "snapshot_path": snap_path,
             "extra": extra or {},
+            "origin": origin or {},  # who started it: a routing label built by the server, never an authority
         }
         self.store.add_job(job, rows)
         self.on_change("job_state", self.job_view(job_id))
@@ -389,11 +393,14 @@ class Scheduler:
             raise SchedulerError("cancel the job before deleting it")
         self._no_plot_run_for(job_id)
         self.store.delete_job(job_id)
+        self.store.ack_events(job=job_id)  # its inbox rows would point nowhere
         shutil.rmtree(os.path.dirname(job["snapshot_path"]), ignore_errors=True)
         self.on_change("job_removed", {"id": job_id})
 
-    def retry_job(self, job_id: str) -> Dict[str, Any]:
-        """Re-queue the job's failed, timed-out, cancelled and crashed tasks (old run kept aside)."""
+    def retry_job(self, job_id: str, by: Optional[str] = None) -> Dict[str, Any]:
+        """Re-queue the job's failed, timed-out, cancelled and crashed tasks (old run kept aside).
+
+        `by` (web, mcp, ask) is recorded in the job's origin as `retried_by`."""
         job = self.store.get_job(job_id)
         if not job:
             raise SchedulerError("no such job")
@@ -417,11 +424,15 @@ class Scheduler:
                         ended=None,
                         summary_json=None,
                         attempt=t["attempt"] + 1,
+                        notified=None,  # the next attempt's events are announced even if it ends before a pass
                     )
                     n += 1
             if n == 0:
                 raise SchedulerError("nothing to retry")
-            self.store.update_job(job_id, status="pending", ended=None)
+            fields: Dict[str, Any] = {"status": "pending", "ended": None, "notified": None}
+            if by:
+                fields["origin_json"] = json.dumps({**job["origin"], "retried_by": by})
+            self.store.update_job(job_id, **fields)
         self._publish_job(job_id)
         self.tick()
         return self.job_view(job_id)
@@ -446,10 +457,20 @@ class Scheduler:
 
     def _reconcile_running(self) -> set:
         changed = set()
-        for t in self.store.tasks_with_status("running"):
+        known = set()
+        running = self.store.tasks_with_status("running")
+        for tid in [k for k in self.poll_state if k not in {t["id"] for t in running}]:
+            self.poll_state.pop(tid, None)
+        for t in running:
             backend = self._backend_for(t)
             st = backend.poll(self._handle(t))
-            if st.state in ("running", "starting"):
+            self.poll_state[t["id"]] = st.state
+            bname = self.store.get_job(t["job_id"])["backend"]
+            if st.state == "unknown":  # the backend cannot tell now: never finalize, flag the backend
+                self.backend_unknown.setdefault(bname, time.time())
+                continue
+            known.add(bname)
+            if st.state in ("running", "starting", "queued"):
                 if st.pid and not t["pid"]:
                     self.store.update_task(t["id"], pid=st.pid, pid_start=st.pid_start)
                 if st.cancelled:
@@ -470,6 +491,10 @@ class Scheduler:
                     status = "failed"
             else:  # lost
                 status, code = ("cancelled" if st.cancelled else "crashed"), st.exit_code
+                end = None if st.cancelled else notify.last_run_end(t["run_dir"])
+                if end and end.get("status") in ("ok", "failed", "timeout"):
+                    # only the launcher died; the runner said how it ended
+                    status, code = end["status"], end.get("exit_code")
             ended = st.ended or now
             self.store.update_task(
                 t["id"],
@@ -487,9 +512,13 @@ class Scheduler:
                 status = "failed"
                 self.store.update_task(t["id"], status=status)
                 final = self.task_state(t["id"], force_status=status)
+            if st.state == "lost" and end:
+                final["launcher_lost"] = True
             self.store.update_task(t["id"], summary_json=json.dumps(final))
             self.on_change("task_state", final)
             changed.add(t["job_id"])
+        for name in [b for b in self.backend_unknown if b in known]:
+            self.backend_unknown.pop(name, None)
         return changed
 
     def _running_keys(self) -> set:
@@ -645,7 +674,7 @@ class Scheduler:
         alive = None
         if status == "running":
             st = self._backend_for(t).poll(self._handle(t))
-            alive = st.state in ("running", "starting")
+            alive = None if st.state in ("queued", "unknown") else st.state in ("running", "starting")
         state = mon.refresh(
             alive=alive,
             outcome=status if finished else None,

@@ -40,6 +40,11 @@ def process_alive(pid, token=None):
     """True if `pid` exists, is not a zombie, and (when given) started at `token`."""
     if not pid:
         return False
+    try:  # our own child that exited (a launcher Plumber spawned) is a zombie until reaped: reap it, it is gone
+        if os.waitpid(pid, os.WNOHANG)[0] == pid:
+            return False
+    except OSError:  # not our child (ChildProcessError) or no such process
+        pass
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

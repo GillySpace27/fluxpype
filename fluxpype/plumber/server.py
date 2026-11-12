@@ -26,6 +26,7 @@ from .health import Health
 from .presets import PresetError
 from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
 from .monitor import STAGES, first_match_for_context
+from .notify import Notifier, clean_id
 from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
 from .sysmon import SysMon
 
@@ -114,6 +115,16 @@ class ProposalIn(BaseModel):
 class WithdrawIn(BaseModel):
     question: str = Field(default="", max_length=64)
     reason: str = Field(default="", max_length=300)
+
+
+class ReadIn(BaseModel):
+    upto: int
+
+
+class AckIn(BaseModel):
+    seqs: List[int] = Field(default_factory=list, max_length=1000)
+    all: bool = False
+    job: Optional[str] = None
 
 
 class QueueIn(BaseModel):
@@ -240,6 +251,8 @@ def create_app(
     token_file: str = "~/.fluxpype/plumber/token",
     updater=None,
     allow_restart: bool = True,
+    telemetry_interval: float = 5.0,
+    stall_after: Optional[float] = None,
 ) -> FastAPI:
     hub = Hub()
     agent: Dict[str, Any] = {"ts": None, "tool": "", "count": 0}  # last MCP-agent request
@@ -287,6 +300,22 @@ def create_app(
     last_state: Dict[str, str] = {}
     app.state.hub, app.state.scheduler = hub, sched
     sched.on_change = hub.publish
+    # the event log: runs in the loop whether or not a browser is connected (notify.py)
+    notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
+    app.state.notifier = notifier
+    waits: Dict[str, int] = {}  # concurrent long polls of GET /api/events, per session (or client address)
+
+    def origin_of(request: Request) -> Dict[str, Any]:
+        """Who is asking, as a routing label: built from headers here, never from the body, and never an authority."""
+        h = request.headers
+        client = h.get("x-flux-client")
+        if client == "mcp":
+            o = {"kind": "mcp", "session": clean_id(h.get("x-flux-session")), "call": clean_id(h.get("x-flux-call"))}
+        elif not client:
+            o = {"kind": "web", "tab": clean_id(h.get("x-flux-tab"))}
+        else:
+            o = {}
+        return {k: v for k, v in o.items() if v}
 
     def authed(cookies, headers) -> bool:
         given = cookies.get(cookie_name) or headers.get("x-flux-token") or ""
@@ -727,14 +756,17 @@ def create_app(
                 extra["speed"] = str(body.speed)
         return extra
 
-    @app.post("/api/jobs")
-    def create_job(body: JobIn):
+    def _create(body: JobIn, origin: Dict[str, Any]):
         backend = body.backend or sched.active_backend
         extra = job_extra(body, backend)
         try:
-            return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra), 201)
+            return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra, origin=origin), 201)
         except SchedulerError as e:
             fail(e)
+
+    @app.post("/api/jobs")
+    def create_job(body: JobIn, request: Request):
+        return _create(body, origin_of(request))
 
     @app.get("/api/jobs")
     def jobs(limit: int = 100):
@@ -759,12 +791,15 @@ def create_app(
         sched.cancel_job(job_id)
         return reply(sched.job_view(job_id))
 
-    @app.post("/api/jobs/{job_id}/retry")
-    def retry_job(job_id: str):
+    def _retry(job_id: str, by: Optional[str]):
         try:
-            return reply(sched.retry_job(job_id))
+            return reply(sched.retry_job(job_id, by=by))
         except SchedulerError as e:
             fail(e, 409)
+
+    @app.post("/api/jobs/{job_id}/retry")
+    def retry_job(job_id: str, request: Request):
+        return _retry(job_id, origin_of(request).get("kind"))
 
     @app.delete("/api/jobs/{job_id}")
     def delete_job(job_id: str):
@@ -1173,16 +1208,16 @@ def create_app(
             raise HTTPException(400, str(e))
         raise HTTPException(400, f"unknown tool {tool!r}")
 
-    def run_proposal(tool: str, a: Dict[str, Any]) -> Dict[str, Any]:
+    def run_proposal(tool: str, a: Dict[str, Any], origin: Dict[str, Any]) -> Dict[str, Any]:
         """Execute stored arguments through the normal route; returns the small result the card links to."""
         if tool == "submit_job":
-            return {"job_id": json.loads(create_job(JobIn(**a)).body)["id"]}
+            return {"job_id": json.loads(_create(JobIn(**a), origin).body)["id"]}
         if tool == "cancel":
             if "job_id" in a:
                 return {"job_id": json.loads(cancel_job(a["job_id"]).body)["id"]}
             return {"task_id": a["task_id"], "status": json.loads(cancel_task(a["task_id"]).body).get("status")}
         if tool == "retry_failed":
-            return {"job_id": json.loads(retry_job(a["job_id"]).body)["id"]}
+            return {"job_id": json.loads(_retry(a["job_id"], "ask").body)["id"]}
         if tool == "set_queue":
             return {
                 k: v
@@ -1246,8 +1281,15 @@ def create_app(
             p = proposals.claim(pid)
         except ProposalError as e:
             fail(e, e.code)
+        origin = {
+            "kind": "ask",
+            "question": clean_id(p.get("question")),
+            "proposal": clean_id(p.get("id")),
+            "tab": clean_id(request.headers.get("x-flux-tab")),
+        }
         try:
-            out = proposals.finish(pid, "approved", result=run_proposal(p["tool"], p["args"]))
+            result = run_proposal(p["tool"], p["args"], {k: v for k, v in origin.items() if v})
+            out = proposals.finish(pid, "approved", result=result)
         except HTTPException as e:
             proposals.finish(pid, "failed", error=str(e.detail))
             decided(request, p, "failed", e.status_code)
@@ -1269,6 +1311,61 @@ def create_app(
         decided(request, p, "rejected")
         hub.publish("proposals", {})
         return reply(p)
+
+    # ------------------------------------------------------------------ events (notify.py)
+    def event_reply(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        counts = sched.store.event_counts()
+        return {
+            "log_id": notifier.log_id(),
+            "events": events,
+            "last_seq": sched.store.last_seq(),
+            "unread": counts["unread"],
+            "attention": counts["attention"],
+            "read_upto": counts["read_upto"],
+        }
+
+    @app.get("/api/events")
+    async def events_get(
+        request: Request,
+        since: Optional[int] = None,
+        before: Optional[int] = None,
+        limit: int = 100,
+        min_sev: Optional[str] = None,
+        job: Optional[str] = None,
+        session: Optional[str] = None,
+        wait: int = 0,
+    ):
+        limit = min(max(limit, 1), 500)
+        wait = min(max(wait, 0), 25) if since is not None else 0
+        store = sched.store
+        if wait and store.last_seq() <= since:
+            who = clean_id(request.headers.get("x-flux-session")) or (request.client.host if request.client else "?")
+            if waits.get(who, 0) >= 4 or sum(waits.values()) >= 64:
+                busy = {"detail": "too many waiting requests"}
+                return JSONResponse(busy, status_code=429, headers={"Retry-After": "5"})
+            waits[who] = waits.get(who, 0) + 1
+            try:
+                end = time.monotonic() + wait
+                while time.monotonic() < end and store.last_seq() <= since:
+                    await asyncio.sleep(min(1.0, max(end - time.monotonic(), 0.01)))
+            finally:
+                waits[who] -= 1
+                if not waits[who]:
+                    waits.pop(who)
+        rows = store.events(since=since, before=before, limit=limit, min_sev=min_sev, job=job, session=session)
+        return reply(event_reply(rows))
+
+    @app.post("/api/events/read")
+    def events_read(body: ReadIn):
+        sched.store.mark_read(body.upto)
+        hub.publish("events_read", sched.store.event_counts())
+        return reply(event_reply([]))
+
+    @app.post("/api/events/ack")
+    def events_ack(body: AckIn):
+        n = sched.store.ack_events(body.seqs, all_=body.all, job=body.job)
+        hub.publish("events_read", sched.store.event_counts())
+        return reply({**event_reply([]), "acked": n})
 
     @app.get("/api/overview")
     def overview():
@@ -1611,9 +1708,18 @@ def create_app(
 
     async def loop():
         hub.loop = asyncio.get_running_loop()
+        try:
+            await asyncio.to_thread(notifier.start)
+        except Exception as e:  # noqa: BLE001
+            print(f"[plumber] event log start failed: {e!r}")
+        last_telemetry = 0.0
         while True:
             try:
                 await asyncio.to_thread(sched.tick)
+                await asyncio.to_thread(notifier.observe)  # every iteration, browser or not
+                if time.monotonic() - last_telemetry >= telemetry_interval:
+                    last_telemetry = time.monotonic()
+                    await asyncio.to_thread(notifier.telemetry)
                 if hub.clients:
                     await asyncio.to_thread(push_states)
             except Exception as e:  # noqa: BLE001 - the loop must survive anything
