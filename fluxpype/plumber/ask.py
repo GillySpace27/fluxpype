@@ -17,12 +17,18 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
+from . import paths
+
 DOCS = Path(__file__).parent / "ask"
 MODEL = "sonnet"
 TIMEOUT_S = 120
 MAX_BUDGET_USD = "1"
 READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series", "read_task_log", "cache_summary"]
 NO_TOOLS = ["submit_job", "cancel", "retry_failed", "set_queue", "wait_for_task", "get_task_image"]
+# Repo documents added to the prompt when the checkout has them (a pip install has only the shipped ask/*.md). The
+# rest of the repo is reachable through the read-only tools.
+REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
+REPO_TOOLS = "Read,Grep,Glob"
 _busy = threading.Lock()  # one question at a time: each one is a process and spends the user's quota
 
 PREAMBLE = (
@@ -51,8 +57,30 @@ def availability() -> Dict[str, Any]:
     }
 
 
+def repo_root() -> Optional[Path]:
+    root = paths.checkout_root()
+    return root if (root / "fluxpype" / "plumber").is_dir() else None
+
+
 def system_prompt() -> str:
-    return PREAMBLE + "\n\n".join((DOCS / n).read_text(encoding="utf-8") for n in ("plumber_guide.md", "flux_reference.md"))
+    parts = [(DOCS / n).read_text(encoding="utf-8") for n in ("plumber_guide.md",)]
+    root = repo_root()
+    if root:
+        parts.append(
+            f"## The repository\n\nThe fluxpype checkout is at {root}. You can read it with Read, Grep and Glob (read-only). "
+            "Use it for questions about how something is implemented or configured, and cite the file and line. Skip "
+            ".venv*, node_modules and web/dist. config.ini is documented inline; its defaults are below."
+        )
+        for rel, title in REPO_DOCS:
+            f = root / rel
+            if f.is_file():
+                parts.append(f"## {title} ({rel})\n\n{f.read_text(encoding='utf-8')}")
+        ini = root / "fluxpype" / "config.ini"
+        if ini.is_file():
+            head = ini.read_text(encoding="utf-8").split("\n[quickstart]")[0]  # the [DEFAULT] section: each setting with its comment
+            parts.append(f"## config.ini defaults (fluxpype/config.ini)\n\n```ini\n{head}\n```")
+    parts.append((DOCS / "flux_reference.md").read_text(encoding="utf-8"))
+    return PREAMBLE + "\n\n".join(parts)
 
 
 def user_prompt(question: str, page: str, history: List[Dict[str, str]]) -> str:
@@ -71,12 +99,16 @@ def command(cli: str, home: str, tools: bool) -> List[str]:
         }
     cmd = [
         cli, "-p", "--model", MODEL, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-        "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
+        "--no-session-persistence", "--tools", REPO_TOOLS if repo_root() else "", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
         "--setting-sources", "", "--disable-slash-commands", "--max-budget-usd", MAX_BUDGET_USD,
         "--system-prompt", system_prompt(),
     ]
+    allowed = ([REPO_TOOLS] if repo_root() else []) + ([f"mcp__fluxpype__{t}" for t in READ_TOOLS] if tools else [])
+    if repo_root():
+        cmd += ["--add-dir", str(repo_root())]
+    if allowed:
+        cmd += ["--allowedTools", ",".join(allowed)]
     if tools:
-        cmd += ["--allowedTools", ",".join(f"mcp__fluxpype__{t}" for t in READ_TOOLS)]
         cmd += ["--disallowedTools", ",".join(f"mcp__fluxpype__{t}" for t in NO_TOOLS)]
     return cmd
 

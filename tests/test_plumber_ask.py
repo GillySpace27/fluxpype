@@ -53,13 +53,16 @@ def test_parse_maps_cli_events_and_ignores_the_rest():
 
 def test_the_cli_is_stripped_down_and_never_given_write_tools():
     cmd = ask.command("claude", "/home", True)
-    assert cmd[cmd.index("--tools") + 1] == "" and "--strict-mcp-config" in cmd and "--setting-sources" in cmd
+    assert cmd[cmd.index("--tools") + 1] == "Read,Grep,Glob" and "--strict-mcp-config" in cmd and "--setting-sources" in cmd
+    assert "Bash" not in " ".join(cmd) and "Edit" not in " ".join(cmd) and "--add-dir" in cmd  # the repo, read-only
     allowed = cmd[cmd.index("--allowedTools") + 1]
     assert "mcp__fluxpype__status" in allowed and "submit_job" not in allowed and "cancel" not in allowed
     assert "submit_job" in cmd[cmd.index("--disallowedTools") + 1]
-    assert "--allowedTools" not in ask.command("claude", "/home", False)  # without the MCP SDK it answers from the docs alone
+    bare = ask.command("claude", "/home", False)  # without the MCP SDK: the docs and the repo, no live state
+    assert "mcp__fluxpype" not in " ".join(bare) and bare[bare.index("--allowedTools") + 1] == "Read,Grep,Glob"
     sp = cmd[cmd.index("--system-prompt") + 1]
     assert "VNEIGHBOR" in sp and "flux-action" in sp  # the reference and the guide are both in
+    assert "flux-plumb-mcp" in sp and "relax_threshold" in sp  # and the MCP tools doc and the config.ini defaults
 
 
 def test_ask_streams_text_tool_and_done(client):
