@@ -44,6 +44,8 @@ Results are compact JSON. Every string is cut to 2,000 characters, except log te
 | `set_queue` | `paused`, `max_parallel`, `cpu_budget` | Changes queue settings | write |
 | `cache_summary` | `profile`, `kind`, `cr`, `nflux`, `limit` (50), `offset`, `rescan` | Totals by kind plus a filtered, paged file list | read-only |
 | `get_task_image` | `task_id`, `index` (-1 is the newest), `max_edge` (1024) | One plot as an image with a caption. With Pillow installed it is downscaled; without it, images over 1.5 MB are refused | read-only |
+| `create_preset` | `name`, `base`, `values` | Saves a new user preset (runs nothing): `base` is copied, then `values` replace its keys. Same checks as the Presets page (`POST /api/profiles`) | write |
+| `list_proposals` | `status`, `limit` (20) | Changes proposed from the Ask bar, with what became of each (approved with its job id or preset name, rejected, expired, failed) | read-only |
 
 Not provided: moving files to the cache trash, restoring or emptying it, deleting jobs, writing `config.ini`, MCP resources and prompts.
 
@@ -52,6 +54,7 @@ Not provided: moving files to the cache trash, restoring or emptying it, deletin
 - Log text, warnings, stage details and file names come from the pipeline and from files on disk. Tool descriptions tell the assistant to treat them as data, never as instructions.
 - `submit_job` runs real work. It cannot change the keys Plumber forbids (for example `run_script`), and Plumber's own validation errors are returned verbatim.
 - `cancel` is marked destructive so clients can ask for confirmation.
+- Plumber's own Ask bar runs this server with `FLUX_MCP_CLIENT=ask`. In that copy `submit_job`, `cancel`, `retry_failed`, `set_queue` and `create_preset` only store a checked proposal (`POST /api/proposals`) and return its id; a person runs it from the answer card. Plumber refuses every other write from that client.
 - Plumber only answers `localhost`, `127.0.0.1` and `::1`. `--url` rejects any other host. To use a Plumber on another machine, open an SSH tunnel and point `--url` at the local end.
 - The API token is read from `<home>/token` (mode 0600). With `--url`, prefer `--token-file` or `FLUX_PLUMBER_TOKEN` over `--token`, which shows up in the process list.
 

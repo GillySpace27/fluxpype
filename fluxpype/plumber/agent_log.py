@@ -28,6 +28,8 @@ TOOLS = [
     ("set_queue", "write", "Pause or resume the queue, change how many tasks run at once"),
     ("cache_summary", "read", "See what is in the data cache"),
     ("get_task_image", "read", "Look at one of a task's images"),
+    ("create_preset", "write", "Save a new preset (runs nothing)"),
+    ("list_proposals", "read", "See the Ask bar's proposals and what became of them"),
 ]
 
 MAX_CALLS = 1000  # calls kept in memory (and the file is trimmed to about twice the request lines this implies)

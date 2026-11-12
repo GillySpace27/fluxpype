@@ -141,13 +141,17 @@ class PresetStore:
             raise PresetError(f"unknown preset {name!r}")
         return {k: e.value for k, e in cf.sections[name].items() if k not in config_io.FORBIDDEN_KEYS}
 
-    def create(self, name: str, base: Optional[str] = None, values: Optional[Dict[str, str]] = None) -> str:
+    def check(self, name: str, base: Optional[str] = None, values: Optional[Dict[str, str]] = None):
+        """`(name, base's own values, cleaned values)` for a new preset, or PresetError; writes nothing."""
         with self.lock:
             name = self._check_name(name)
-            start = self._own_values(base) if base else {}
-            merged = {**start, **self._clean(values or {})}
+            return name, (self._own_values(base) if base else {}), self._clean(values or {})
+
+    def create(self, name: str, base: Optional[str] = None, values: Optional[Dict[str, str]] = None) -> str:
+        with self.lock:
+            name, start, clean = self.check(name, base, values)
             user = self.user_sections()
-            user[name] = merged
+            user[name] = {**start, **clean}
             self._save_user(user)
             return name
 
