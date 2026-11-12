@@ -597,7 +597,14 @@ export interface AgentCall {
   /** time of the call's last request */
   last: number;
 }
+/** What the Ask bar has spent today and the plan's usage windows as the CLI last reported them (GET /api/agent). */
+export interface AskUsage {
+  model: string | null;
+  today: { questions: number; input: number; output: number; cache_read: number; cache_write: number; cost: number };
+  limits: { ts: number; windows: Record<string, { utilization: number | null; resets_at: number | null }> } | null;
+}
 export interface AgentRecord {
+  ask: AskUsage;
   tools: AgentTool[];
   calls: AgentCall[];
   total: number;

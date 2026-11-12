@@ -474,7 +474,9 @@ def create_app(
     @app.get("/api/agent")
     def agent_record():
         """What an agent can do through the MCP server, and every call it has made."""
-        return reply(agent_log.summary())
+        from . import ask
+
+        return reply({**agent_log.summary(), "ask": ask.usage(str(sched.home))})
 
     def volumes():
         return [("Data folder", sched.data_dir()), ("Plumber home", str(sched.home)), ("System", os.sep)]

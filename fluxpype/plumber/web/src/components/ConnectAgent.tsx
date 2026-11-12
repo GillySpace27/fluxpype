@@ -3,10 +3,10 @@ import { AlertTriangle, Bot, Check, ChevronRight, Copy } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
-import { ago, clock, dateTime } from "../lib/format";
+import { ago, clock, dateTime, duration } from "../lib/format";
 import { useAgentRecord, useStatus } from "../lib/hooks";
 import { useLive } from "../lib/live";
-import type { AgentCall, AgentTool } from "../lib/types";
+import type { AgentCall, AgentTool, AskUsage } from "../lib/types";
 import { Badge, Checkbox, Dialog, EmptyState, ErrorNote, Segmented, Skeleton, useToast } from "./ui";
 
 interface AgentPrompt {
@@ -59,6 +59,56 @@ function CopyBlock({ text, label, primary, rows }: { text: string; label: string
         {done ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         {done ? "Copied" : label}
       </button>
+    </div>
+  );
+}
+
+const tok = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1e3)}k` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+const WINDOWS: [string, string][] = [["five_hour", "5 hours"], ["seven_day", "7 days"]];
+
+/** The model and tokens the Ask bar has used today, and the plan's usage windows. An external agent's own usage is not visible to Plumber. */
+function UsageStrip({ ask }: { ask: AskUsage }) {
+  const now = Date.now();
+  const t = ask.today;
+  const win = ask.limits?.windows ?? {};
+  return (
+    <div className="mb-4 rounded-xl border border-line bg-bg/40 p-3">
+      <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+        <div>
+          <p className="label">Ask bar, today</p>
+          <p className="mt-1 font-mono text-[13px]">{ask.model ?? "no question asked yet"}</p>
+          <p className="num mt-0.5 text-xs text-muted">
+            {t.questions} question{t.questions === 1 ? "" : "s"} · {tok(t.input + t.cache_read + t.cache_write)} in ({tok(t.cache_read)} cached) · {tok(t.output)} out · ${t.cost.toFixed(2)}
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <p className="label">Plan limits{ask.limits ? ` (as of ${clock(ask.limits.ts)})` : ""}</p>
+          {!ask.limits && <p className="text-xs text-muted">Not reported yet; they arrive with the Ask bar's next answer.</p>}
+          {WINDOWS.filter(([k]) => win[k]).map(([k, name]) => {
+            const u = win[k].utilization;
+            const reset = win[k].resets_at;
+            const over = reset != null && reset * 1000 < now; // that window has rolled over since the reading
+            const tone = u == null ? "bg-faint" : u >= 0.9 ? "bg-fail" : u >= 0.7 ? "bg-run" : "bg-accent";
+            return (
+              <div key={k}>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted">{name}</span>
+                  <span className="num">
+                    {u == null ? "n/a" : `${Math.round(u * 100)}%`}
+                    <span className="text-faint">{over ? " · reset since" : reset ? ` · resets in ${duration(reset - now / 1000)}` : ""}</span>
+                  </span>
+                </div>
+                <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-line">
+                  <div className={cn("h-full rounded-full", tone)} style={{ width: `${Math.min(100, (u ?? 0) * 100)}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="mt-2.5 text-[11px] leading-snug text-faint">
+        Plumber cannot see an external agent's model or token use: MCP does not report them. The limits are your whole account's, shared by every Claude session, and refresh each time the Ask bar answers.
+      </p>
     </div>
   );
 }
@@ -211,6 +261,7 @@ export function ConnectAgentDialog({ open, onOpenChange, idle, setup }: { open: 
       title="AI agent"
       description="An MCP-capable agent (Claude Code, Claude Desktop and others) works in this same queue: it can queue runs, watch progress, read logs and look at images."
     >
+      {record.data && <UsageStrip ask={record.data.ask} />}
       <div className="mb-4">
         <Segmented<Tab>
           value={tab}

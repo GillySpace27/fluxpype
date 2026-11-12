@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -29,6 +30,7 @@ NO_TOOLS = ["submit_job", "cancel", "retry_failed", "set_queue", "wait_for_task"
 # rest of the repo is reachable through the read-only tools.
 REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
 REPO_TOOLS = "Read,Grep,Glob"
+USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
 _busy = threading.Lock()  # one question at a time: each one is a process and spends the user's quota
 
 PREAMBLE = (
@@ -126,11 +128,59 @@ def parse(line: str) -> Optional[Dict[str, Any]]:
         b = e.get("content_block", {})
         if e.get("type") == "content_block_start" and b.get("type") == "tool_use":
             return {"type": "tool", "name": b.get("name", "").replace("mcp__fluxpype__", "")}
+    if d.get("type") == "rate_limit_event":  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
+        w = (d.get("rate_limit_info") or {}).get("unifiedWindows") or {}
+        return {"type": "limits", "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()}}
     if d.get("type") == "result":
         if d.get("is_error"):
             return {"type": "error", "message": str(d.get("result") or "the model returned an error")[:500]}
-        return {"type": "done", "cost": d.get("total_cost_usd"), "ms": d.get("duration_ms")}
+        usage = d.get("modelUsage") or {}
+        model = next(iter(usage), None)
+        u = usage.get(model) or {}
+        tokens = {"input": u.get("inputTokens", 0), "output": u.get("outputTokens", 0), "cache_read": u.get("cacheReadInputTokens", 0), "cache_write": u.get("cacheCreationInputTokens", 0)}
+        return {"type": "done", "cost": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "model": model, "tokens": tokens}
     return None
+
+
+def _note(home: str, ev: Dict[str, Any]) -> None:
+    """Keep what the CLI reports: one line per answered question, and the latest plan usage windows."""
+    try:
+        if ev["type"] == "done":
+            with open(os.path.join(home, USAGE_FILE), "a") as f:
+                f.write(json.dumps({"ts": time.time(), "model": ev["model"], "cost": ev["cost"] or 0, "ms": ev["ms"], **ev["tokens"]}) + "\n")
+        elif ev["type"] == "limits" and ev["windows"]:
+            with open(os.path.join(home, LIMITS_FILE), "w") as f:
+                json.dump({"ts": time.time(), "windows": ev["windows"]}, f)
+    except OSError:
+        pass  # the readout just misses a point
+
+
+def usage(home: str) -> Dict[str, Any]:
+    """What the Ask bar has spent today (local time) and the last plan usage windows the CLI reported."""
+    rows: List[Dict[str, Any]] = []
+    try:
+        with open(os.path.join(home, USAGE_FILE)) as f:
+            for ln in f.read().splitlines()[-5000:]:
+                try:
+                    rows.append(json.loads(ln))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    t = time.localtime()
+    midnight = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+    today = [r for r in rows if r["ts"] >= midnight]
+    keys = ("input", "output", "cache_read", "cache_write", "cost")
+    try:
+        with open(os.path.join(home, LIMITS_FILE)) as f:
+            limits = json.load(f)
+    except (OSError, ValueError):
+        limits = None
+    return {
+        "model": rows[-1]["model"] if rows else None,
+        "today": {"questions": len(today), **{k: sum(r.get(k, 0) or 0 for r in today) for k in keys}},
+        "limits": limits,
+    }
 
 
 def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -> Iterator[str]:
@@ -164,6 +214,9 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         for line in proc.stdout:
             ev = parse(line)
             if ev:
+                _note(home, ev)
+                if ev["type"] == "limits":
+                    continue  # kept for the dashboard, nothing for the answer panel
                 finished = finished or ev["type"] in ("done", "error")
                 yield sse(ev)
         proc.wait()

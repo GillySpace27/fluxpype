@@ -24,7 +24,8 @@ ev(type="system", subtype="init")
 ev(type="stream_event", event={{"type": "content_block_start", "content_block": {{"type": "tool_use", "name": "mcp__fluxpype__status"}}}})
 delta("Hel"); delta("lo")
 delta("|" + ("--tools" in sys.argv and "tools-off" or "") + "|" + ("submit_job" in " ".join(sys.argv) and "write-listed" or "") + "|" + prompt[-40:])
-ev(type="result", subtype="success", is_error=False, total_cost_usd=0.01, duration_ms=5)
+ev(type="rate_limit_event", rate_limit_info={{"unifiedWindows": {{"five_hour": {{"utilization": 0.23, "resetsAt": 4102444800}}, "seven_day": {{"utilization": 0.3, "resetsAt": 4102444900}}}}}})
+ev(type="result", subtype="success", is_error=False, total_cost_usd=0.01, duration_ms=5, modelUsage={{"claude-sonnet-5-5": {{"inputTokens": 2, "outputTokens": 6, "cacheReadInputTokens": 100, "cacheCreationInputTokens": 855}}}})
 """
 
 
@@ -72,6 +73,18 @@ def test_ask_streams_text_tool_and_done(client):
     assert ev[0]["name"] == "status" and "".join(e["text"] for e in ev if e["type"] == "text").startswith("Hello|tools-off|")
     assert "write-listed" in "".join(e.get("text", "") for e in ev)  # listed only in --disallowedTools
     assert ev[-1]["cost"] == 0.01
+
+
+def test_ask_keeps_model_tokens_and_plan_limits_for_the_agent_dialog(client):
+    assert client.get("/api/agent", headers=H).json()["ask"] == {"model": None, "today": {"questions": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost": 0}, "limits": None}
+    client.post("/api/ask", json={"question": "hi"}, headers=H)
+    client.post("/api/ask", json={"question": "again"}, headers=H)
+    a = client.get("/api/agent", headers=H).json()["ask"]
+    assert a["model"] == "claude-sonnet-5-5" and a["today"]["questions"] == 2
+    assert (a["today"]["input"], a["today"]["output"], a["today"]["cache_read"], a["today"]["cache_write"]) == (4, 12, 200, 1710)
+    assert a["today"]["cost"] == pytest.approx(0.02)
+    w = a["limits"]["windows"]
+    assert w["five_hour"]["utilization"] == 0.23 and w["seven_day"]["resets_at"] == 4102444900
 
 
 def test_ask_without_the_cli_says_why(client, monkeypatch):
