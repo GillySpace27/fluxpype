@@ -134,3 +134,21 @@ def test_api_preview_and_file_are_confined(make_scheduler, plumber_config, tmp_p
             assert c.get("/api/cache/file", params={"path": bad}, headers=h).status_code == 403
         assert c.get("/api/cache/render", params={"path": "plot.png"}, headers=h).status_code == 415
         assert c.get("/api/cache/file", params={"path": "plot.png"}).status_code == 401
+
+
+def test_thumbnail_of_flux_dat_and_npy_files(tmp_path):
+    pytest.importorskip("matplotlib")
+    np = pytest.importorskip("numpy")
+    import sys
+
+    (tmp_path / "w.flux").write_text("LINE 1 1 2 1 2 1 0 0 0 1 1 1\n\tVERTEX 1 5 1 0.5 0.5 0.5\n")
+    (tmp_path / "t.dat").write_text("1 2 3\n2 3 4\n3 5 5\n")
+    np.save(tmp_path / "a.npy", np.arange(12.0).reshape(3, 4))
+    (tmp_path / "x.txt").write_text("nope")
+    home = str(tmp_path / "home")
+    for name in ("w.flux", "t.dat", "a.npy"):
+        png = preview.thumbnail(str(tmp_path / name), home, sys.executable)
+        assert open(png, "rb").read(8) == b"\x89PNG\r\n\x1a\n"
+        assert preview.thumbnail(str(tmp_path / name), home, sys.executable) == png  # cached
+    with pytest.raises(preview.RenderError):
+        preview.thumbnail(str(tmp_path / "x.txt"), home, sys.executable)

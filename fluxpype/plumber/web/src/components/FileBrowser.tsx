@@ -12,6 +12,7 @@ type Surface = "cache" | "runFiles" | "stage" | "results";
 const DEFAULT_MODE: Record<Surface, FileMode> = { cache: "list", runFiles: "list", stage: "icons", results: "icons" };
 const IMG = /\.(png|jpe?g|svg)$/i;
 const FITS = /\.(fits?|fts)(\.gz)?$/i;
+const FLUXY = /\.(flux|dat|npy)$/i; // drawn by the server as each viewer first shows them
 
 /** An image tile; a FITS file shows the server's cached render. Falls back to the icon if the image will not load. */
 function Thumb({ src, alt, Icon, ext, contain }: { src?: string; alt: string; Icon: typeof File; ext: string; contain?: boolean }) {
@@ -116,7 +117,7 @@ export function FileIcons<T extends CacheRecord>({
             >
               <div className="grid aspect-[4/3] place-items-center overflow-hidden bg-black/40">
                 <Thumb
-                  src={IMG.test(r.name) ? fileUrl(r.path, false, base) : FITS.test(r.name) ? `${base}/render.png?path=${encodeURIComponent(r.path)}` : undefined}
+                  src={IMG.test(r.name) ? fileUrl(r.path, false, base) : FITS.test(r.name) ? `${base}/render.png?path=${encodeURIComponent(r.path)}` : FLUXY.test(r.name) ? `${base}/thumb?path=${encodeURIComponent(r.path)}` : undefined}
                   alt={r.name}
                   contain={FITS.test(r.name)} // a 2:1 synoptic map would lose its sides to a 4:3 crop
                   Icon={Icon}

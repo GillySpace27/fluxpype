@@ -1185,6 +1185,21 @@ def create_app(
             fail(e, 422)
         return FileResponse(out["png"], media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
 
+    def thumb_png(full: str):
+        from . import preview
+
+        if not full.lower().endswith(preview.THUMB_EXT):
+            fail(ValueError("no thumbnail for this kind of file"), 415)
+        try:
+            png = preview.thumbnail(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return FileResponse(png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+    @app.get("/api/cache/thumb")
+    def cache_thumb(path: str):
+        return thumb_png(cache_file(path))
+
     @app.get("/api/cache/preview")
     def cache_preview(path: str):
         return preview_reply(cache_file(path), path)
@@ -1253,6 +1268,10 @@ def create_app(
     @app.get("/api/jobs/{job_id}/data/render")
     def job_render(job_id: str, path: str):
         return render_reply(job_file(job_id, path), f"/api/jobs/{quote(job_id)}/data/render.png?path={quote(path)}")
+
+    @app.get("/api/jobs/{job_id}/data/thumb")
+    def job_thumb(job_id: str, path: str):
+        return thumb_png(job_file(job_id, path))
 
     @app.get("/api/jobs/{job_id}/data/render.png")
     def job_render_png(job_id: str, path: str):

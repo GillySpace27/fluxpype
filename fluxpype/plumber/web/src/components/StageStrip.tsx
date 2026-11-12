@@ -11,7 +11,7 @@ export interface StripItem {
   tone: StripTone;
   /** 0 to 1 of the bar to fill (default all) */
   fill?: number;
-  /** drawn with diagonal hatching: the stage reused earlier output instead of computing it */
+  /** drawn purple: the stage reused earlier output instead of computing it */
   hatched?: boolean;
   tip?: ReactNode;
 }
@@ -29,7 +29,7 @@ export function StageStrip({ items, labels = true, className }: { items: StripIt
         <Tip key={it.id} label={it.tip ?? it.label}>
           <div className="min-w-0">
             <div className="h-1 overflow-hidden rounded-full bg-line/60">
-              <div className={cn("h-full rounded-full", BAR[it.tone], it.tone === "run" && "animate-pulse", it.hatched && "hatch")} style={{ width: `${(it.fill ?? 1) * 100}%` }} />
+              <div className={cn("h-full rounded-full", BAR[it.tone], it.tone === "run" && "animate-pulse", it.hatched && "!bg-info")} style={{ width: `${(it.fill ?? 1) * 100}%` }} />
             </div>
             {labels && <p className={cn("mt-1 truncate text-[10px] font-medium", TEXT[it.tone])}>{it.label}</p>}
           </div>

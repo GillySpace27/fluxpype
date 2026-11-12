@@ -23,7 +23,7 @@ import { JobActions } from "./Jobs";
 function Strip({ task, selected, onSelect }: { task: TaskState; selected: string; onSelect: (id: string) => void }) {
   const { wind } = useProgress(task);
   const windRunning = task.stages.find((s) => s.id === "wind")?.status === "running";
-  // a finished stage whose files all predate this run was reused from the cache, so hatch its chip
+  // a finished stage whose files all predate this run was reused from the cache, so its chip goes purple
   const { data } = useTaskResults(task.id, task.status === "running" || task.status === "pending");
   const reused = new Set<string>();
   const byStage = new Map<string, { origin: string | null }[]>();

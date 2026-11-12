@@ -56,7 +56,9 @@ export function PipelineChips({ stages, className, selected, onSelect, fill, reu
       {stages.map((s, i) => {
         const inferred = s.source !== "event" && s.source !== "none";
         const tone =
-          s.status === "running"
+          reused?.has(s.id) && s.status === "ok"
+            ? "border-info/40 bg-info/10 text-info" // the same purple as "reused from cache" on the files
+            : s.status === "running"
             ? "border-run/50 text-run " + (inferred ? "bg-transparent" : "bg-run/15") + " animate-pulse-ring"
             : s.status === "ok"
               ? "border-ok/40 text-ok " + (inferred ? "bg-transparent" : "bg-ok/12")
@@ -91,7 +93,6 @@ export function PipelineChips({ stages, className, selected, onSelect, fill, reu
                 )}
               >
                 {fill?.[s.id] != null && <span className="pointer-events-none absolute inset-y-0 left-0 rounded-[inherit] bg-run/30" style={{ width: `${fill[s.id] * 100}%` }} />}
-                {reused?.has(s.id) && <span className="hatch pointer-events-none absolute inset-0 rounded-[inherit]" />}
                 <span className="relative">{SHORT[s.id] ?? s.label}</span>
                 {s.verified === false && <AlertCircle className="absolute -right-1 -top-1 h-3 w-3 fill-bg text-run" />}
               </div>

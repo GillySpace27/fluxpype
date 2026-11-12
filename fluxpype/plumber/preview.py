@@ -244,6 +244,79 @@ print(json.dumps({
 }))
 """
 
+# A small picture of a FLUX-centric file as its viewer first shows it (.flux: fluxons coloured by id; .dat: the
+# recognised kind's default plot, else the first two columns; .npy: the array as an image or a line). Run with the
+# job Python, which has numpy and matplotlib; datfile.py and fluxfile.py are loaded by path (they need only numpy).
+THUMB_SCRIPT = r"""
+import colorsys, importlib.util, os, sys
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+
+src, dst, here = sys.argv[1:4]
+BG = "#0b0d12"
+
+def load(name):
+    spec = importlib.util.spec_from_file_location("fluxthumb_" + name, os.path.join(here, name + ".py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+fig = plt.figure(figsize=(4, 3), dpi=100, facecolor=BG)
+ax = fig.add_axes([0.03, 0.03, 0.94, 0.94])
+ax.set_facecolor(BG)
+ax.set_axis_off()
+ext = src.lower().rsplit(".", 1)[-1]
+if ext == "flux":
+    fl = load("fluxfile").payload(src, 60000)["fluxons"]
+    xyz = np.asarray(fl["xyz"], dtype=float).reshape(-1, 3)
+    off = fl["offsets"]
+    segs, cols = [], []
+    for i, fid in enumerate(fl["id"]):
+        p = xyz[off[i]:off[i + 1]]
+        if len(p) > 1 and fid >= 0:  # ids -9 and -10 are FLUX's pseudo-fluxons, not drawn by the viewer either
+            segs.append(p[:, :2])
+            cols.append(colorsys.hls_to_rgb((fid * 0.61803) % 1, 0.62, 0.7))
+    ax.add_collection(LineCollection(segs, colors=cols, linewidths=0.6))
+    ax.autoscale()
+    ax.set_aspect("equal")
+elif ext == "dat":
+    dat = load("datfile")
+    a = dat.parse_file(src)["_a"]
+    k = dat.kind_of(src, a.shape[1])
+    plot = (k or {}).get("plot") or {"type": "scatter", "x": 0, "y": min(1, a.shape[1] - 1)}
+    x, y = a[:, plot["x"]], a[:, plot["y"]]
+    if plot.get("logy"):
+        y = np.where(y > 0, y, np.nan)  # a log axis cannot show zero or negative values
+    if plot["type"] == "scatter":
+        c = a[:, plot["color"]] if plot.get("color") is not None else None
+        ax.scatter(x, y, c=c, cmap="viridis", s=3, linewidths=0, color=None if c is not None else "#ff9f43")
+    else:
+        g = a[:, plot["group"]] if plot.get("group") is not None else np.zeros(len(a))
+        for n, u in enumerate(np.unique(g)[:400]):
+            m = g == u
+            ax.plot(x[m], y[m], lw=0.7, color=colorsys.hls_to_rgb((n * 0.61803) % 1, 0.62, 0.7))
+    if plot.get("logy") and np.isfinite(y).any():
+        ax.set_yscale("log")
+    ax.margins(0.05)
+elif ext == "npy":
+    a = np.load(src, allow_pickle=False, mmap_mode="r")
+    if a.ndim == 3 and a.shape[-1] not in (3, 4):
+        a = a[0]
+    if a.ndim >= 2:
+        step = max(1, int(max(a.shape[:2]) // 800))
+        ax.imshow(np.asarray(a[::step, ::step], dtype=float) if a.ndim == 2 else np.asarray(a[::step, ::step]), cmap="viridis", origin="lower", aspect="auto")
+    elif a.ndim == 1:
+        ax.plot(np.asarray(a[:: max(1, len(a) // 4000)], dtype=float), lw=0.8, color="#ff9f43")
+    else:
+        sys.exit("nothing to draw")
+else:
+    sys.exit("no thumbnail for ." + ext)
+fig.savefig(dst, facecolor=BG)
+"""
+
 
 class RenderError(RuntimeError):
     pass
@@ -251,8 +324,20 @@ class RenderError(RuntimeError):
 
 def render_fits(path: str, home: str, python: str) -> Dict[str, Any]:
     """PNG of the first 2-D image in `path`, cached by path, size and mtime. Returns {png, stats}."""
+    return _render(path, home, python, RENDER_SCRIPT)
+
+
+THUMB_EXT = (".flux", ".dat", ".npy")
+
+
+def thumbnail(path: str, home: str, python: str) -> str:
+    """Path of a cached PNG thumbnail of a .flux, .dat or .npy file."""
+    return _render(path, home, python, THUMB_SCRIPT, (os.path.dirname(os.path.abspath(__file__)),), "|thumb")["png"]
+
+
+def _render(path: str, home: str, python: str, script: str, extra: tuple = (), tag: str = "") -> Dict[str, Any]:
     st = os.stat(path)
-    key = hashlib.sha1(f"{os.path.realpath(path)}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:20]
+    key = hashlib.sha1(f"{os.path.realpath(path)}|{st.st_size}|{st.st_mtime_ns}{tag}".encode()).hexdigest()[:20]
     folder = os.path.join(str(home), "previews")
     os.makedirs(folder, exist_ok=True)
     png, meta = os.path.join(folder, key + ".png"), os.path.join(folder, key + ".json")
@@ -266,7 +351,7 @@ def render_fits(path: str, home: str, python: str) -> Dict[str, Any]:
                 with open(meta, encoding="utf-8") as f:
                     return {"png": png, "stats": json.load(f)}
             r = subprocess.run(
-                [python, "-c", RENDER_SCRIPT, path, tmp],
+                [python, "-c", script, path, tmp, *extra],
                 capture_output=True,
                 text=True,
                 timeout=RENDER_TIMEOUT,
