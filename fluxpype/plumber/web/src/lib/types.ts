@@ -108,6 +108,9 @@ export interface TaskRow {
   slots: number;
   attempt: number;
   profile?: string;
+  /** queued tasks on the overview: why it waits (paused, max_parallel, cpu_budget, lock:<job>, next) */
+  wait_reason?: string | null;
+  origin?: Origin;
 }
 
 export interface Job {
@@ -123,6 +126,8 @@ export interface Job {
   tasks: TaskRow[];
   counts: Record<string, number>;
   states?: Record<string, TaskState>;
+  /** who started it: a routing label, never proof that a person acted */
+  origin?: Origin;
 }
 
 export interface QueueState {
@@ -628,6 +633,41 @@ export interface PlanWindow {
   left: number | null;
   resets_at: number | null;
 }
+export interface Origin {
+  kind?: "web" | "mcp" | "ask";
+  session?: string;
+  tab?: string;
+  call?: string;
+  question?: string;
+  proposal?: string;
+  retried_by?: string;
+}
+
+export type Sev = "info" | "success" | "warn" | "error";
+
+/** One row of Plumber's event log (notify.py): enums, ids and integers only. */
+export interface PlumberEvent {
+  seq: number;
+  t: number;
+  kind: string;
+  sev: Sev;
+  key: string;
+  job_id: string | null;
+  task_id: string | null;
+  origin: Origin;
+  f: Record<string, number | string>;
+  acked: boolean;
+}
+
+export interface EventPage {
+  log_id: string;
+  events: PlumberEvent[];
+  last_seq: number;
+  unread: number;
+  attention: number;
+  read_upto: number;
+}
+
 export interface SysSnapshot {
   psutil: boolean;
   now: SysSample;

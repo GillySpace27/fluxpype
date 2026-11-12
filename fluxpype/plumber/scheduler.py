@@ -555,6 +555,40 @@ class Scheduler:
             changed.add(t["job_id"])
         return changed
 
+    def queue_explain(self) -> Dict[str, str]:
+        """Why each pending task waits, in start order: paused, max_parallel, cpu_budget, lock:<job_id> or next.
+
+        The same decisions `_start_pending` makes, without launching anything."""
+        with self.lock:
+            pending = self.store.tasks_with_status("pending")
+            if self.store.get_setting("paused"):
+                return {t["id"]: "paused" for t in pending}
+            budget = int(self.store.get_setting("cpu_budget"))
+            max_parallel = int(self.store.get_setting("max_parallel"))
+            running = self.store.tasks_with_status("running")
+            used = sum(min(t["slots"], budget) for t in running)
+            holder = {k: t["job_id"] for t in running for k in t["lock_key"].split("\n") if k}
+            self._reconcile_plot_runs()
+            holder.update({r["key"]: r["job_id"] for r in self._plotruns.values()})
+            count = len(running)
+            out = {}
+            for t in pending:
+                slots = min(t["slots"], budget)
+                keys = [k for k in t["lock_key"].split("\n") if k]
+                held = next((holder[k] for k in keys if k in holder), None)
+                if count >= max_parallel:
+                    out[t["id"]] = "max_parallel"
+                elif held:
+                    out[t["id"]] = f"lock:{held}"
+                elif count > 0 and used + slots > budget:
+                    out[t["id"]] = "cpu_budget"
+                else:
+                    out[t["id"]] = "next"
+                    used += slots
+                    holder.update({k: t["job_id"] for k in keys})
+                    count += 1
+            return out
+
     def _launch(self, t: Dict[str, Any]) -> None:
         job = self.store.get_job(t["job_id"])
         backend = self.backends[job["backend"]]

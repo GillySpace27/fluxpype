@@ -1,11 +1,16 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ban, ListChecks, Plus, RotateCw, Trash2 } from "lucide-react";
+import { Ban, ListChecks, PauseCircle, Plus, RotateCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { Card, EmptyState, ErrorNote, PageHeader, Skeleton, StatusBadge, Tip, useConfirm, useToast } from "../components/ui";
+import { ActivityList, OriginTag } from "../components/Notifications";
+import { StageStrip, toneOf } from "../components/StageStrip";
+import { Badge, Card, EmptyState, ErrorNote, PageHeader, SectionTitle, Skeleton, StatusBadge, Tip, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
-import { ago, dateTime, duration } from "../lib/format";
-import { useJobs, useNow } from "../lib/hooks";
+import { stalledTasks } from "../lib/events";
+import { ago, dateTime, duration, instOf } from "../lib/format";
+import { useJobs, useNow, useOverview } from "../lib/hooks";
+import { useEvents } from "../lib/live";
 import type { Job } from "../lib/types";
+import { waitLabel } from "./Overview";
 
 export function JobActions({ job, onDeleted }: { job: Job; onDeleted?: () => void }) {
   const qc = useQueryClient();
@@ -71,21 +76,89 @@ function Segments({ job }: { job: Job }) {
   );
 }
 
+/** Running and queued tasks, live: stage strip, elapsed time, stall badge; queue order with why each waits. */
+function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
+  const { data } = useOverview();
+  const ev = useEvents();
+  const now = useNow(1000);
+  if (!data) return <Skeleton className="h-24" />;
+  const stalled = stalledTasks(ev.events);
+  return (
+    <>
+      <section>
+        <SectionTitle title="Running" hint={data.running.length ? undefined : "Nothing is running."} />
+        {data.running.length > 0 && (
+          <Card className="divide-y divide-line/60">
+            {data.running.map((t) => (
+              <Link key={t.id} to={`/jobs/${t.job_id}/${t.id}`} className="block px-4 py-3 hover:bg-raised/50">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="flex items-center gap-2 font-medium">
+                    CR {t.cr} <span className="font-normal text-muted">· {t.nflux} fluxons · {instOf(t.adapt)} · {t.method} · {t.profile}</span>
+                    <OriginTag origin={origins.get(t.job_id)} />
+                    {stalled.has(t.id) && <Badge tone="run">No output: stalled?</Badge>}
+                  </span>
+                  <span className="num text-xs text-muted">
+                    {t.current_stage ?? "starting"} · {duration(t.started ? now - t.started : null)}
+                  </span>
+                </div>
+                <StageStrip className="mt-2" labels={false} items={t.stages.map((s) => ({ id: s.id, label: s.id, tone: toneOf(s.status) }))} />
+              </Link>
+            ))}
+          </Card>
+        )}
+      </section>
+      <section>
+        <SectionTitle
+          title="Queued"
+          hint={
+            <span className="flex items-center gap-1.5">
+              {data.queue.paused && <PauseCircle className="h-3.5 w-3.5 text-run" />}
+              Queued tasks are the only future runs; Plumber has no scheduled runs yet.
+            </span>
+          }
+        />
+        {data.pending.length > 0 && (
+          <Card className="divide-y divide-line/60">
+            {data.pending.map((t, i) => (
+              <Link key={t.id} to={`/jobs/${t.job_id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] hover:bg-raised/50">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="num w-5 text-right text-xs text-faint">{i + 1}</span>
+                  <span className="shrink-0">CR {t.cr}</span>
+                  <span className="truncate text-muted">· {t.nflux} fluxons · {t.method} · {t.profile}</span>
+                  <OriginTag origin={t.origin} />
+                </span>
+                <span className="num shrink-0 text-xs text-muted">
+                  {waitLabel(t.wait_reason)} · {t.slots} slot{t.slots === 1 ? "" : "s"}
+                </span>
+              </Link>
+            ))}
+          </Card>
+        )}
+      </section>
+    </>
+  );
+}
+
 export function JobsPage() {
   const { data, error, refetch } = useJobs();
   const now = useNow(5000);
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
+  const origins = new Map((data?.jobs ?? []).map((j) => [j.id, j.origin]));
   return (
     <div className="animate-fade-in">
       <PageHeader
-        title="Jobs"
-        sub="Every run you have started, newest first."
+        title="Runs"
+        sub="What is running, what waits and why, and every job you have started."
         right={
           <Link to="/jobs/new" className="btn btn-primary">
             <Plus className="h-3.5 w-3.5" /> New run
           </Link>
         }
       />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0 space-y-6">
+      <LiveBands origins={origins} />
+      <SectionTitle title="Recent" />
       {!data ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>
       ) : data.jobs.length === 0 ? (
@@ -102,6 +175,7 @@ export function JobsPage() {
                       <p className="flex items-center gap-2.5 text-[14px] font-semibold">
                         {j.profile}
                         <StatusBadge status={j.status} />
+                        <OriginTag origin={j.origin} />
                       </p>
                       <p className="mt-1 text-xs text-muted">
                         {j.tasks.length} task{j.tasks.length === 1 ? "" : "s"} · {dateTime(j.created)} ({ago(j.created, now)}) · {j.started ? duration(end - j.started) : "not started"}
@@ -119,6 +193,14 @@ export function JobsPage() {
           })}
         </div>
       )}
+      </div>
+      <aside className="min-w-0">
+        <SectionTitle title="Activity" hint="Live job events" />
+        <Card className="p-1">
+          <ActivityList limit={30} />
+        </Card>
+      </aside>
+      </div>
     </div>
   );
 }

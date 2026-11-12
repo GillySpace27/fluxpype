@@ -4,9 +4,9 @@ Plumber is a local web app (and an MCP server for AI agents) that queues, runs a
 
 ## Pages
 
-- **Overview**: what is running, what is waiting, what just finished.
+- **Overview**: what is running, what is waiting (and why), what just finished, errors that need attention, and the latest job events.
 - **Presets**: saved run recipes (profiles from config.ini). A preset expands to tasks, one per combination of rotation (CR), fluxon count, magnetogram source (HMI or ADAPT) and wind method.
-- **Jobs**: every submitted job; a job holds tasks. The job page shows each task's stages, the relaxation chart, the log, and the files the task wrote.
+- **Runs** (the job list, at /jobs): what is running (stage strip, elapsed time, a stall badge), what is queued and why each task waits (queue paused, all run slots busy, CPU budget full, waiting for a job that writes the same output, or starts next), an Activity column of job events, and every submitted job; a job holds tasks. Queued tasks are the only future runs: Plumber has no scheduled runs. The job page shows each task's stages, the relaxation chart, the log, and the files the task wrote.
 - **Cache**: the data folder: magnetograms, footpoints, PFSS traces, worlds (.flux), wind files and plots, with previews (FITS renders, .flux and .dat viewers) and a trash.
 - **Settings**: the data folder, backends, update, and agent connection.
 
@@ -20,7 +20,7 @@ Where runs go: local (this machine), SSH, SLURM, or the simulated "demo" backend
 
 ## Top bar and sidebar
 
-The sidebar monitor shows CPU, memory, GPU, network, disk and storage; click it for charts and the busiest processes. The agent button shows whether an MCP agent is connected, what it can do, and every command it has sent. The queue pill pauses or resumes starting new tasks (running tasks continue).
+The sidebar monitor shows CPU, memory, GPU, network, disk and storage; click it for charts and the busiest processes. The agent button shows whether an MCP agent is connected, what it can do, and every command it has sent. The queue pill pauses or resumes starting new tasks (running tasks continue). The bell opens the inbox of job events (failures, stalls, finished jobs, unreachable backends), which Plumber records whether or not a page is open; its number counts unread warnings and errors and turns red while an error is unacknowledged. A small icon on a job says who started it: the web app, an AI agent over MCP, or an Ask card (tagged "Ask"). A stall means no output for longer than the stall limit; Plumber never cancels a stalled task.
 
 ## How to answer
 

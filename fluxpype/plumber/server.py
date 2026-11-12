@@ -1375,9 +1375,11 @@ def create_app(
             state["spark"] = spark(t["id"])
             running.append(state)
         pending = []
+        why = sched.queue_explain()
         for t in sched.store.tasks_with_status("pending"):
             job = sched.store.get_job(t["job_id"])
-            pending.append({**sched.task_row_view(t), "profile": job["profile"]})
+            row = {**sched.task_row_view(t), "profile": job["profile"], "origin": job["origin"]}
+            pending.append({**row, "wait_reason": why.get(t["id"])})
         recent = []
         for t in sched.store.recent_finished(12):
             job = sched.store.get_job(t["job_id"])

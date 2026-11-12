@@ -161,6 +161,8 @@ def test_a_second_app_on_the_same_home_writes_no_duplicates(make_scheduler):
     nb.observe()
     got = [key for _, key, _ in rows(a.store, job["id"])]
     assert len(got) == len(set(got)) == 1 + 2 * 4 + 1  # queued, started and end per task, job end
+    seqs = sorted(e["seq"] for e in a.store.events(limit=500))
+    assert seqs == list(range(1, len(got) + 1))  # duplicates use up no seq: a gap always means missed events
 
 
 def test_an_upgraded_database_announces_nothing_old(plumber_home, make_scheduler):
@@ -390,3 +392,33 @@ def test_origins_web_mcp_ask_and_retry(client, monkeypatch):
     out = client.post(f"/api/proposals/{p['id']}/approve", headers={**H, "X-Flux-Tab": "f00d00f00d00"}).json()
     job = client.get(f"/api/jobs/{out['result']['job_id']}", headers=H).json()
     assert job["origin"] == {"kind": "ask", "question": "q0a1b2c3d4e5", "proposal": p["id"], "tab": "f00d00f00d00"}
+    pending = client.get("/api/overview", headers=H).json()["pending"]
+    assert [r["wait_reason"] for r in pending if r["job_id"] == job["id"]] == ["paused"]
+
+
+# ------------------------------------------------------------------ why a queued task waits (Runs page)
+
+
+class Forever(Stub):
+    def __init__(self):
+        self.state = TaskStatus(state="running", pid=1)
+
+
+def test_queue_explain_matches_how_tasks_start(make_scheduler):
+    sched = make_scheduler(backends={"stub": Forever()})
+    sched.set_queue(max_parallel=1)
+    big = sched.create_job("t_big", backend="stub")  # three rotations, 6 slots each
+    pending = [t["id"] for t in big["tasks"][1:]]
+    assert sched.queue_explain() == {t: "max_parallel" for t in pending}
+    sched.store.set_setting("max_parallel", 3)  # not ticked yet: both would start now
+    assert sched.queue_explain() == {t: "next" for t in pending}
+    sched.store.set_setting("cpu_budget", 8)
+    assert sched.queue_explain() == {t: "cpu_budget" for t in pending}
+    sched.store.set_setting("cpu_budget", 64)
+    sched.store.set_setting("max_parallel", 10)
+    one = sched.create_job("t_one", backend="stub")
+    two = sched.create_job("t_one", backend="stub")  # same batch and rotation: waits for the first
+    why = sched.queue_explain()
+    assert why[two["tasks"][0]["id"]] == f"lock:{one['id']}"
+    sched.store.set_setting("paused", True)
+    assert set(sched.queue_explain().values()) == {"paused"}

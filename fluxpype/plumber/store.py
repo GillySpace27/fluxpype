@@ -272,12 +272,15 @@ class Store:
         }
 
     def add_event(self, ev: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Insert one event; None when its key already exists (INSERT OR IGNORE)."""
+        """Insert one event; None when its key already exists (INSERT OR IGNORE).
+
+        The NOT EXISTS guard keeps a known duplicate from using up a seq (an ignored AUTOINCREMENT insert does), so
+        seqs stay contiguous and a client can treat a gap as missed events."""
         origin = ev.get("origin") or {}
         with self._lock:
             cur = self._db.execute(
                 "INSERT OR IGNORE INTO events(t, kind, sev, key, job_id, task_id, origin_kind, session, tab, f_json) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "SELECT ?,?,?,?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM events WHERE key = ?)",
                 (
                     ev.get("t") or time.time(),
                     ev["kind"],
@@ -289,6 +292,7 @@ class Store:
                     origin.get("session"),
                     origin.get("tab"),
                     json.dumps(ev.get("f") or {}, sort_keys=True),
+                    ev["key"],
                 ),
             )
             if not cur.rowcount:

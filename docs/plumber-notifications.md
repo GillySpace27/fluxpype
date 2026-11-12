@@ -60,6 +60,29 @@ deleted, then the newest 50,000 are kept. Deleting a job acknowledges its events
 Event JSON: `{seq, t, kind, sev, key, job_id, task_id, origin: {kind, session?, tab?}, f, acked}`. `log_id` changes
 only if the database is replaced; a client that sees it change resets its cursor.
 
+## Web app
+
+- **Live feed**: the WebSocket `event` messages go into one in-memory store per tab (`web/src/lib/live.tsx`, at most
+  500 events; older pages load with `before=`). On socket open, and whenever an event's `seq` is not the next one, the
+  tab catches up with `GET /api/events?since=`. Seqs are contiguous because a duplicate insert uses up no seq.
+- **Toasts** only for events that arrived over the socket less than 60 s after they happened: every error, every
+  `task_stalled`, and `job_ok` for a job started from this tab (`X-Flux-Tab`, a random id in `sessionStorage`).
+  Events fetched to catch up go to the inbox only. Each open tab toasts on its own.
+- **Bell and inbox** (top bar): the number is `unread`, red while `attention > 0`; the drawer has Attention
+  (unacknowledged inbox errors and warnings, with Acknowledge and Acknowledge all), All (filter by severity and who
+  started the job) and Errors. Opening it marks everything shown as read. Rows link to the job or task page, where the
+  failure text comes from the task's own state, not from the event. The page title is `(n) Plumber` while errors are
+  unacknowledged.
+- **Browser notifications**: opt in under Settings > Notifications. Shown only in a secure context, only for the
+  toast set above, only while the tab is hidden, with `tag = job_id` so tabs replace each other's.
+- **Runs page** (`/jobs`): Running (stage strip, current stage, elapsed time, a stall badge while the latest
+  `task_stalled` has no later `task_resumed`), Queued (start order, slots, and why each task waits:
+  `Scheduler.queue_explain` gives `paused`, `max_parallel`, `cpu_budget`, `lock:<job>` or `next`, the same decisions
+  the scheduler makes, and `/api/overview` pending rows carry it as `wait_reason`), Recent (the job list), and an
+  Activity column. Each job shows an origin icon; an Ask-started job is tagged "Ask".
+- **Overview**: an Attention panel (unacknowledged errors) and an Activity list (latest 10 events).
+- **Ask cards**: an approved `submit_job` card shows its job's live status.
+
 ## Agents
 
 The MCP server sends `X-Flux-Session` (a random id per MCP server process) on every request, so the jobs an agent
