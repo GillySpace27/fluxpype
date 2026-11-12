@@ -193,9 +193,6 @@ def quadplot(results, save=True):
     Y = results["Y"]
     fov = results["fov"]
 
-    # Set the uniform colormap for the polarization angle
-    colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
-    scientific_cmap = load_scientific_colormap(colormap_path)
     brightness_norm = LogNorm(vmin=np.nanmin([B_total, B_polarized]), vmax=np.nanmax([B_total, B_polarized]))
 
     # Set the plot extent (in solar radii)
@@ -252,9 +249,6 @@ def triplot(results, fov_crop=None, save=True):
     # if fov is None:
     fov = results["fov"]
 
-    # Set the uniform colormap for the polarization angle
-    colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
-    scientific_cmap = load_scientific_colormap(colormap_path)
     brightness_norm = LogNorm(vmin=np.nanmin([B_total, B_polarized]), vmax=np.nanmax([B_total, B_polarized]))
 
     # Set the plot extent (in solar radii)

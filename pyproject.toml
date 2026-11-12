@@ -41,6 +41,7 @@ dependencies = [
   "PyQt5>=5.15.11",
   "opencv-python>=4.10.0.84",
   "joblib>=1.2",
+  "sunkit-image>=0.5",
 ]
 
 [project.optional-dependencies]

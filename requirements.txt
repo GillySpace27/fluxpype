@@ -16,3 +16,4 @@ sunkit-magex
 PyQt5
 numpy
 joblib
+sunkit-image
