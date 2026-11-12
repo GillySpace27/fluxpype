@@ -314,10 +314,10 @@ if __name__ == "__main__":
     results = do_fluxlight(the_world_file, force=force)
 
 
-    triplot(results, 100) # * u.R_sun)
-    triplot(results, 50 ) #* u.R_sun)
-    triplot(results, 25 ) #* u.R_sun)
-    triplot(results, 10 ) #* u.R_sun)
+    # Crops (R_sun) that fit inside the computed grid: the old 100/50/25/10 for the default fov, low-corona zooms for small fov.
+    grid_fov = float(np.atleast_1d(getattr(results["fov"], "value", results["fov"]))[0])
+    for crop in [c for c in (100, 50, 25, 10, 3, 2, 1.5) if c <= grid_fov][:4]:
+        triplot(results, crop)
 
     # f_world = read_flux_world(the_world_file)
     # f_world.plot_all()
