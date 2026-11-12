@@ -331,11 +331,11 @@ def convert_value(value):
     if not isinstance(value, str):
         return value
 
-    # Try to evaluate the value as Python code
+    # Literals only (numbers, strings, lists, tuples, dicts, True/False/None); anything else stays a string.
+    # Was eval(), which ran arbitrary expressions from config values and pipeline output.
     try:
-        return eval(value)
-    except (SyntaxError, NameError):
-        # If eval fails, return the value as a string
+        return ast.literal_eval(value)
+    except (SyntaxError, ValueError):
         return value
 
 
