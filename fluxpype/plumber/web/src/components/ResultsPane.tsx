@@ -21,6 +21,12 @@ const EMPTY: Record<string, string> = {
 /** Where a file came from, judged by its clock against the task's run window. */
 export function OriginTag({ origin }: { origin: ResultFile["origin"] | undefined }) {
   if (origin === "made") return <Badge tone="ok" className="px-1.5 text-[10.5px]">made by this run</Badge>;
+  if (origin === "posthoc")
+    return (
+      <span title="Generated after the run by a plot run, from files the run left on disk.">
+        <Badge tone="accent" className="px-1.5 text-[10.5px]">made afterwards</Badge>
+      </span>
+    );
   if (origin === "reused") return <Badge tone="info" className="px-1.5 text-[10.5px]">reused from cache</Badge>;
   if (origin === "later")
     return (

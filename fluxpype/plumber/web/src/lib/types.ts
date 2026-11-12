@@ -402,7 +402,9 @@ export interface ResultFile extends CacheRecord {
   /** true: written while the task ran; false: older, reused from the cache; null: can't tell */
   made_here: boolean | null;
   /** made: written during the task; reused: older; later: rewritten after the task ended */
-  origin: "made" | "reused" | "later" | null;
+  origin: "made" | "reused" | "later" | "posthoc" | null;
+  /** posthoc only: the plot run that made this file */
+  plot_run?: string;
   /** plots only: the stage that writes it, guessed from its folder */
   stage?: string | null;
 }
@@ -428,8 +430,61 @@ export interface CatalogPlot {
   summary: string;
   /** defined in the code but not made by the current pipeline (call commented out, unreachable, or manual only) */
   legacy: boolean;
+  /** can be remade alone from files already on disk (post-hoc plot run) */
+  post_hoc: boolean;
+  /** why it cannot be made alone (when post_hoc is false) */
+  post_hoc_reason: string | null;
+  command: string[] | null;
+  command_ref: string | null;
+  needs: Record<string, string>;
+  group: string | null;
+  overwrite_risk: string | null;
+  /** all inputs exist (post-hoc plots only) */
+  can_generate: boolean;
+  /** data-folder-relative globs with no match */
+  missing_inputs: string[];
+  inputs: string[];
+  /** inputs written after the task ended */
+  inputs_later: string[];
+  last_run: { id: string; status: string; detail: string | null } | null;
   files: ResultFile[];
   n_files: number;
+}
+
+export interface PlotRunPlot {
+  id: string;
+  title: string;
+  status: "pending" | "running" | "ok" | "failed" | "cancelled";
+  exit_code: number | null;
+  elapsed_s: number | null;
+  detail: string | null;
+  outputs: string[];
+  replaced: string[];
+}
+
+/** One post-hoc plot run: plots remade from a finished task's files. It never changes the task's status. */
+export interface PlotRun {
+  id: string;
+  task_id: string;
+  job_id: string;
+  status: "starting" | "running" | "ok" | "failed" | "cancelled" | "crashed";
+  created: number | null;
+  started: number | null;
+  ended: number | null;
+  exit_code: number | null;
+  overwrite: boolean;
+  plots: PlotRunPlot[];
+  log_size: number;
+}
+
+export interface PlotPlanItem {
+  id: string;
+  title: string;
+  argv: string[] | null;
+  missing: string[];
+  conflicts: string[];
+  inputs_later: string[];
+  overwrite_risk: string | null;
 }
 
 export interface TaskResults {

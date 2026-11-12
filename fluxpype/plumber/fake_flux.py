@@ -170,6 +170,10 @@ class Fake:
                 else f"floc_cr{cr}_rf{self.adapt_sel}_f{n}_adapt.dat"
             )
             self.touch(f"batches/{self.batch}/data/cr{cr}/floc/{floc}", size=n_actual * 96)
+            for kind in ("open", "closed"):  # inputs for the post-hoc fieldmap plot
+                self.touch(
+                    f"batches/{self.batch}/data/cr{cr}/floc/{floc.replace('floc_', f'floc_{kind}_', 1)}", size=96
+                )
             self.say(f"\n\t\t\t {floc}\n\n\t\t\t```````````````````````````````\n")
             self.end("footpoints", started=t)
             self.event("metric", name="n_actual", value=n_actual, unit="fluxons")
@@ -257,6 +261,12 @@ class Fake:
         self.say("\n\n\tRadial Wind Speed Calculation...")
         self.sleep(3.0)
         self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{a.method}_wind.dat", size=int(n) * 2400)
+        for suffix in ("bmag", "bmag_all", "fr"):  # inputs for the post-hoc wind plots
+            self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_radial_{suffix}.dat", size=256)
+        self.touch(
+            f"batches/{self.batch}/data/cr{cr}/wind/full_velocity_profiles/results_{a.method}_full_velocity.dat",
+            size=256,
+        )
         self.say("\t\t\t```````````````````````````````\n\n\n\n")
         self.end("wind", started=t)
 

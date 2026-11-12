@@ -13,7 +13,33 @@ _PDL = "fluxpype/science/magnetogram2wind.pdl"
 _MASTER = "fluxpype/science/map_fluxon_flow_parallel_master.pm"
 
 
-def _p(id, stage, title, pattern, writer, summary, call=None, gate=None, legacy=False) -> Dict[str, Any]:
+ALLOWED_PLACEHOLDERS = frozenset(
+    "python plotting science data_dir batch batch_dir cr nflux adapt inst red".split()
+)  # plus in_<need> for each key of an entry's ``needs``
+
+
+def _p(
+    id,
+    stage,
+    title,
+    pattern,
+    writer,
+    summary,
+    call=None,
+    gate=None,
+    legacy=False,
+    post_hoc=False,
+    reason=None,
+    command=None,
+    needs=None,
+    group=None,
+    timeout_s=900,
+    overwrite_risk=None,
+    command_ref=None,
+) -> Dict[str, Any]:
+    """``command`` is an argv template (``{name}`` placeholders, see ALLOWED_PLACEHOLDERS) that remakes the plot
+    from files already on disk; ``needs`` maps a name to a glob relative to data_dir that supplies ``{in_<name>}``.
+    A post-hoc plot has a command; any other plot has a ``reason`` it cannot be run alone."""
     return {
         "id": id,
         "stage": stage,
@@ -24,6 +50,14 @@ def _p(id, stage, title, pattern, writer, summary, call=None, gate=None, legacy=
         "gate": gate,
         "summary": summary,
         "legacy": legacy,
+        "post_hoc": post_hoc,
+        "post_hoc_reason": reason,
+        "command": command,
+        "command_ref": command_ref,
+        "needs": needs or {},
+        "group": group,
+        "timeout_s": timeout_s,
+        "overwrite_risk": overwrite_risk,
     }
 
 
@@ -388,3 +422,114 @@ PLOTS: List[Dict[str, Any]] = [
         legacy=True,
     ),
 ]
+
+
+# ---- which plots can be remade alone (compiled by reading the code; no command has been run)
+_W = "batches/{batch}/data/cr{cr}/wind"
+_F = "batches/{batch}/data/cr{cr}/floc"
+_WR = "batches/{batch}/data/cr{cr}/world/cr{cr}_f{nflux}_{inst}_relaxed_s*.flux"
+_C = ["--cr", "{cr}", "--nwant", "{nflux}", "--adapt", "{adapt}"]
+_NAME_RISK = "No fluxon count or adapt in the figure or its input name; another run of this rotation in this batch writes the same file."
+_NO_STANDALONE = (
+    "Drawn by Gnuplot inside the Perl pipeline from the in-memory world (magnetogram2wind.pdl:322, "
+    "plot_world.pm:91-103); no standalone command."
+)
+_WSA = (
+    "footpoint_distances_wsa.py is a wind-computation step: it also writes the distance/expansion CSVs the wind "
+    "stage reads back (footpoint_distances_wsa.py:757-801); rerunning it rewrites science inputs."
+)
+_NO_CALLER = "A library function with no caller and no command line."
+_INSIDE = "Inside Perl, or code that is never loaded or never reached."
+_OPEN_WORLD = dict(
+    group="open_world",
+    timeout_s=3600,
+    command=["{python}", "{science}/open_world_python.py", "{in_world}"],
+    needs={"world": _WR, "fr": f"{_W}/cr{{cr}}_f{{nflux}}_radial_fr.dat"},
+    command_ref="fluxpype/science/open_world_python.py:1774-1784",
+)
+_WIND_SOL = dict(
+    group="wind_solutions",
+    command=["{python}", "{plotting}/plot_wind_solutions.py", "{batch_dir}/data/cr{cr}/wind"],
+    needs={"fv": f"{_W}/full_velocity_profiles/results_*_full_velocity.dat"},
+    command_ref=f"{_PDL}:445",
+    overwrite_risk=_NAME_RISK,
+)
+_HOC: Dict[str, Dict[str, Any]] = {
+    "fieldmap_topology": dict(
+        command=[
+            "{python}",
+            "{plotting}/plot_fieldmap.py",
+            "--cr",
+            "{cr}",
+            "--open",
+            "{in_floc_open}",
+            "--closed",
+            "{in_floc_closed}",
+            "--nwant",
+            "{nflux}",
+            "--adapt",
+            "{adapt}",
+        ],
+        needs={
+            "floc_open": f"{_F}/floc_open_cr{{cr}}_r{{red}}_f{{nflux}}_{{inst}}.dat",
+            "floc_closed": f"{_F}/floc_closed_cr{{cr}}_r{{red}}_f{{nflux}}_{{inst}}.dat",
+            "floc_all": f"{_F}/floc_cr{{cr}}_r{{red}}_f{{nflux}}_{{inst}}.dat",
+            "mag": "magnetograms/CR{cr}_r{red}_{inst}.fits",
+        },
+        command_ref=f"{_PDL}:334-339",
+    ),
+    "bmag_scatter": dict(
+        command=["{python}", "{plotting}/plot_bmag.py", "--file", "{in_bmag}", *_C],
+        needs={"bmag": f"{_W}/cr{{cr}}_f{{nflux}}_radial_bmag.dat"},
+        command_ref=f"{_PDL}:421",
+    ),
+    "bmag_all_profiles": dict(
+        command=["{python}", "{plotting}/multiplot_bmag_all.py", "--file", "{in_bmag_all}", *_C],
+        needs={"bmag_all": f"{_W}/cr{{cr}}_f{{nflux}}_radial_bmag_all.dat"},
+        command_ref=f"{_PDL}:424",
+    ),
+    "wind_profiles_lines": _WIND_SOL,
+    "wind_profiles_filled": _WIND_SOL,
+    "light_triplot": dict(
+        timeout_s=3600,
+        command=["{python}", "{science}/fluxlight.py", "{in_world}"],
+        needs={"world": _WR},
+        command_ref=f"{_PDL}:360,476",
+        overwrite_risk=_NAME_RISK.replace("figure or its input name", "figure name"),
+    ),
+    "fr_expansion": dict(
+        command=["{python}", "{plotting}/plot_fr.py", "--file", "{in_fr}", *_C],
+        needs={"fr": f"{_W}/cr{{cr}}_f{{nflux}}_radial_fr.dat"},
+        command_ref=f"{_PDL}:433 (commented out)",
+    ),
+    "bmag_fill": dict(  # runtime unverified; also writes an .avi via cv2
+        command=["{python}", "{plotting}/plot_bmag_fill.py", "--file", "{in_bmag_all}", *_C],
+        needs={"bmag_all": f"{_W}/cr{{cr}}_f{{nflux}}_radial_bmag_all.dat"},
+        command_ref=f"{_PDL}:430 (commented out)",
+    ),
+    **{
+        i: _OPEN_WORLD
+        for i in ("world3d", "world_density", "world_fluxon_id", "area_by_method", "open_area_all_methods")
+    },
+}
+_NOT_HOC: Dict[str, Any] = {
+    **{i: _NO_STANDALONE for i in ("world_relaxed_narrow", "world_relaxed_middle", "world_relaxed_wide")},
+    "world_relaxed_full": _NO_STANDALONE,
+    "world_initial": _NO_STANDALONE,
+    **{i: _WSA for i in ("wsa_distances", "wsa_distances_stamped", "wsa_expansion", "wsa_morph_debug")},
+    "tempest_velocity": "Written by the wind solver, which also writes wind data (tempest.py:1126,1180; cranmer_wind.py:279,320).",
+    "cranmer_bmag_zephyr": "Written by the wind solver, which also writes wind data (tempest.py:1126,1180; cranmer_wind.py:279,320).",
+    "bmag_all_scatter": "Same file name and folder as bmag_all_profiles, so it would replace the live plot; also writes an .avi.",
+    "windmap": "Four variants, none verified: hard-coded 'sequential' batch; PDL form uses --resave_from_dat which exits before plotting.",
+    **{i: _NO_CALLER for i in ("magnetogram_raw", "footpoints_locations", "light_quad")},
+    **{i: _INSIDE for i in ("relax_movie", "wsa_bkk_debug", "tempest_mag")},
+    **{
+        i: "Not verified: never called; writes outside the data folder."
+        for i in ("footpoint_distance_variants", "fss_theta_speed")
+    },
+}
+for _e in PLOTS:
+    if _e["id"] in _HOC:
+        _e.update(_HOC[_e["id"]], post_hoc=True)
+    else:
+        _e["post_hoc_reason"] = _NOT_HOC[_e["id"]]

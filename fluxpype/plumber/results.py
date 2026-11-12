@@ -13,6 +13,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .cache import classify
+from . import plotrun
 from .monitor import ProbeContext
 from .plotcatalog import PLOTS
 
@@ -75,7 +76,7 @@ def _rel(path: str, root: str) -> str:
     return os.path.relpath(path, root).replace(os.sep, "/")
 
 
-def _file(path: str, root: str, started, ended) -> Optional[Dict[str, Any]]:
+def _file(path: str, root: str, started, ended, posthoc=None) -> Optional[Dict[str, Any]]:
     try:
         st = os.stat(path)
     except OSError:
@@ -84,13 +85,15 @@ def _file(path: str, root: str, started, ended) -> Optional[Dict[str, Any]]:
         return None
     rel = _rel(path, root)
     info = classify(rel)
+    extra = {"plot_run": posthoc[rel]} if posthoc and rel in posthoc else {}
     return {
         "path": rel,
         "name": os.path.basename(path),
         "size": st.st_size,
         "mtime": st.st_mtime,
         "made_here": made_here(st.st_mtime, started, ended),
-        "origin": origin(st.st_mtime, started, ended),
+        "origin": "posthoc" if extra else origin(st.st_mtime, started, ended),
+        **extra,
         **{k: v for k, v in info.items() if k in ("kind", "cr", "batch", "n", "inst", "reduce", "sel", "steps")},
     }
 
@@ -102,7 +105,9 @@ def _expand(patterns: List[str]) -> List[str]:
     return sorted(set(out))
 
 
-def plot_catalog(ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float]) -> List[Dict[str, Any]]:
+def plot_catalog(
+    ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float], posthoc=None
+) -> List[Dict[str, Any]]:
     """Every plot the pipeline defines, each with the files this task's folders hold for it (none: a placeholder)."""
     out = []
     for e in PLOTS:
@@ -118,12 +123,15 @@ def plot_catalog(ctx: Optional[ProbeContext], started: Optional[float], ended: O
             ]
             hits.sort(key=os.path.getmtime, reverse=True)
             n = len(hits)
-            files = [f for f in (_file(p, ctx.data_dir, started, ended) for p in hits[:8]) if f]
-        out.append({**e, "files": files, "n_files": n})
+            files = [f for f in (_file(p, ctx.data_dir, started, ended, posthoc) for p in hits[:8]) if f]
+        can = plotrun.generatable(e, ctx, ended) if ctx else plotrun.generatable({}, None)
+        out.append({**e, **can, "files": files, "n_files": n})
     return out
 
 
-def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float]) -> Dict[str, Any]:
+def task_results(
+    ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float], posthoc=None
+) -> Dict[str, Any]:
     """Products by stage plus the other plots for one task, with paths relative to ctx.data_dir."""
     if ctx is None:
         return {
@@ -158,7 +166,7 @@ def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: O
                 continue
             if by_name and f"cr{ctx.cr}" not in os.path.basename(p):
                 continue
-            f = _file(p, root, started, ended)
+            f = _file(p, root, started, ended, posthoc)
             if f:
                 plots.append({**f, "stage": plot_stage(f["path"])})
     plots.sort(key=lambda f: f["mtime"], reverse=True)
@@ -174,5 +182,5 @@ def task_results(ctx: Optional[ProbeContext], started: Optional[float], ended: O
         "products": products,
         "plots": plots[:200],
         "headline": headline,
-        "catalog": plot_catalog(ctx, started, ended),
+        "catalog": plot_catalog(ctx, started, ended, posthoc),
     }

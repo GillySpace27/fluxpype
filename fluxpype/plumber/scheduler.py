@@ -9,8 +9,11 @@ polled on the next tick and reattached or finalized (the launcher keeps jobs ali
 the server is down).
 """
 
+import dataclasses
+import glob
 import json
 import os
+import re
 import shutil
 import threading
 import time
@@ -27,6 +30,13 @@ CANCEL_GRACE_S = 10.0
 
 class SchedulerError(ValueError):
     pass
+
+
+class SchedulerConflict(SchedulerError):
+    """The request is fine but not now (the API answers 409)."""
+
+
+RUN_ID_RE = re.compile(r"^p\d{14}[0-9a-f]{4}$")
 
 
 def _truthy(value: str) -> bool:
@@ -60,6 +70,8 @@ class Scheduler:
         self._monitors: Dict[str, TaskMonitor] = {}
         self._cancel_at: Dict[str, float] = {}
         self._features: Dict[str, List[str]] = {}
+        self._plotruns: Dict[str, Dict[str, Any]] = {}  # active post-hoc plot runs by id
+        self._find_plot_runs()
         if self.store.get_setting("cpu_budget") is None:
             self.store.set_setting("cpu_budget", cpu_budget or os.cpu_count() or 1)
         elif cpu_budget:
@@ -365,6 +377,7 @@ class Scheduler:
             raise SchedulerError("no such job")
         if any(t["status"] in ("pending", "running") for t in self.store.tasks_for_job(job_id)):
             raise SchedulerError("cancel the job before deleting it")
+        self._no_plot_run_for(job_id)
         self.store.delete_job(job_id)
         shutil.rmtree(os.path.dirname(job["snapshot_path"]), ignore_errors=True)
         self.on_change("job_removed", {"id": job_id})
@@ -374,6 +387,7 @@ class Scheduler:
         job = self.store.get_job(job_id)
         if not job:
             raise SchedulerError("no such job")
+        self._no_plot_run_for(job_id)
         with self.lock:
             n = 0
             for t in self.store.tasks_for_job(job_id):
@@ -413,6 +427,7 @@ class Scheduler:
         with self.lock:
             changed_jobs = set()
             changed_jobs |= self._reconcile_running()
+            self._reconcile_plot_runs()
             changed_jobs |= self._start_pending()
             for jid in changed_jobs:
                 self._publish_job(jid)
@@ -471,6 +486,8 @@ class Scheduler:
         keys = set()
         for t in self.store.tasks_with_status("running"):
             keys.update(k for k in t["lock_key"].split("\n") if k)
+        self._reconcile_plot_runs()
+        keys.update(r["key"] for r in self._plotruns.values())
         return keys
 
     def _start_pending(self) -> set:
@@ -610,7 +627,7 @@ class Scheduler:
             raise SchedulerError("no such task")
         status = force_status or t["status"]
         finished = status in FINISHED
-        if finished and t["summary_json"] and not force_status and task_id not in self._monitors:
+        if finished and t["summary_json"] and not force_status:  # a finished task's stages never change afterwards
             cached = json.loads(t["summary_json"])
             cached["status"] = status
             return cached
@@ -656,3 +673,204 @@ class Scheduler:
             probe=False, alive=None, outcome=t["status"] if t["status"] in FINISHED else None, started=t["started"]
         )
         return mon.relax_series(after)
+
+    # ------------------------------------------------------------------ post-hoc plot runs
+    def _find_plot_runs(self) -> None:
+        """After a restart: plot runs whose process has not written an exit code are still active."""
+        for launch in glob.glob(os.path.join(str(paths.runs_dir(self.home)), "*", "*", "plots", "p*", "launch.json")):
+            d = os.path.dirname(launch)
+            rid = os.path.basename(d)
+            if os.path.exists(os.path.join(d, "exit_code")) or not RUN_ID_RE.match(rid):
+                continue
+            try:
+                req = json.load(open(os.path.join(d, "request.json"), encoding="utf-8"))
+                c = req["ctx"]
+                key = f"out:{c['data_dir']}|{c['batch']}|{c['cr']}"
+                self._plotruns[rid] = {"task_id": req["task_id"], "job_id": req["job_id"], "dir": d, "key": key}
+            except (OSError, ValueError, KeyError):
+                continue
+
+    def _no_plot_run_for(self, job_id: str) -> None:
+        with self.lock:
+            self._reconcile_plot_runs()  # "active" is decided now, not at the last tick
+            busy = any(r["job_id"] == job_id for r in self._plotruns.values())
+        if busy:
+            raise SchedulerConflict("a plot run for this job is still going; cancel it first")
+
+    def _plot_dir(self, task_id: str, rid: str) -> str:
+        t = self.store.get_task(task_id)
+        if not t:
+            raise SchedulerError("no such task")
+        d = os.path.join(t["run_dir"], "plots", rid)
+        if not RUN_ID_RE.match(rid) or not os.path.isfile(os.path.join(d, "request.json")):
+            raise SchedulerError("no such plot run")
+        return d
+
+    def list_plot_runs(self, task_id: str) -> List[Dict[str, Any]]:
+        from . import plotrun
+
+        t = self.store.get_task(task_id)
+        if not t:
+            raise SchedulerError("no such task")
+        dirs = glob.glob(os.path.join(t["run_dir"], "plots", "p*", "request.json"))
+        return [plotrun.read_view(os.path.dirname(p)) for p in sorted(dirs, reverse=True)]
+
+    def plot_run(self, task_id: str, rid: str) -> Dict[str, Any]:
+        from . import plotrun
+
+        return plotrun.read_view(self._plot_dir(task_id, rid))
+
+    def plot_run_dir(self, task_id: str, rid: str) -> str:
+        return self._plot_dir(task_id, rid)
+
+    def cancel_plot_run(self, task_id: str, rid: str) -> Dict[str, Any]:
+        d = self._plot_dir(task_id, rid)
+        job = self.store.get_job(self.store.get_task(task_id)["job_id"])
+        self.backends[job["backend"]].cancel(Handle(rid, d))
+        return self.plot_run(task_id, rid)
+
+    def posthoc_outputs(self, t: Dict[str, Any]) -> Dict[str, str]:
+        """{data-dir-relative path: plot run id} for plots made afterwards, the newest run winning."""
+        out: Dict[str, str] = {}
+        for view in reversed(self.list_plot_runs(t["id"])):
+            for p in view["plots"]:
+                if p["status"] == "ok":
+                    out.update({rel: view["id"] for rel in p["outputs"]})
+        return out
+
+    def _reconcile_plot_runs(self) -> None:
+        from . import plotrun
+
+        for rid, r in list(self._plotruns.items()):
+            view = plotrun.read_view(r["dir"])
+            if view != r.get("view"):
+                r["view"] = view
+                self.on_change("plot_run", view)
+            if view["status"] not in ("starting", "running"):
+                self._plotruns.pop(rid, None)
+
+    def start_plot_run(
+        self,
+        task_id: str,
+        plots,
+        stage: Optional[str] = None,
+        overwrite: bool = False,
+        dry_run: bool = False,
+        include_legacy: bool = False,
+    ):
+        """Remake plots of a finished task from the files on disk. Never changes the task's or job's status."""
+        from . import plotrun
+        from .plotcatalog import PLOTS
+
+        with self.lock:
+            t = self.store.get_task(task_id)
+            if not t:
+                raise SchedulerError("no such task")
+            job = self.store.get_job(t["job_id"])
+            backend = self.backends[job["backend"]]
+            ctx = self.probe_context(t)
+            if ctx is None:
+                raise SchedulerError("the job's configuration snapshot is unreadable")
+            if not hasattr(backend, "python"):
+                raise SchedulerError("plot runs need a backend that runs on this machine")
+            by_id = {e["id"]: e for e in PLOTS}
+            try:
+                if plots == "all_possible":
+                    ids = []
+                    for e in PLOTS:
+                        mates = [m for m in PLOTS if m["group"] == e["group"]] if e["group"] else [e]
+                        if (
+                            e["post_hoc"]
+                            and (include_legacy or not e["legacy"])
+                            and (stage is None or e["stage"] == stage)
+                            and plotrun.generatable(e, ctx)["can_generate"]
+                            and not any(plotrun.targets(m, ctx) for m in mates)
+                        ):
+                            ids.append(e["id"])
+                else:
+                    if not isinstance(plots, list) or not plots:
+                        raise SchedulerError("nothing to generate")
+                    ids = [i for i in plots if isinstance(i, str)]
+                    for i in ids:  # a group is one command, so it makes (and would replace) all its members
+                        g = by_id.get(i, {}).get("group")
+                        ids += [m["id"] for m in PLOTS if g and m["group"] == g and m["id"] not in ids]
+                ids = list(dict.fromkeys(ids))
+                if not ids:
+                    raise SchedulerError("nothing to generate")
+                items = plotrun.plan(ctx, ids, backend.python)
+            except plotrun.PlotRunError as e:
+                raise SchedulerError(str(e)) from e
+            later = {i: plotrun.generatable(by_id[i], ctx, t["ended"])["inputs_later"] for i in ids}
+            if dry_run:
+                return [
+                    {
+                        "id": it["id"],
+                        "title": by_id[it["id"]]["title"],
+                        "argv": it["argv"],
+                        "missing": it["missing"],
+                        "conflicts": it["conflicts"],
+                        "inputs_later": later[it["id"]],
+                        "overwrite_risk": by_id[it["id"]]["overwrite_risk"],
+                    }
+                    for it in items
+                ]
+            if t["status"] not in FINISHED:
+                raise SchedulerConflict("the task has not finished")
+            self._reconcile_plot_runs()
+            if any(r["task_id"] == task_id for r in self._plotruns.values()):
+                raise SchedulerConflict("a plot run for this task is already going")
+            key = f"out:{ctx.data_dir}|{ctx.batch}|{ctx.cr}"
+            if any(key in x["lock_key"].split("\n") for x in self.store.tasks_with_status("running")):
+                raise SchedulerConflict("a running task is writing to this output; wait for it to finish")
+            missing = [f"{it['id']}: {', '.join(it['missing'])}" for it in items if it["missing"]]
+            if missing:
+                raise SchedulerError("missing inputs: " + "; ".join(missing))
+            clash = [c for it in items for c in it["conflicts"]] + [f for v in later.values() for f in v]
+            if clash and not overwrite:
+                raise SchedulerConflict("would replace or use changed files: " + ", ".join(dict.fromkeys(clash)))
+            rid = "p" + time.strftime("%Y%m%d%H%M%S") + uuid.uuid4().hex[:4]
+            d = os.path.join(t["run_dir"], "plots", rid)
+            os.makedirs(d, exist_ok=True)
+            snap_text = open(job["snapshot_path"], encoding="utf-8").read()
+            for k, v in (
+                ("rotations", t["cr"]),
+                ("fluxon_count", t["nflux"]),
+                ("adapts", t["adapt"]),
+                ("flow_method", t["method"]),
+            ):
+                snap_text = config_io.set_value(snap_text, job["profile"], k, f"[{v}]")
+            snap = os.path.join(d, "config.snapshot.ini")
+            with open(snap, "w", encoding="utf-8") as f:
+                f.write(snap_text)
+            fake = backend.kind == "fake"
+            req = {
+                "task_id": task_id,
+                "job_id": t["job_id"],
+                "plots": ids,
+                "overwrite": bool(overwrite),
+                "fake": fake,
+                "python": backend.python,
+                "created": time.time(),
+                "ctx": dataclasses.asdict(ctx),
+            }
+            with open(os.path.join(d, "request.json"), "w", encoding="utf-8") as f:
+                json.dump(req, f)
+            root = str(paths.checkout_root())
+            env = {
+                "FLUXPYPE_CONFIG": job["profile"],
+                "FLUXPYPE_CONFIG_FILE": snap,
+                "FLUXPYPE_EVENTS": os.path.join(d, "events.jsonl"),
+                "FLUXPYPE_TASK_ID": task_id,
+                "PYTHONPATH": root + (os.pathsep + os.environ["PYTHONPATH"] if os.environ.get("PYTHONPATH") else ""),
+                "PYTHONUNBUFFERED": "1",
+                "MPLBACKEND": "Agg",
+                "PATH": os.path.dirname(backend.python) + os.pathsep + os.environ.get("PATH", ""),
+            }
+            from .backends.local import spawn
+
+            spawn(d, [backend.python, "-m", "fluxpype.plumber.plotrun", d], env, root)
+            self._plotruns[rid] = {"task_id": task_id, "job_id": t["job_id"], "dir": d, "key": key}
+        view = plotrun.read_view(d)
+        self._plotruns[rid]["view"] = view
+        self.on_change("plot_run", view)
+        return view

@@ -10,7 +10,7 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -23,7 +23,7 @@ from .cache import Cache, CacheError
 from .health import Health
 from .presets import PresetError
 from .monitor import STAGES, first_match_for_context
-from .scheduler import Scheduler, SchedulerError
+from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
 
 COOKIE = "flux_plumber"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 30
@@ -54,6 +54,26 @@ def clean(obj: Any) -> Any:
     return obj
 
 
+def tail_file(path: str, size: int, offset: int, limit: int) -> Dict[str, Any]:
+    """Log text from byte `offset` (default: the last `limit` bytes) and the next offset."""
+    limit = min(max(limit, 1024), 2 * 1024 * 1024)
+    start = max(size - limit, 0) if offset < 0 else min(offset, size)
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read(limit)
+    # keep whole lines: drop a partial first line when tailing, never split a UTF-8 sequence
+    if offset < 0 and start > 0 and b"\n" in data:
+        cut = data.index(b"\n") + 1
+        start, data = start + cut, data[cut:]
+    return {
+        "offset": start + len(data),
+        "start": start,
+        "size": size,
+        "text": data.decode("utf-8", "replace"),
+        "file": os.path.basename(path),
+    }
+
+
 def reply(obj: Any, status: int = 200) -> JSONResponse:
     return JSONResponse(clean(obj), status_code=status)
 
@@ -65,6 +85,14 @@ class JobIn(BaseModel):
     tasks: Optional[List[List[str]]] = None  # [cr, nflux, adapt, method]
     scenario: Optional[str] = None  # fake backend only
     speed: Optional[float] = None  # fake backend only
+
+
+class PlotRunIn(BaseModel):
+    plots: Union[List[str], Literal["all_possible"]]
+    stage: Optional[str] = None
+    overwrite: bool = False
+    dry_run: bool = False
+    include_legacy: bool = False
 
 
 class QueueIn(BaseModel):
@@ -703,7 +731,13 @@ def create_app(
     def results_for(t: Dict[str, Any]) -> Dict[str, Any]:
         from .results import task_results
 
-        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"))
+        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"), sched.posthoc_outputs(t))
+        runs = sched.list_plot_runs(t["id"])
+        for c in out["catalog"]:  # the newest attempt that mentions each plot
+            last = next(((r, p) for r in runs for p in r["plots"] if p["id"] == c["id"]), None)
+            c["last_run"] = (
+                {"id": last[0]["id"], "status": last[1]["status"], "detail": last[1]["detail"]} if last else None
+            )
         try:
             stages = {s["id"]: s["status"] for s in sched.task_state(t["id"]).get("stages", [])}
         except Exception:  # noqa: BLE001
@@ -859,25 +893,57 @@ def create_app(
         size = os.path.getsize(path)
         if grep:
             return reply(grep_log(path, size, grep, min(max(context, 0), 20)))
-        limit = min(max(limit, 1024), 2 * 1024 * 1024)
-        start = max(size - limit, 0) if offset < 0 else min(offset, size)
-        with open(path, "rb") as f:
-            f.seek(start)
-            data = f.read(limit)
-        # keep whole lines: drop a partial first line when tailing, never split a UTF-8 sequence
-        if offset < 0 and start > 0 and b"\n" in data:
-            cut = data.index(b"\n") + 1
-            start, data = start + cut, data[cut:]
-        end = start + len(data)
-        return reply(
-            {
-                "offset": end,
-                "start": start,
-                "size": size,
-                "text": data.decode("utf-8", "replace"),
-                "file": os.path.basename(path),
-            }
-        )
+        return reply(tail_file(path, size, offset, limit))
+
+    @app.post("/api/tasks/{task_id}/plots")
+    def start_plots(task_id: str, body: PlotRunIn):
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            res = sched.start_plot_run(
+                task_id, body.plots, body.stage, body.overwrite, body.dry_run, body.include_legacy
+            )
+        except SchedulerConflict as e:
+            fail(e, 409)
+        except SchedulerError as e:
+            fail(e)
+        if body.dry_run:
+            return reply({"plan": res})
+        return reply(res, 201)
+
+    @app.get("/api/tasks/{task_id}/plots")
+    def list_plots(task_id: str):
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        return reply({"task_id": task_id, "runs": sched.list_plot_runs(task_id)})
+
+    def plot_run_or_404(task_id: str, rid: str) -> Dict[str, Any]:
+        if not RUN_ID_RE.match(rid):
+            raise HTTPException(404, "unknown plot run")
+        try:
+            return sched.plot_run(task_id, rid)
+        except SchedulerError as e:
+            fail(e, 404)
+
+    @app.get("/api/tasks/{task_id}/plots/{rid}")
+    def get_plot_run(task_id: str, rid: str):
+        return reply(plot_run_or_404(task_id, rid))
+
+    @app.get("/api/tasks/{task_id}/plots/{rid}/log")
+    def plot_run_log(task_id: str, rid: str, offset: int = -1, limit: int = 262144):
+        plot_run_or_404(task_id, rid)
+        path = os.path.join(sched.plot_run_dir(task_id, rid), "stdout.log")
+        if not os.path.exists(path):
+            return reply({"offset": 0, "size": 0, "text": "", "file": None})
+        return reply(tail_file(path, os.path.getsize(path), offset, limit))
+
+    @app.post("/api/tasks/{task_id}/plots/{rid}/cancel")
+    def cancel_plot_run(task_id: str, rid: str):
+        plot_run_or_404(task_id, rid)
+        try:
+            return reply(sched.cancel_plot_run(task_id, rid))
+        except SchedulerError as e:
+            fail(e, 404)
 
     @app.get("/api/queue")
     def queue():

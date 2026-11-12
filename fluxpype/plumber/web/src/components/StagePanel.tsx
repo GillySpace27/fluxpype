@@ -3,11 +3,12 @@ import { CircleDashed, Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { duration } from "../lib/format";
-import { jobDataBase, useTaskResults } from "../lib/hooks";
+import { jobDataBase, runActive, useGeneratePlots, usePlotRuns, useTaskResults } from "../lib/hooks";
 import type { CacheRecord, ResultFile, TaskState } from "../lib/types";
 import { FileViewer, fileUrl } from "./FileViewer";
 import { FileIcons, FileRows, ViewSwitch, useFileView } from "./FileBrowser";
 import { PlotCatalog } from "./PlotCatalog";
+import { PlotRunPanel } from "./PlotRunPanel";
 import { OriginTag, RelaxViews } from "./ResultsPane";
 import { useProgress } from "./StageTimeline";
 import { Badge, Card, StatusIcon } from "./ui";
@@ -141,6 +142,16 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
   const [fmode, setFmode, fsize, setFsize] = useFileView("stage");
 
   const cat = useMemo(() => (data?.catalog ?? []).filter((c) => c.stage === stageId), [data, stageId]);
+  const { data: allRuns } = usePlotRuns(task.id);
+  const runs = useMemo(() => (allRuns ?? []).filter((r) => r.plots.some((p) => cat.some((c) => c.id === p.id))), [allRuns, cat]);
+  const generate = useGeneratePlots(task.id);
+  const [logFocus, setLogFocus] = useState<{ id: string; n: number } | null>(null);
+  // plots a "Generate all possible" run would fill: post-hoc, inputs present, nothing rendered (and no group mate rendered either)
+  const everyone = data?.catalog ?? [];
+  const possible = cat.filter(
+    (c) => c.post_hoc && c.can_generate && !c.legacy && c.n_files === 0 && !everyone.some((m) => m.group && m.group === c.group && m.n_files > 0),
+  );
+  const generating = runs.some(runActive) || generate.isPending;
   const all: ResultFile[] = useMemo(() => {
     if (!data) return [];
     const pid = PRODUCT[stageId] ?? stageId;
@@ -150,7 +161,7 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
     return [...own, ...cat.flatMap((c) => c.files).filter((f) => !seen.has(f.path) && seen.add(f.path))];
   }, [data, stageId, cat]);
   // old FLUXlight images from earlier runs would pass for this run's result: show only what this run made unless asked
-  const files = stageId === "fluxlight" && !older ? all.filter((f) => f.origin === "made") : all;
+  const files = stageId === "fluxlight" && !older ? all.filter((f) => f.origin === "made" || f.origin === "posthoc") : all;
   const hidden = all.length - files.length;
   useEffect(() => setOpen(null), [stageId]);
 
@@ -181,6 +192,14 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
         </div>
         <p className="text-xs text-muted">{ABOUT[stageId]}</p>
         {stage?.detail && <p className={cn("text-[13px]", stage.status === "failed" && "text-fail")}>{stage.detail}</p>}
+        {possible.length > 0 && !live && (
+          <div>
+            <button className="btn btn-sm" disabled={generating} onClick={() => generate.mutate({ plots: "all_possible", stage: stageId })}>
+              Generate all possible ({possible.length})
+            </button>
+          </div>
+        )}
+        <PlotRunPanel runs={runs} focus={logFocus} />
         {stage?.verified === false && <p className="text-xs text-run">Events say it finished, but its output file was not found.</p>}
 
         {stageId === "wind" && wind && (
@@ -232,7 +251,7 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
             {listed.length > 0 && (fmode === "icons" ? <FileIcons {...listProps} base={base} size={fsize} /> : <FileRows {...listProps} />)}
           </div>
       )}
-      <PlotCatalog entries={cat} base={base} visible={(f) => stageId !== "fluxlight" || older || f.origin === "made"} onOpen={show} />
+      <PlotCatalog entries={cat} base={base} visible={(f) => stageId !== "fluxlight" || older || f.origin === "made" || f.origin === "posthoc"} onOpen={show} taskLive={live} runs={runs} onGenerate={(ids) => generate.mutate({ plots: ids })} onShowLog={(id) => setLogFocus({ id, n: Date.now() })} />
       {hidden > 0 && (
         <p className="px-1 text-xs text-muted">
           {hidden} older image{hidden === 1 ? "" : "s"} from earlier runs hidden (this run made none).{" "}

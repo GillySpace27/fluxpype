@@ -33,9 +33,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let attempt = 0;
     let invalidateTimer: number | undefined;
 
+    // keys pile up until the timer fires, so a busy stream of events cannot starve an earlier invalidation
+    const pending = new Map<string, unknown[]>();
     const soon = (keys: unknown[][]) => {
+      keys.forEach((k) => pending.set(JSON.stringify(k), k));
       window.clearTimeout(invalidateTimer);
-      invalidateTimer = window.setTimeout(() => keys.forEach((k) => qc.invalidateQueries({ queryKey: k })), 120);
+      invalidateTimer = window.setTimeout(() => {
+        const todo = [...pending.values()];
+        pending.clear();
+        todo.forEach((k) => qc.invalidateQueries({ queryKey: k }));
+      }, 120);
     };
 
     const open = () => {
@@ -64,6 +71,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             qc.setQueryData(["job", msg.data.id], (old: any) => (old ? { ...old, ...msg.data } : old));
             soon([["jobs"], ["overview"], ["queue"]]);
             break;
+          case "plot_run": {
+            const d = msg.data as { task_id: string; job_id: string; status: string };
+            const keys: unknown[][] = [["plotruns", d.task_id]];
+            if (!["starting", "running"].includes(d.status)) keys.push(["results", d.task_id], ["job-files", d.job_id]);
+            soon(keys);
+            break;
+          }
           case "job_removed":
             soon([["jobs"], ["overview"]]);
             break;

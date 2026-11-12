@@ -1,6 +1,7 @@
-import { ImageOff } from "lucide-react";
+import { ImageOff, Loader2 } from "lucide-react";
 import { cn } from "../lib/cn";
-import type { CatalogPlot, ResultFile } from "../lib/types";
+import { runActive } from "../lib/hooks";
+import type { CatalogPlot, PlotRun, ResultFile } from "../lib/types";
 import { fileUrl } from "./FileViewer";
 import { OriginTag } from "./ResultsPane";
 import { Badge, SectionTitle } from "./ui";
@@ -8,7 +9,64 @@ import { Badge, SectionTitle } from "./ui";
 const IMG = /\.(png|jpe?g|svg)$/i;
 
 /** One defined plot: its newest file as a thumbnail, or a labelled placeholder when nothing has been rendered. */
-function PlotCard({ c, base, visible, onOpen }: { c: CatalogPlot; base: string; visible: (f: ResultFile) => boolean; onOpen: (f: ResultFile) => void }) {
+interface Gen {
+  taskLive: boolean;
+  /** ids a running plot run is making */
+  busy: Set<string>;
+  onGenerate: (ids: string[]) => void;
+  onShowLog: (runId: string) => void;
+}
+
+const tail = (glob: string) => glob.split("/").pop() ?? glob;
+
+/** What a card offers beside its picture: make it, why it cannot be made, or how the last attempt went. */
+function GenerateNote({ c, g, rendered }: { c: CatalogPlot; g: Gen; rendered: boolean }) {
+  const busy = g.busy.has(c.id);
+  const last = c.last_run?.status === "failed" ? c.last_run : null;
+  if (busy)
+    return (
+      <p className="flex items-center gap-1.5 text-[11.5px] text-run">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating
+      </p>
+    );
+  return (
+    <div className="space-y-1">
+      {last && (
+        <p className="text-[11.5px] leading-snug text-fail">
+          Last attempt failed{last.detail ? `: ${last.detail}` : ""}{" "}
+          <button className="font-medium text-accent hover:underline" onClick={() => g.onShowLog(last.id)}>
+            Show log
+          </button>
+        </p>
+      )}
+      {!c.post_hoc ? (
+        !rendered && (
+          <p className="text-[11.5px] text-faint" title={c.post_hoc_reason ?? undefined}>
+            Made only by the pipeline
+          </p>
+        )
+      ) : c.can_generate ? (
+        rendered ? (
+          <button className="text-[11.5px] font-medium text-accent hover:underline disabled:opacity-50" disabled={g.taskLive} onClick={() => g.onGenerate([c.id])}>
+            Regenerate
+          </button>
+        ) : (
+          <button className="btn btn-sm" disabled={g.taskLive} title={g.taskLive ? "Wait for the task to finish" : "Make this plot from the files this task left on disk"} onClick={() => g.onGenerate([c.id])}>
+            Generate
+          </button>
+        )
+      ) : (
+        !rendered && (
+          <p className="text-[11.5px] text-faint" title={c.missing_inputs.join("\n")}>
+            Needs: {c.missing_inputs.map(tail).join(", ")}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+function PlotCard({ c, base, visible, onOpen, g }: { c: CatalogPlot; base: string; visible: (f: ResultFile) => boolean; onOpen: (f: ResultFile) => void; g: Gen }) {
   const shown = c.files.filter(visible);
   const head = shown.find((f) => IMG.test(f.name)) ?? shown[0];
   const hiddenOlder = c.files.length - shown.length;
@@ -37,6 +95,7 @@ function PlotCard({ c, base, visible, onOpen }: { c: CatalogPlot; base: string; 
           {head && <OriginTag origin={head.origin} />}
           {c.legacy && <Badge className="px-1.5 text-[10.5px]">not made now</Badge>}
         </div>
+        <GenerateNote c={c} g={g} rendered={!!head} />
         <p className="truncate font-mono text-[10px] text-faint" title={`${c.writer}${c.call ? `\ncalled from ${c.call}` : ""}`}>
           {c.writer}
         </p>
@@ -46,8 +105,10 @@ function PlotCard({ c, base, visible, onOpen }: { c: CatalogPlot; base: string; 
 }
 
 /** Every plot the pipeline defines for a stage, rendered or as a placeholder, with the ones the current pipeline no longer makes folded away. */
-export function PlotCatalog({ entries, base, visible, onOpen }: { entries: CatalogPlot[]; base: string; visible: (f: ResultFile) => boolean; onOpen: (f: ResultFile) => void }) {
+export function PlotCatalog({ entries, base, visible, onOpen, taskLive, runs, onGenerate, onShowLog }: { entries: CatalogPlot[]; base: string; visible: (f: ResultFile) => boolean; onOpen: (f: ResultFile) => void; taskLive: boolean; runs: PlotRun[]; onGenerate: (ids: string[]) => void; onShowLog: (runId: string) => void }) {
   if (entries.length === 0) return null;
+  const busy = new Set(runs.filter(runActive).flatMap((r) => r.plots.filter((p) => p.status === "pending" || p.status === "running").map((p) => p.id)));
+  const g: Gen = { taskLive, busy, onGenerate, onShowLog };
   const live = entries.filter((c) => !c.legacy);
   const legacy = entries.filter((c) => c.legacy);
   const made = live.filter((c) => c.files.some(visible)).length;
@@ -59,7 +120,7 @@ export function PlotCatalog({ entries, base, visible, onOpen }: { entries: Catal
           <SectionTitle title="Plots this stage defines" hint={`${made} of ${live.length} rendered for this task. Empty cards are plots the pipeline can make but did not for this task; the note says when each one is made.`} />
           <div className={grid}>
             {live.map((c) => (
-              <PlotCard key={c.id} c={c} base={base} visible={visible} onOpen={onOpen} />
+              <PlotCard key={c.id} c={c} base={base} visible={visible} onOpen={onOpen} g={g} />
             ))}
           </div>
         </>
@@ -72,7 +133,7 @@ export function PlotCatalog({ entries, base, visible, onOpen }: { entries: Catal
           <p className="mt-1 text-xs text-faint">Their calls are commented out, unreachable or manual only. Older files from earlier runs show if they exist.</p>
           <div className={cn("mt-3", grid)}>
             {legacy.map((c) => (
-              <PlotCard key={c.id} c={c} base={base} visible={visible} onOpen={onOpen} />
+              <PlotCard key={c.id} c={c} base={base} visible={visible} onOpen={onOpen} g={g} />
             ))}
           </div>
         </details>

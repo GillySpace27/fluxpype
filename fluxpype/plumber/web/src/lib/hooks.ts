@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
+import { useToast } from "../components/ui";
 import { useLive } from "./live";
 import type {
   CacheData,
@@ -11,6 +12,8 @@ import type {
   Job,
   JobConfig,
   JobFiles,
+  PlotPlanItem,
+  PlotRun,
   Overview,
   ProfileDetail,
   ProfileSummary,
@@ -163,3 +166,45 @@ export const useDatTable = (path: string | undefined, base = "/api/cache", mtime
     staleTime: 60_000,
     retry: false,
   });
+
+const ACTIVE_RUN = ["starting", "running"];
+export const runActive = (r: PlotRun) => ACTIVE_RUN.includes(r.status);
+
+/** The post-hoc plot runs of a task, newest first; polled while one is active. */
+export const usePlotRuns = (taskId: string | undefined) =>
+  useQuery({
+    queryKey: ["plotruns", taskId],
+    queryFn: () => api.get<{ task_id: string; runs: PlotRun[] }>(`/api/tasks/${taskId}/plots`).then((r) => r.runs),
+    enabled: !!taskId,
+    refetchInterval: (q) => (q.state.data?.some(runActive) ? 2000 : false),
+  });
+
+/** Start a plot run. A dry run first; if it would replace files or use inputs changed since the task ended, ask before overwriting. */
+export function useGeneratePlots(taskId: string) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  return useMutation({
+    mutationFn: async ({ plots, stage }: { plots: string[] | "all_possible"; stage?: string }) => {
+      const base = { plots, stage: stage ?? null, include_legacy: false };
+      const { plan } = await api.post<{ plan: PlotPlanItem[] }>(`/api/tasks/${taskId}/plots`, { ...base, dry_run: true });
+      const clash = plan.filter((p) => p.conflicts.length || p.inputs_later.length);
+      let overwrite = false;
+      if (clash.length) {
+        const lines = clash.map(
+          (p) =>
+            `${p.title}\n` +
+            [...p.conflicts.map((f) => `  replaces ${f}`), ...p.inputs_later.map((f) => `  input changed since the run: ${f}`)].join("\n") +
+            (p.overwrite_risk ? `\n  Risk: ${p.overwrite_risk}` : "")
+        );
+        if (!window.confirm(`This will overwrite files (copies are kept in the plot run's replaced folder):\n\n${lines.join("\n\n")}\n\nContinue?`)) return null;
+        overwrite = true;
+      }
+      return api.post<PlotRun>(`/api/tasks/${taskId}/plots`, { ...base, overwrite });
+    },
+    onSuccess: (run) => {
+      if (run) toast("info", `Making ${run.plots.length} plot${run.plots.length === 1 ? "" : "s"} from the files on disk`);
+      qc.invalidateQueries({ queryKey: ["plotruns", taskId] });
+    },
+    onError: (e) => toast("error", e instanceof Error ? e.message : "Could not start the plot run"),
+  });
+}
