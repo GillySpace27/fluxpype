@@ -29,6 +29,7 @@ FORBIDDEN_KEYS = frozenset(
         "pl_prefix",
         "fl_mhdlib",
         "working_dir",
+        "flux_perl",
         "flux_perl_lib",
         "fl_perl_lib",
         "config_name",

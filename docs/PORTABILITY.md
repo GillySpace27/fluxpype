@@ -32,7 +32,7 @@ First entries come from the 2026-11-10/11 session that got the `quickstart` prof
 
 | # | Item | Change |
 |---|------|--------|
-| 9 | Plumber `--install` records the installing shell's `PATH` and `PERL5LIB` (README line 87), so the Perl a job uses is whatever that shell had. | Add an explicit `flux_perl` setting to `config.ini` or the Plumber home, and show it in `flux-doctor`. |
+| 9 | Plumber `--install` records the installing shell's `PATH` and `PERL5LIB` (README line 87), so the Perl a job uses is whatever that shell had. | **Done 2026-11-12**: `flux_perl` in `config.ini` (commented example; unset = first `perl` on PATH). `config_runner` runs it for the PDL check, the Flux check and the job; `flux-doctor` shows it as "perl for jobs" and checks PDL/Flux/Inline with it; it is a forbidden per-job override. Trigger: a Plumber restarted from a shell with Homebrew Perl 5.42 first on PATH failed a job in 2.1 s (`Perl API version v5.32.0 of Core.c does not match v5.42.0`). Set it in `config.ini` on each machine; not set by default because the path is machine-specific. |
 | 10 | `install.sh` installs only the Python half and says to build the core separately. | Optional `--core` flag that creates a conda env with Perl, PDL, gnuplot and a compiler, `cpanm`s the Inline modules, and runs `flux-doctor`. |
 | 11 | `flux-doctor` reports a missing Python module as `config.ini: No module named 'pandas'`, which hides the real problem. | Add a check that imports the runtime dependencies, with its own label. |
 

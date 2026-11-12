@@ -131,13 +131,18 @@ def display_splash_screen(configs, log_path=None):
         )
 
 
-def _check_pdl_available():
+def _perl(configs):
+    """The Perl every job stage uses: config.ini `flux_perl` if set, else the first `perl` on PATH."""
+    return os.path.expanduser(configs.get("flux_perl") or "perl")
+
+
+def _check_pdl_available(perl="perl"):
     """Return (True, None) if PDL is loadable, else (False, error_message). Cached per process."""
     if getattr(_check_pdl_available, "_ok", None) is True:
         return True, None
     try:
         r = subprocess.run(
-            ["perl", "-e", "use PDL; use PDL::AutoLoader; print qq(ok);"],
+            [perl, "-e", "use PDL; use PDL::AutoLoader; print qq(ok);"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -272,7 +277,8 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     from fluxpype.pipe_helper import configurations, get_flux_perl_lib
     configs = configurations(debug=False)
 
-    ok, pdl_msg = _check_pdl_available()
+    perl = _perl(configs)
+    ok, pdl_msg = _check_pdl_available(perl)
     if not ok:
         emit(pdl_msg, style="red")
         raise RuntimeError("PDL is not available. Install PDL (see message above).")
@@ -293,7 +299,7 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     # Only add fluxon-perl to PERL5LIB when Flux is not already loadable (avoids loading wrong .bundle from fluxon-perl).
     try:
         r = subprocess.run(
-            ["perl", "-e", "use Flux; print qq(ok);"],
+            [perl, "-e", "use Flux; print qq(ok);"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -310,7 +316,7 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
             emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
 
     command = [
-        "perl",
+        perl,
         run_script_path,
         str(rotation),
         str(fluxon_count),

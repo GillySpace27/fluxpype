@@ -19,6 +19,16 @@ def _run(cmd):
         return 1, str(e)
 
 
+def _flux_perl():
+    """config.ini flux_perl (the Perl jobs run), or None when unset or the config cannot be read."""
+    try:
+        from fluxpype.pipe_helper import configurations
+
+        return os.path.expanduser(configurations(debug=False).get("flux_perl") or "") or None
+    except Exception:  # noqa: BLE001  the config check below reports a broken config.ini
+        return None
+
+
 def checks():
     """Yield (name, ok, detail, fix) for each prerequisite; ok=None is a warning, not a failure."""
     v = sys.version_info[:2]
@@ -29,13 +39,18 @@ def checks():
         "use Python 3.10-3.12: rerun install.sh, or set PYTHON=python3.12",
     )
 
-    perl = shutil.which("perl")
-    yield ("perl on PATH", perl is not None, perl or "not found", "install Perl (macOS: brew install perl)")
+    perl = _flux_perl() or shutil.which("perl")
+    yield (
+        "perl for jobs",
+        perl is not None,
+        perl or "not found",
+        "install Perl (macOS: brew install perl), or set flux_perl in config.ini",
+    )
 
-    code, out = _run(["perl", "-MPDL", "-e", "print $PDL::VERSION"]) if perl else (1, "")
+    code, out = _run([perl, "-MPDL", "-e", "print $PDL::VERSION"]) if perl else (1, "")
     yield ("PDL", code == 0, out.splitlines()[-1] if out else "", "cpanm PDL (see fluxon-mhd/doc)")
 
-    code, out = _run(["perl", "-MFlux", "-e", "print $INC{'Flux.pm'}"]) if perl else (1, "")
+    code, out = _run([perl, "-MFlux", "-e", "print $INC{'Flux.pm'}"]) if perl else (1, "")
     yield (
         "Flux (FLUX core)",
         code == 0,
@@ -48,7 +63,7 @@ def checks():
     # Inline::Pdlpp (used by the footpoint/wind code) loads silently without Inline::C and then dies
     # with 'Base class package "Inline::C" is empty', so test the pair the way the pipeline loads them.
     code, out = (
-        _run(["perl", "-e", "require Inline::C; require Inline::Pdlpp; print $Inline::C::VERSION"]) if perl else (1, "")
+        _run([perl, "-e", "require Inline::C; require Inline::Pdlpp; print $Inline::C::VERSION"]) if perl else (1, "")
     )
     yield (
         "Inline::C + Inline::Pdlpp",
