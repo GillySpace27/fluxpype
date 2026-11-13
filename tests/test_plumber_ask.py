@@ -410,3 +410,11 @@ def test_withdrawals_are_capped_per_question(asking, monkeypatch):
     assert r.status_code == 429 and "per question" in r.json()["detail"]
     monkeypatch.setattr(ask, "_question", "q2")
     assert withdraw(c, ids[6], "q2").status_code == 200  # a new question has its own allowance
+
+
+def test_the_prompt_names_plum_and_carries_the_scene_designer_plan():
+    prompt = ask.system_prompt()
+    assert prompt.startswith("You are Plum")
+    assert "Plumber Scene Designer: what is planned" in prompt
+    assert "not built" in prompt
+    assert "\u2014" not in (ask.DOCS / "scene_designer.md").read_text(encoding="utf-8")

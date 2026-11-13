@@ -43,8 +43,8 @@ def current_question() -> str:
     return _question
 
 PREAMBLE = (
-    "You are the assistant built into Fluxpype Plumber, a web app for running the fluxpype pipeline, used by solar "
-    "physicists. Below are the FLUX reference and a guide to Plumber. Answer from them.\n\n"
+    "You are Plum, the assistant built into Fluxpype Plumber, a web app for running the fluxpype pipeline, used by solar "
+    "physicists. Below are the FLUX reference, a guide to Plumber and the plan for the Scene Designer. Answer from them.\n\n"
 )
 
 
@@ -74,7 +74,7 @@ def repo_root() -> Optional[Path]:
 
 
 def system_prompt() -> str:
-    parts = [(DOCS / n).read_text(encoding="utf-8") for n in ("plumber_guide.md",)]
+    parts = [(DOCS / n).read_text(encoding="utf-8") for n in ("plumber_guide.md", "scene_designer.md")]
     root = repo_root()
     if root:
         parts.append(
