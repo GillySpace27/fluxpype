@@ -9,10 +9,39 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Same tools as microsoft/action-python's validation.yml (0.7.3), written out here only so that
+  # black is a pinned, current version. The shared workflow runs an older black that cannot parse
+  # f-strings with nested quotes and formats 20 files differently from current black.
   validation:
-    uses: microsoft/action-python/.github/workflows/validation.yml@0.7.3
-    with:
-      workdir: '.'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tools: ['black', 'bandit', 'pylint', 'flake8']
+        include:
+          - tools: pytest
+            args: -m not integration and not gpu
+          - tools: pytest
+            args: -m integration
+    steps:
+      - uses: actions/checkout@v4
+      - if: matrix.tools == 'black'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - if: matrix.tools == 'black'
+        name: black
+        run: |
+          python -m pip install "black==26.5.1"
+          black --check --config pyproject.toml .
+      - if: matrix.tools != 'black'
+        name: ${{ matrix.tools }}
+        uses: microsoft/action-python@0.7.2
+        with:
+          ${{ matrix.tools }}: true
+          args: ${{ matrix.args }}
+          workdir: '.'
+          testdir: tests
+          python_version: 3.11.3
 
   publish:
     uses: microsoft/action-python/.github/workflows/publish.yml@0.7.3
