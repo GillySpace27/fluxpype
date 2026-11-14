@@ -13,7 +13,7 @@ export function Plum({ className, title = "Plum" }: { className?: string; title?
       <ellipse cx="27.6" cy="69.2" rx="4.6" ry="2.6" fill="#6b4423" />
       <ellipse cx="36" cy="69.2" rx="4.6" ry="2.6" fill="#6b4423" />
       {/* torso: shirt, then dungaree bib and straps */}
-      <rect x="22" y="44" width="20" height="18" rx="6" fill="#fff2d8" />
+      <rect x="22" y="44" width="20" height="18" rx="6" fill="#2fb5a3" />
       <rect x="24" y="49" width="16" height="13" rx="3.5" fill="#3a6fd8" />
       <rect x="25" y="44" width="3" height="6" rx="1.2" fill="#3a6fd8" />
       <rect x="36" y="44" width="3" height="6" rx="1.2" fill="#3a6fd8" />
@@ -21,9 +21,9 @@ export function Plum({ className, title = "Plum" }: { className?: string; title?
       <circle cx="26.5" cy="50.5" r="0.9" fill="#f08c1e" />
       <circle cx="37.5" cy="50.5" r="0.9" fill="#f08c1e" />
       {/* arms: left hangs, right is raised with the wrench */}
-      <line x1="22.5" y1="47.5" x2="17.5" y2="57" stroke="#fff2d8" strokeWidth="5" strokeLinecap="round" />
+      <line x1="22.5" y1="47.5" x2="17.5" y2="57" stroke="#2fb5a3" strokeWidth="5" strokeLinecap="round" />
       <circle cx="17" cy="58.6" r="2.6" fill="#ffe3d0" />
-      <line x1="41.5" y1="47.5" x2="47.5" y2="52" stroke="#fff2d8" strokeWidth="5" strokeLinecap="round" />
+      <line x1="41.5" y1="47.5" x2="47.5" y2="52" stroke="#2fb5a3" strokeWidth="5" strokeLinecap="round" />
       <circle cx="49" cy="52.4" r="2.6" fill="#ffe3d0" />
       {/* neck */}
       <rect x="28.8" y="40" width="6.4" height="5" rx="2" fill="#ffe3d0" />
