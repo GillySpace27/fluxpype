@@ -904,9 +904,10 @@ def build_server(
         "Save a new planar-arcade scene and compile its .flux world; it runs nothing. `spec` has: name (new, starts "
         "with a letter), n_lines, separation, spacing, shear_offset, pairing (a list saying which negative footpoint "
         "each positive one joins; omit for perpendicular arcs), flux_per_line, height_ratio, max_height, "
-        "vertices_per_line, photosphere_z (negative), lid_height (a B2 plane above max_height x 1.2, or omit) and "
-        "notes. Connectivity is hand-set, so say so when you describe the result. A scene is never overwritten: a "
-        "new version needs a new name.",
+        "vertices_per_line, photosphere_z (negative), lid_height (a B2 plane above max_height x 1.2, or omit), "
+        "wall_radius (a vertical B2 cylinder about x = y = 0 with an open top, at least 1.2 x the farthest footpoint; "
+        "not together with a lid) and notes. Connectivity is hand-set, so say so when you describe the result. "
+        "A scene is never overwritten: a new version needs a new name.",
         write,
     )
     async def create_scene(spec: Dict[str, Any]) -> str:

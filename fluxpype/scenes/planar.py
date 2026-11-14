@@ -41,6 +41,8 @@ def compile_flux(spec: PlanarArcadeSpec) -> str:
     ]
     if spec.lid_height is not None:
         out.append(f"GLOBAL B2 PLANE 0 0 {spec.lid_height:g} 0 0 -1")
+    if spec.wall_radius is not None:  # CYL: origin, then the axis vector whose length is the radius
+        out.append(f"GLOBAL B2 CYL 0 0 0 0 0 {spec.wall_radius:g}")
     out.append("")
     label = 2  # running label for concentrations (own namespace) and fluxon + vertices (shared counter)
     conc = 2

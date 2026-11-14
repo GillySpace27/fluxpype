@@ -94,6 +94,7 @@ def list_scenes(data_dir: str) -> List[Dict[str, Any]]:
                         **{k: row[k] for k in ("id", "hash", "world")},
                         "lines": s["n_lines"],
                         "lid_height": s["lid_height"],
+                        "wall_radius": s.get("wall_radius"),
                         "notes": s["notes"],
                         "modified": os.path.getmtime(os.path.join(d, fn)),
                     }

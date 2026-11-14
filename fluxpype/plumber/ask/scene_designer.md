@@ -4,10 +4,11 @@ Source: docs/plumber-scene-designer-scope.md (the full plan, draft 5, 2026-11-13
 
 ## What exists today (first slice, planar arcade only)
 
-- A planar arcade scene file (`fluxpype/scenes`): rows of positive and negative footpoints across a PIL, a hand-set pairing of which footpoint each line joins, one photosphere plane, an optional B2 lid. It compiles to a `.flux` world. Saved scenes live in `scenes/` in the data folder.
+- A planar arcade scene file (`fluxpype/scenes`): rows of positive and negative footpoints across a PIL, a hand-set pairing of which footpoint each line joins, one photosphere plane, and an optional B2: either a plane lid or a vertical cylinder wall with an open top (not both). It compiles to a `.flux` world. Saved scenes live in `scenes/` in the data folder.
 - You can propose saving one with `create_scene`, and read them with `list_scenes` and `get_scene`. The 3-D viewer draws the photosphere and lid planes.
 - A headless relax command (`python -m fluxpype.scenes.relax`) exists on a draft branch, not yet in a release. It is run by a person or a script, not by Plumber's queue.
 - Measured so far (Gilly's Mac): relaxed energy differences between connectivities depend on the lid height, so they are not yet a lid-independent free energy. Say so when asked about results.
+- Cylinder wall, tested once (2026-11-14, a 5 + 5 line spot pair, FLUX relaxed it headless): a plane photosphere plus `GLOBAL B2 CYL` (axis vector length = radius, no height limit, so the top is open) loads and relaxes. The wall acts through image fluxels: the field stayed inside it and its top fell from z 9.4 (no wall) to 1.0. A wall tests only that one setup; a plane + cylinder + open sphere also relaxed. Say "tested once", not "verified".
 - Everything else below is still planned.
 
 ## The goal

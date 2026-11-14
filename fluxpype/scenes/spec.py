@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -33,7 +34,8 @@ class PlanarArcadeSpec:
     centred on y = 0. `shear_offset` moves the whole negative row along y (the footpoints themselves are sheared);
     `pairing` is an explicit list saying which negative footpoint each positive one connects to (connectivity is a
     hand-set input here, not something FLUX derives). Each line is an arc whose height is `height_ratio` times half
-    its chord length, capped at `max_height`.
+    its chord length, capped at `max_height`. At most one of `lid_height` (B2 plane) and `wall_radius` (B2 vertical
+    cylinder, no top, so the field can rise freely inside it) may be set.
     """
 
     name: str = "planar-arcade"
@@ -48,6 +50,7 @@ class PlanarArcadeSpec:
     vertices_per_line: int = 19
     photosphere_z: float = -0.001  # the same plane for every variant that is to be compared
     lid_height: Optional[float] = None  # a B2 plane at this z, normal pointing down; None means no lid
+    wall_radius: Optional[float] = None  # a B2 cylinder about x = y = 0, open at the top; None = no wall
     notes: str = ""
     schema: int = field(default=SCHEMA)
 
@@ -68,6 +71,12 @@ class PlanarArcadeSpec:
             raise ValueError("pairing must be a permutation of 0..n_lines-1")
         if self.lid_height is not None and self.lid_height <= self.max_height * 1.2:
             raise ValueError("lid_height must clear max_height by at least 20 percent")
+        if self.wall_radius is not None:
+            if self.lid_height is not None:
+                raise ValueError("FLUX has one second boundary (B2): use a lid or a wall, not both")
+            far = max(math.hypot(x, y) for row in self.footpoints() for x, y in row)
+            if not self.wall_radius >= far * 1.2:
+                raise ValueError(f"wall_radius must clear the farthest footpoint ({far:g}) by at least 20 percent")
         return self
 
     def pairs(self) -> List[int]:

@@ -46,6 +46,19 @@ def test_lid_is_a_b2_plane_pointing_down():
     assert s["lid"] == "GLOBAL B2 PLANE 0 0 3 0 0 -1"
 
 
+def test_wall_is_a_b2_cylinder_with_the_radius_as_axis_length():
+    s = summarize(compile_flux(PlanarArcadeSpec(separation=1.2, n_lines=5, spacing=0.12, wall_radius=0.9)))
+    assert s["lid"] == "GLOBAL B2 CYL 0 0 0 0 0 0.9" and s["problems"] == []
+
+
+def test_wall_must_clear_the_footpoints_and_excludes_a_lid():
+    # the default footpoints are out to r = 1.118, so the wall must be at least 1.34
+    for bad in (dict(wall_radius=1.2), dict(wall_radius=-1), dict(wall_radius=9, lid_height=3.0)):
+        with pytest.raises(ValueError):
+            PlanarArcadeSpec(**bad).validate()
+    assert PlanarArcadeSpec(wall_radius=1.4).validate().wall_radius == 1.4
+
+
 def test_sheared_and_perpendicular_worlds_are_a_fair_pair():
     n = 9
     a = compile_flux(PlanarArcadeSpec(n_lines=n, pairing=shift_pairing(n, 0), shear_offset=0.1))
