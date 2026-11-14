@@ -27,6 +27,7 @@ const TITLES: Record<string, { title: string; danger?: boolean }> = {
   retry_failed: { title: "Retry failed tasks" },
   set_queue: { title: "Change the queue" },
   create_preset: { title: "Save a preset" },
+  create_scene: { title: "Save a scene" },
 };
 
 const linkOf = (p: Proposal) =>

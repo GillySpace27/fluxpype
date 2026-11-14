@@ -94,3 +94,16 @@ def test_cli_compiles_a_scene_file(tmp_path, capsys):
     out = tmp_path / "s.flux"
     assert main(["compile", str(spec_path), str(out)]) == 0
     assert out.read_text().startswith("# scene planar-arcade") and json.loads(capsys.readouterr().out)["lines"] == 4
+
+
+def test_store_saves_lists_and_never_overwrites(tmp_path):
+    from fluxpype.scenes import store
+
+    saved = store.save(str(tmp_path), {"name": "a1", "n_lines": 3})
+    assert saved["world"] == "scenes/a1.flux" and (tmp_path / "scenes" / "a1.flux").exists()
+    assert [r["id"] for r in store.list_scenes(str(tmp_path))] == ["a1"]
+    assert store.get(str(tmp_path), "a1")["spec"]["n_lines"] == 3 and store.get(str(tmp_path), "../x") is None
+    with pytest.raises(store.SceneError, match="already exists"):
+        store.save(str(tmp_path), {"name": "a1"})
+    with pytest.raises(store.SceneError):
+        store.save(str(tmp_path), {"name": "a2", "colour": "red"})
