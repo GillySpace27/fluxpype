@@ -369,6 +369,8 @@ export interface FilePreview {
 export interface FluxWorld {
   frame: number | null;
   boundary: { type: string; args: number[] } | null;
+  /** planar boundaries: the photosphere or boundary plane, and a B2 plane (a lid). origin and normal in world units */
+  planes?: { role: "photosphere" | "boundary" | "b2"; origin: number[]; normal: number[] }[];
   globals: string[];
   counts: { vertices: number; fluxons: number; concentrations: number; vneighbor_rows: number; pseudo_fluxons: number; bad_rows: number };
   concentrations: { id: number[]; xyz: number[]; flux: number[] };

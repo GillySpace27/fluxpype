@@ -31,6 +31,9 @@ TOOLS = [
     ("cache_summary", "read", "See what is in the data cache"),
     ("get_task_image", "read", "Look at one of a task's images"),
     ("create_preset", "write", "Save a new preset (runs nothing)"),
+    ("list_scenes", "read", "List the saved scenes"),
+    ("get_scene", "read", "Read one scene file"),
+    ("create_scene", "write", "Save a new planar scene and compile its world (runs nothing)"),
     ("list_proposals", "read", "See the Ask bar's proposals and what became of them"),
     ("get_notifications", "read", "Read recent job events, one line each"),
 ]

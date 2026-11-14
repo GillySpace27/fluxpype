@@ -1,6 +1,14 @@
-# Plumber Scene Designer: what is planned (nothing here is built yet)
+# Plumber Scene Designer: what is planned (only the first slice exists)
 
 Source: docs/plumber-scene-designer-scope.md (the full plan, draft 5, 2026-11-13). Read it with Read or Grep for detail and cite it. Everything below is a plan unless it says "exists". When someone asks "can Plumber do X?", say whether X exists today or is only planned. Never offer a planned feature as if it were available.
+
+## What exists today (first slice, planar arcade only)
+
+- A planar arcade scene file (`fluxpype/scenes`): rows of positive and negative footpoints across a PIL, a hand-set pairing of which footpoint each line joins, one photosphere plane, an optional B2 lid. It compiles to a `.flux` world. Saved scenes live in `scenes/` in the data folder.
+- You can propose saving one with `create_scene`, and read them with `list_scenes` and `get_scene`. The 3-D viewer draws the photosphere and lid planes.
+- A headless relax command (`python -m fluxpype.scenes.relax`) exists on a draft branch, not yet in a release. It is run by a person or a script, not by Plumber's queue.
+- Measured so far (Gilly's Mac): relaxed energy differences between connectivities depend on the lid height, so they are not yet a lid-independent free energy. Say so when asked about results.
+- Everything else below is still planned.
 
 ## The goal
 

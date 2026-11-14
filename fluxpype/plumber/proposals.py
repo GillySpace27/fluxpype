@@ -14,7 +14,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-TOOLS = ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset")
+TOOLS = ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene")
 MAX_PENDING = 20
 PER_QUESTION = 6
 WITHDRAW_PER_QUESTION = 6

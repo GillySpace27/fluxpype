@@ -901,6 +901,32 @@ def build_server(
         return dumps((await api("POST", "/api/profiles", body=body)).json())
 
     @tool(
+        "Save a new planar-arcade scene and compile its .flux world; it runs nothing. `spec` has: name (new, starts "
+        "with a letter), n_lines, separation, spacing, shear_offset, pairing (a list saying which negative footpoint "
+        "each positive one joins; omit for perpendicular arcs), flux_per_line, height_ratio, max_height, "
+        "vertices_per_line, photosphere_z (negative), lid_height (a B2 plane above max_height x 1.2, or omit) and "
+        "notes. Connectivity is hand-set, so say so when you describe the result. A scene is never overwritten: a "
+        "new version needs a new name.",
+        write,
+    )
+    async def create_scene(spec: Dict[str, Any]) -> str:
+        if propose:
+            return await proposal("create_scene", {"spec": spec})
+        return dumps((await api("POST", "/api/scenes", body={"spec": spec})).json())
+
+    @tool("Saved scenes, newest first: id, hash, world file, line count, lid height, notes.", ro, True)
+    async def list_scenes() -> str:
+        return dumps(await get("/api/scenes"))
+
+    @tool(
+        "One scene: its full spec (the pairing included) and the path of its compiled world in the data folder.",
+        ro,
+        True,
+    )
+    async def get_scene(scene_id: str) -> str:
+        return dumps(await get(f"/api/scenes/{ident(scene_id, 'scene_id')}"))
+
+    @tool(
         "Changes proposed from the Ask bar, newest first: tool, the stored arguments, a summary, and status (pending, "
         "running, approved, rejected, expired, failed, withdrawn) with the result (job_id or preset name) or error.",
         ro,

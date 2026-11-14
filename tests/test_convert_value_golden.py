@@ -1,4 +1,5 @@
 """convert_value must return byte-identical results for the whole golden corpus (see convert_value_golden.py)."""
+
 import json
 import os
 import sys
@@ -17,4 +18,6 @@ def test_convert_value_matches_the_golden_master():
 def test_every_config_ini_value_is_in_the_golden_corpus():
     golden = json.load(open(g.GOLDEN))
     missing = sorted(set(g.corpus()) - set(golden))
-    assert not missing, f"config.ini has values the golden file lacks; run convert_value_golden.py --update: {missing[:10]}"
+    assert (
+        not missing
+    ), f"config.ini has values the golden file lacks; run convert_value_golden.py --update: {missing[:10]}"

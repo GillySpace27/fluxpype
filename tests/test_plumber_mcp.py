@@ -430,7 +430,7 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 20 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 23 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
@@ -540,7 +540,10 @@ def test_the_ask_bars_copy_only_proposes(rig, monkeypatch):
     assert err and "light" in msg  # checked by the server now, so the model can correct itself
     assert asker.ok("set_queue", paused=False)["status"] == "pending"
     assert asker.ok("create_preset", name="ask_p", base="t_one", values={"fluxon_count": [300]})["status"] == "pending"
-    assert len(rig.tc.get("/api/jobs", headers=H).json()["jobs"]) == n and rig.tc.get("/api/queue", headers=H).json()["paused"]
+    assert (
+        len(rig.tc.get("/api/jobs", headers=H).json()["jobs"]) == n
+        and rig.tc.get("/api/queue", headers=H).json()["paused"]
+    )
     assert "ask_p" not in {p["name"] for p in rig.tc.get("/api/profiles?cache=false", headers=H).json()["profiles"]}
     listed = asker.ok("list_proposals")["proposals"]
     assert [p["tool"] for p in listed] == ["create_preset", "set_queue", "submit_job"]
@@ -551,7 +554,9 @@ def test_the_ask_bars_copy_only_proposes(rig, monkeypatch):
             return {t.name: t.description for t in (await c.list_tools()).tools}
 
     d = anyio.run(descriptions)
-    assert all("changes nothing" in d[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
+    assert all(
+        "changes nothing" in d[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset")
+    )
     assert "changes nothing" not in d["status"]
 
 
@@ -758,3 +763,43 @@ def test_autostart_reuse_and_stop_over_stdio(tmp_path):
     finally:
         if info and process_alive(info["pid"], info["pid_start"]):
             os.kill(info["pid"], signal.SIGKILL)
+
+
+# ------------------------------------------------------------------ scenes
+
+
+def test_create_scene_writes_the_scene_and_its_world(rig):
+    out = rig.ok("create_scene", spec={"name": "arc_a", "n_lines": 4, "lid_height": 3})
+    assert out["id"] == "arc_a" and out["world"] == "scenes/arc_a.flux" and out["report"]["problems"] == []
+    assert [s["id"] for s in rig.ok("list_scenes")["scenes"]] == ["arc_a"]
+    got = rig.ok("get_scene", scene_id="arc_a")
+    assert got["spec"]["n_lines"] == 4 and got["world"] == "scenes/arc_a.flux"
+    world = os.path.join(rig.sched.data_dir(), "scenes", "arc_a.flux")
+    assert open(world).read().startswith("# scene arc_a")
+    err, msg = rig.call("create_scene", spec={"name": "arc_a"})
+    assert err and "already exists" in msg  # never overwritten
+    err, msg = rig.call("create_scene", spec={"name": "arc_b", "pairing": [0, 0, 1, 2, 3]})
+    assert err and "permutation" in msg
+    err, msg = rig.call("create_scene", spec={"name": "1bad"})
+    assert err and "starts with a letter" in msg
+    assert rig.call("get_scene", scene_id="nope")[0]
+
+
+def test_the_ask_bar_proposes_a_scene_and_a_person_saves_it(rig, monkeypatch):
+    from fluxpype.plumber import ask
+
+    monkeypatch.setattr(ask, "_question", "q9")
+    monkeypatch.setenv("FLUX_ASK_QUESTION", "q9")
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    asker = Rig(rig.tc, rig.sched)
+    asker.server = build_server(asker.client, propose=True)
+    out = asker.ok("create_scene", spec={"name": "ask_arc", "n_lines": 3})
+    assert out["status"] == "pending" and "Nothing has changed" in out["next"]
+    assert rig.ok("list_scenes")["scenes"] == []  # nothing was written by the proposal
+    err, msg = asker.call("create_scene", spec={"name": "ask_arc", "n_lines": 5})
+    assert err and "pending proposal already saves" in msg
+    approved = rig.tc.post(f"/api/proposals/{out['proposal_id']}/approve", headers=H)
+    assert approved.status_code == 200, approved.text
+    assert [s["id"] for s in rig.ok("list_scenes")["scenes"]] == ["ask_arc"]
+    err, msg = asker.call("create_scene", spec={"name": "ask_arc"})
+    assert err and "already exists" in msg

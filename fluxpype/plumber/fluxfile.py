@@ -18,7 +18,7 @@ concentrations itself (lib/data.c: fc_im10/im11/im20/im21/ob/oe/pb/pe), which a 
 
 import os
 from functools import lru_cache
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BUILTIN_CONCENTRATIONS = 8
 DECIMALS = 5
@@ -36,11 +36,28 @@ def _f(x: str) -> float:
     return round(_g(x), DECIMALS)
 
 
+def _plane(s: List[str]) -> Optional[Dict[str, Any]]:
+    """A planar boundary from a GLOBAL row, as {role, origin, normal}: GLOBAL PHOTOSPHERE <point> <normal> (the
+    convenience form of a boundary plane), GLOBAL BOUNDARY PLANE and GLOBAL B2 PLANE (a second plane, used as a lid)."""
+    key = s[1].upper()
+    if key == "PHOTOSPHERE" and len(s) >= 8:
+        role, vals = "photosphere", s[2:8]
+    elif key in ("BOUNDARY", "B2") and len(s) >= 9 and s[2].upper() == "PLANE":
+        role, vals = ("boundary" if key == "BOUNDARY" else "b2"), s[3:9]
+    else:
+        return None
+    v = [_g(x) for x in vals]
+    if not any(v[3:]):
+        return None
+    return {"role": role, "origin": v[:3], "normal": v[3:]}
+
+
 def parse_text(text: str) -> Dict[str, Any]:
     conc: Dict[str, list] = {"id": [], "xyz": [], "flux": []}
     cpos: Dict[int, List[float]] = {}
     frame = None
     boundary = None
+    planes: List[Dict[str, Any]] = []
     globs: List[str] = []
     lines = []  # (id, flux, fc0, fc1, start xyz or None, end xyz or None)
     interior: Dict[int, list] = {}  # line id -> [(pos, x, y, z)]
@@ -79,6 +96,9 @@ def parse_text(text: str) -> Dict[str, Any]:
                 globs.append(" ".join(s[1:]))
                 if s[1].upper() == "BOUNDARY":
                     boundary = {"type": s[2].upper(), "args": [_g(v) for v in s[3:]]}
+                plane = _plane(s)
+                if plane:
+                    planes.append(plane)
             else:
                 other[k] = other.get(k, 0) + 1
         except (ValueError, IndexError):
@@ -106,6 +126,7 @@ def parse_text(text: str) -> Dict[str, Any]:
     return {
         "frame": frame,
         "boundary": boundary,
+        "planes": planes,
         "globals": globs,
         "counts": {
             # what the Flux library reports on reading the file
