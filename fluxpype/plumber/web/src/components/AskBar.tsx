@@ -247,7 +247,7 @@ function Palette({ onClose }: { onClose: () => void }) {
         >
           <RDialog.Title className="sr-only">Ask or search</RDialog.Title>
           <div className="flex items-center gap-3 border-b hair px-4 py-3">
-            {asking ? <Plum className="h-6 w-6" /> : <Search className="h-4 w-4 text-faint" />}
+            {asking ? <Plum className="h-8 w-8" /> : <Search className="h-4 w-4 text-faint" />}
             <input
               autoFocus
               value={q}
@@ -304,7 +304,7 @@ function Palette({ onClose }: { onClose: () => void }) {
                         onMouseEnter={() => setSel(i)}
                         onClick={() => choose(i)}
                       >
-                        {r === null ? <Plum className="h-5 w-5" /> : <Icon className="h-4 w-4 shrink-0 text-faint" />}
+                        {r === null ? <Plum className="h-6 w-6" /> : <Icon className="h-4 w-4 shrink-0 text-faint" />}
                         <span className="min-w-0 flex-1 truncate">{r === null ? `Ask Plum: ${q.trim()}` : r.title}</span>
                         {r && r.hint && <span className="shrink-0 text-[11px] text-faint">{r.hint}</span>}
                         {i === sel && <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-faint" />}
@@ -347,7 +347,7 @@ export function AskBar() {
         className="flex h-9 w-full max-w-[420px] items-center gap-2.5 rounded-xl border border-line bg-raised/70 px-3 text-left text-[13px] text-faint transition-colors hover:bg-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         aria-label="Ask or search"
       >
-        <Plum className="h-6 w-6" />
+        <Plum className="h-8 w-8" />
         <span className="min-w-0 flex-1 truncate">Ask Plum or search</span>
         <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] sm:inline">{KEY}</kbd>
       </button>
