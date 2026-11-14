@@ -45,8 +45,8 @@ export function Plum({ className, title = "Plum" }: { className?: string; title?
         <circle cx="49.5" cy="27" r="2" fill="#f08c1e" />
       </g>
       {/* wrench and raised hand, in front of the hair */}
-      <line x1="49" y1="52" x2="54" y2="40" stroke="#aeb8cb" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M51.2 38.4 A3.2 3.2 0 1 1 56.6 38.4" fill="none" stroke="#aeb8cb" strokeWidth="2.2" strokeLinecap="round" />
+      <line x1="49" y1="52" x2="53.4" y2="39.8" stroke="#aeb8cb" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M57.2 35.5 A3.2 3.2 0 1 1 53.4 34" fill="none" stroke="#aeb8cb" strokeWidth="2.2" strokeLinecap="round" />
       <circle cx="49" cy="52.4" r="2.6" fill="#ffe3d0" />
     </svg>
   );
