@@ -1,4 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, ListChecks, PauseCircle, Plus, RotateCw, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ActivityList, OriginTag } from "../components/Notifications";
@@ -139,6 +140,76 @@ function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
   );
 }
 
+type ExternalRun = {
+  id: string;
+  title?: string;
+  status?: string;
+  host?: string;
+  cwd?: string;
+  pid?: number;
+  pid_alive?: boolean;
+  started?: string;
+  updated?: string;
+  log?: string;
+  report?: string;
+  summary?: string;
+  progress?: { label: string; value: number | string | null }[];
+};
+
+function ExternalRunCard({ run }: { run: ExternalRun }) {
+  const [open, setOpen] = useState(false);
+  const tail = useQuery({
+    queryKey: ["external-run", run.id],
+    queryFn: () => api.get<{ log_tail: string | null }>(`/api/external-runs/${encodeURIComponent(run.id)}`),
+    enabled: open,
+    refetchInterval: open ? 5000 : false,
+  });
+  const gone = run.status === "running" && run.pid_alive === false;
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2.5 text-[14px] font-semibold">
+          {run.title || run.id}
+          <StatusBadge status={run.status && run.status !== "note" ? run.status : "skipped"} />
+          {gone && <Badge tone="fail">process gone</Badge>}
+        </p>
+        <p className="text-xs text-muted">
+          {[run.host, run.pid ? `pid ${run.pid}` : "", run.updated ? `updated ${run.updated.replace("T", " ").slice(0, 19)}` : ""].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+      {run.summary && <p className="mt-2 text-[13px]">{run.summary}</p>}
+      {run.progress && run.progress.length > 0 && (
+        <p className="mt-2 flex flex-wrap gap-1.5">
+          {run.progress.map((r) => (
+            <Badge key={r.label}>{r.label}: {String(r.value ?? "-")}</Badge>
+          ))}
+        </p>
+      )}
+      <p className="mt-2 break-all text-xs text-muted">{[run.cwd, run.report ? `report ${run.report}` : ""].filter(Boolean).join(" · ")}</p>
+      {run.log && (
+        <button className="btn btn-sm mt-2" onClick={() => setOpen(!open)}>
+          {open ? "Hide log" : "Show end of log"}
+        </button>
+      )}
+      {open && <pre className="mt-2 max-h-64 overflow-auto rounded bg-raised p-2 text-[11.5px]">{tail.data?.log_tail ?? "(no log yet)"}</pre>}
+    </Card>
+  );
+}
+
+/** Runs started outside Plumber (scripts, terminals, other Claudes) that registered themselves; not jobs, no controls. */
+function ExternalRuns() {
+  const { data } = useQuery({ queryKey: ["external-runs"], queryFn: () => api.get<{ runs: ExternalRun[] }>("/api/external-runs"), refetchInterval: 5000 });
+  if (!data || data.runs.length === 0) return null;
+  return (
+    <div className="space-y-2.5">
+      <SectionTitle title="Outside the queue" hint="Started by a script or a terminal and registered here. Plumber only shows them; it cannot cancel or retry them." />
+      {data.runs.slice(0, 8).map((r) => (
+        <ExternalRunCard key={r.id} run={r} />
+      ))}
+    </div>
+  );
+}
+
 export function JobsPage() {
   const { data, error, refetch } = useJobs();
   const now = useNow(5000);
@@ -158,6 +229,7 @@ export function JobsPage() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-6">
       <LiveBands origins={origins} />
+      <ExternalRuns />
       <SectionTitle title="Recent" />
       {!data ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>

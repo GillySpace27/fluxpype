@@ -9,6 +9,7 @@ import { fuzzyMatch } from "../lib/fuzzy";
 import { useCache, useJobs, useProfiles, useQueue } from "../lib/hooks";
 import { useTheme } from "../lib/theme";
 import { AskAnswer } from "./AskAnswer";
+import { Plum } from "./Plum";
 
 const MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 const KEY = MAC ? "⌘K" : "Ctrl K";
@@ -246,13 +247,13 @@ function Palette({ onClose }: { onClose: () => void }) {
         >
           <RDialog.Title className="sr-only">Ask or search</RDialog.Title>
           <div className="flex items-center gap-3 border-b hair px-4 py-3">
-            {asking ? <Sparkles className="h-4 w-4 text-accent" /> : <Search className="h-4 w-4 text-faint" />}
+            {asking ? <Plum className="h-8 w-8" /> : <Search className="h-4 w-4 text-faint" />}
             <input
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={onKey}
-              placeholder={asking ? "Ask a follow-up" : "Search, or ask: it reads your jobs, logs and docs, and proposes changes you approve"}
+              placeholder={asking ? "Ask Plum a follow-up" : "Search, or ask Plum: it reads your jobs, logs and docs, and proposes changes you approve"}
               className="min-w-0 flex-1 bg-transparent text-[14px] text-ink placeholder:text-faint focus:outline-none focus-visible:ring-0"
               aria-label="Ask or search"
               spellCheck={false}
@@ -294,7 +295,7 @@ function Palette({ onClose }: { onClose: () => void }) {
                 {rows.map((r, i) => {
                   const head = r === null ? "Ask" : r.group !== lastGroup ? r.group : "";
                   if (r) lastGroup = r.group;
-                  const Icon = r === null ? Sparkles : r.icon;
+                  const Icon = r === null ? Sparkles : r.icon; // the Ask row draws Plum below
                   return (
                     <li key={r === null ? "ask" : r.id} role="option" aria-selected={i === sel}>
                       {head && <p className="px-3 pb-1 pt-2 text-[10.5px] uppercase tracking-[0.12em] text-faint">{head}</p>}
@@ -303,8 +304,8 @@ function Palette({ onClose }: { onClose: () => void }) {
                         onMouseEnter={() => setSel(i)}
                         onClick={() => choose(i)}
                       >
-                        <Icon className={cn("h-4 w-4 shrink-0", r === null ? "text-accent" : "text-faint")} />
-                        <span className="min-w-0 flex-1 truncate">{r === null ? `Ask Claude: ${q.trim()}` : r.title}</span>
+                        {r === null ? <Plum className="h-6 w-6" /> : <Icon className="h-4 w-4 shrink-0 text-faint" />}
+                        <span className="min-w-0 flex-1 truncate">{r === null ? `Ask Plum: ${q.trim()}` : r.title}</span>
                         {r && r.hint && <span className="shrink-0 text-[11px] text-faint">{r.hint}</span>}
                         {i === sel && <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-faint" />}
                       </button>
@@ -346,8 +347,8 @@ export function AskBar() {
         className="flex h-9 w-full max-w-[420px] items-center gap-2.5 rounded-xl border border-line bg-raised/70 px-3 text-left text-[13px] text-faint transition-colors hover:bg-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         aria-label="Ask or search"
       >
-        <Sparkles className="h-4 w-4 shrink-0 text-accent" />
-        <span className="min-w-0 flex-1 truncate">Ask or search</span>
+        <Plum className="h-8 w-8" />
+        <span className="min-w-0 flex-1 truncate">Ask Plum or search</span>
         <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] sm:inline">{KEY}</kbd>
       </button>
       {open && <Palette onClose={() => setOpen(false)} />}

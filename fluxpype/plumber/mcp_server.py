@@ -700,6 +700,35 @@ def build_server(
             }
         )
 
+    @tool(
+        "Runs that were started outside Plumber (scripts, terminal sessions, other Claudes) and registered "
+        "themselves, newest first. They are not jobs: no tasks, stages or cancel. Status is running, ok, failed, "
+        "cancelled or note; pid_alive is set when the process is on this machine.",
+        ro,
+        True,
+    )
+    async def list_external_runs(limit: int = 20, status: Optional[str] = None) -> str:
+        runs = (await get("/api/external-runs", limit=200 if status else clamp(limit, 1, 100))).get("runs", [])
+        runs = [r for r in runs if not status or r.get("status") == status]
+        return dumps(
+            {
+                "runs": [
+                    keep(r, "id", "title", "status", "host", "pid", "pid_alive", "started", "updated", "summary")
+                    for r in runs[: clamp(limit, 1, 100)]
+                ]
+            }
+        )
+
+    @tool(
+        "One external run: all its fields (progress rows, log and report paths) plus the last lines of its log file.",
+        ro,
+        True,
+    )
+    async def get_external_run(run_id: str, tail_lines: int = 40) -> str:
+        return dumps(
+            await get(f"/api/external-runs/{ident(run_id, 'run_id')}", tail=clamp(tail_lines, 1, 400)), ("log_tail",)
+        )
+
     @tool("One job with a per-task stage summary.", ro, True)
     async def get_job(job_id: str) -> str:
         view = await get(f"/api/jobs/{ident(job_id, 'job_id')}", states=1)

@@ -41,6 +41,17 @@
     "values"
    ]
   },
+  "get_external_run": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "run_id",
+    "tail_lines"
+   ]
+  },
   "get_job": {
    "annotations": {
     "destructive_hint": false,
@@ -105,6 +116,17 @@
     "index",
     "max_edge",
     "task_id"
+   ]
+  },
+  "list_external_runs": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "status"
    ]
   },
   "list_jobs": {
@@ -256,6 +278,17 @@
     "values"
    ]
   },
+  "get_external_run": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "run_id",
+    "tail_lines"
+   ]
+  },
   "get_job": {
    "annotations": {
     "destructive_hint": false,
@@ -307,6 +340,17 @@
     "index",
     "max_edge",
     "task_id"
+   ]
+  },
+  "list_external_runs": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "limit",
+    "status"
    ]
   },
   "list_jobs": {
