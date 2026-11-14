@@ -1,4 +1,4 @@
-import { Database, Gauge, Layers, ListChecks, Settings, Sun } from "lucide-react";
+import { Boxes, Database, Gauge, Layers, ListChecks, Settings, Sun } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "../lib/cn";
 import { useStatus } from "../lib/hooks";
@@ -16,6 +16,7 @@ const NAV_PRESETS = [
   { to: "/", label: "Overview", icon: Gauge, end: true },
   { to: "/presets", label: "Presets", icon: Layers },
   { to: "/jobs", label: "Runs", icon: ListChecks },
+  { to: "/scenes", label: "Scenes", icon: Boxes },
   { to: "/cache", label: "Cache", icon: Database },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
