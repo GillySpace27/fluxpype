@@ -683,5 +683,7 @@ export interface SysSnapshot {
   processes?: {
     top: { pid: number; name: string; cpu: number; rss: number; task: string | null }[];
     tasks: { label: string; cpu: number; rss: number; procs: number }[];
+    /** FLUX runs Plumber did not start (perl processes naming a .flux/.pdl file or Flux) */
+    external?: { pid: number; cmd: string; cwd: string | null; started: number | null; cpu: number; rss: number }[];
   };
 }
