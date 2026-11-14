@@ -4,9 +4,6 @@ import { cn } from "../lib/cn";
 export function Plum({ className, title = "Plum" }: { className?: string; title?: string }) {
   return (
     <svg viewBox="0 0 64 72" className={cn("shrink-0", className)} role="img" aria-label={title} xmlns="http://www.w3.org/2000/svg">
-      {/* wrench, behind the raised hand */}
-      <line x1="49" y1="52" x2="54" y2="40" stroke="#aeb8cb" strokeWidth="2.4" strokeLinecap="round" />
-      <path d="M51.2 38.4 A3.2 3.2 0 1 1 56.6 38.4" fill="none" stroke="#aeb8cb" strokeWidth="2.2" strokeLinecap="round" />
       {/* legs and boots */}
       <rect x="25.5" y="60" width="5.5" height="8" rx="2" fill="#3a6fd8" />
       <rect x="33" y="60" width="5.5" height="8" rx="2" fill="#3a6fd8" />
@@ -24,7 +21,6 @@ export function Plum({ className, title = "Plum" }: { className?: string; title?
       <line x1="22.5" y1="47.5" x2="17.5" y2="57" stroke="#2fb5a3" strokeWidth="5" strokeLinecap="round" />
       <circle cx="17" cy="58.6" r="2.6" fill="#ffe3d0" />
       <line x1="41.5" y1="47.5" x2="47.5" y2="52" stroke="#2fb5a3" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="49" cy="52.4" r="2.6" fill="#ffe3d0" />
       {/* neck */}
       <rect x="28.8" y="40" width="6.4" height="5" rx="2" fill="#ffe3d0" />
       {/* head, drawn smaller and higher */}
@@ -48,6 +44,10 @@ export function Plum({ className, title = "Plum" }: { className?: string; title?
         <circle cx="14.5" cy="27" r="2" fill="#f08c1e" />
         <circle cx="49.5" cy="27" r="2" fill="#f08c1e" />
       </g>
+      {/* wrench and raised hand, in front of the hair */}
+      <line x1="49" y1="52" x2="54" y2="40" stroke="#aeb8cb" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M51.2 38.4 A3.2 3.2 0 1 1 56.6 38.4" fill="none" stroke="#aeb8cb" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="49" cy="52.4" r="2.6" fill="#ffe3d0" />
     </svg>
   );
 }
