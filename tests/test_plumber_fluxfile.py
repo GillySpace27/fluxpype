@@ -53,3 +53,24 @@ def test_real_files_match_flux_library_counts(name, vertices):
     c = fluxfile.parse_file(os.path.join(WORLD, name))["counts"]
     assert (c["vertices"], c["fluxons"], c["concentrations"]) == (vertices, 545, 1042)
     assert c["bad_rows"] == 0
+
+
+def test_planar_scene_world_parses_with_its_photosphere_and_lid():
+    from fluxpype.scenes import PlanarArcadeSpec, compile_flux
+
+    w = fluxfile.parse_text(compile_flux(PlanarArcadeSpec(n_lines=4, vertices_per_line=5, lid_height=3.0)))
+    assert w["boundary"] is None and w["counts"]["bad_rows"] == 0
+    assert w["planes"] == [
+        {"role": "photosphere", "origin": [0, 0, -0.001], "normal": [0, 0, 1]},
+        {"role": "b2", "origin": [0, 0, 3], "normal": [0, 0, -1]},
+    ]
+    fl = w["fluxons"]
+    assert len(fl["id"]) == 4 and fl["offsets"][-1] == 4 * (5 + 2)  # footpoints at both ends, 5 interior vertices
+    assert w["concentrations"]["flux"].count(1) == 4 and w["concentrations"]["flux"].count(-1) == 4
+
+
+def test_a_global_row_that_is_not_a_plane_adds_no_plane():
+    assert (
+        fluxfile.parse_text("GLOBAL FORCES f_curvature\nGLOBAL B2 NONE\nGLOBAL PHOTOSPHERE 0 0 0 0 0 0\n")["planes"]
+        == []
+    )

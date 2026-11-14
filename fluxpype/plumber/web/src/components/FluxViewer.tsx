@@ -8,11 +8,14 @@ import {
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  PlaneGeometry,
   Points,
   PointsMaterial,
+  Quaternion,
   Scene,
   SphereGeometry,
   SRGBColorSpace,
+  Vector3,
   WebGLRenderer,
   WireframeGeometry,
 } from "three";
@@ -302,9 +305,29 @@ function View({ w, o, link, range }: { w: FluxWorld; o: Opts; link: Link; range:
     s.sph?.removeFromParent();
     const b = w.boundary;
     s.cam.R0 = b?.type === "SPHERE" && b.args[3] > 0 ? b.args[3] : 1;
-    if (b?.type === "SPHERE") {
+    const grp = new Group();
+    const planes = w.planes ?? [];
+    if (b?.type !== "SPHERE" && planes.length) {
+      // planar worlds: draw each boundary plane as a translucent square, sized to the data, with a grid
+      const xyz = w.fluxons.xyz;
+      let ext = 0;
+      for (let i = 0; i < xyz.length; i += 3) ext = Math.max(ext, Math.abs(xyz[i]), Math.abs(xyz[i + 1]));
+      ext = (ext || 1) * 1.15;
+      s.cam.R0 = ext;
+      for (const p of planes) {
+        const color = p.role === "b2" ? tokenColor("accent") : tokenColor("muted");
+        const g = new Group();
+        g.add(new Mesh(new PlaneGeometry(2 * ext, 2 * ext), new MeshBasicMaterial({ color, transparent: true, opacity: p.role === "b2" ? 0.08 : 0.14, depthWrite: false, side: 2 })));
+        g.add(new LineSegments(new WireframeGeometry(new PlaneGeometry(2 * ext, 2 * ext, 10, 10)), new LineBasicMaterial({ color, transparent: true, opacity: 0.25 })));
+        g.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...(p.normal as Vec3)).normalize()));
+        g.position.set(p.origin[0], p.origin[1], p.origin[2]);
+        grp.add(g);
+      }
+      grp.visible = o.sphere;
+      s.scene.add(grp);
+      s.sph = grp;
+    } else if (b?.type === "SPHERE") {
       const color = tokenColor("muted");
-      const grp = new Group();
       grp.add(new Mesh(new SphereGeometry(s.cam.R0, 48, 24), new MeshBasicMaterial({ color, transparent: true, opacity: 0.12, depthWrite: false })));
       grp.add(new LineSegments(new WireframeGeometry(new SphereGeometry(s.cam.R0, 24, 12)), new LineBasicMaterial({ color, transparent: true, opacity: 0.3 })));
       grp.position.set(b.args[0], b.args[1], b.args[2]);
@@ -420,7 +443,7 @@ export function FluxViewer({ path, base = "/api/cache", mtime, others = [] }: { 
           </button>
         </div>
         <Seg label="Fit" value={o.fit} onChange={(v) => set("fit", v)} items={[["all", "Fit all"], ["sun", "Fit sun"]]} />
-        <div className="flex items-center gap-1">{[toggle("fluxons", "Fluxons"), toggle("conc", "Points"), toggle("sphere", "Sphere")]}</div>
+        <div className="flex items-center gap-1">{[toggle("fluxons", "Fluxons"), toggle("conc", "Points"), toggle("sphere", "Boundary")]}</div>
         <Seg label="Colour by" value={o.colorBy} onChange={(v) => set("colorBy", v)} items={[["id", "Fluxon id"], ["radius", "Radius"], ["theta", "Deviation"], ["polarity", "Polarity"]]} />
         <label className="flex items-center gap-1.5 text-xs text-muted">
           Width
