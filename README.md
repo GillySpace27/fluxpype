@@ -1,7 +1,11 @@
 # FLUXpype
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24182704.svg)](https://doi.org/10.5281/zenodo.24182704)
+
 ## Preamble
 This package acts as a wrapper around the Field Line Universal relaXer (FLUX), a solar magnetic field model. This means that it requires the FLUX perl/C software located on Github.
+
+FLUXpype is derived from FLUX ([fluxon-mhd](https://github.com/lowderchris/fluxon-mhd), GPL-2.0, [doi:10.5281/zenodo.7975951](https://doi.org/10.5281/zenodo.7975951)). If you use FLUXpype, please cite both. The DOI badge above is the concept DOI for FLUXpype and always resolves to the latest release.
 
 ## Installation
 
