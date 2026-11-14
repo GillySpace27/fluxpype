@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config_io, paths, plotrun
+from . import config_io, external_runs, paths, plotrun
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
@@ -81,6 +81,19 @@ def tail_file(path: str, size: int, offset: int, limit: int) -> Dict[str, Any]:
 
 def reply(obj: Any, status: int = 200) -> JSONResponse:
     return JSONResponse(clean(obj), status_code=status)
+
+
+class ExternalRunIn(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None
+    host: Optional[str] = None
+    cwd: Optional[str] = None
+    pid: Optional[int] = None
+    started: Optional[str] = None
+    log: Optional[str] = None
+    report: Optional[str] = None
+    summary: Optional[str] = None
+    progress: Optional[List[Dict[str, Any]]] = None
 
 
 class JobIn(BaseModel):
@@ -763,6 +776,32 @@ def create_app(
             return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra, origin=origin), 201)
         except SchedulerError as e:
             fail(e)
+
+    @app.get("/api/external-runs")
+    def external_run_list(limit: int = 100):
+        """Runs started outside Plumber (scripts, terminals, other Claudes) that registered themselves."""
+        return reply({"runs": external_runs.list_runs(sched.home, limit)})
+
+    @app.get("/api/external-runs/{run_id}")
+    def external_run(run_id: str, tail: int = 40):
+        run = external_runs.get(sched.home, run_id)
+        if not run:
+            raise HTTPException(404, "unknown external run")
+        return reply({**run, "log_tail": external_runs.log_tail(run, tail)})
+
+    @app.put("/api/external-runs/{run_id}")
+    def external_run_put(run_id: str, body: ExternalRunIn):
+        try:
+            run = external_runs.write(sched.home, run_id, body.model_dump(exclude_none=True))
+        except ValueError as e:
+            fail(e)
+        return reply(run)
+
+    @app.delete("/api/external-runs/{run_id}")
+    def external_run_delete(run_id: str):
+        if not external_runs.delete(sched.home, run_id):
+            raise HTTPException(404, "unknown external run")
+        return reply({"ok": True})
 
     @app.post("/api/jobs")
     def create_job(body: JobIn, request: Request):

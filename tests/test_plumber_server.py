@@ -218,7 +218,13 @@ def test_agent_heartbeat_marks_alive_without_a_tool_call(client):
 
 
 def test_agent_calls_are_recorded_per_call_and_survive_a_restart(client, tmp_path):
-    a = {**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "get_job", "X-Flux-Call": "c1", "X-Flux-Args": '{"job_id": "nope"}'}
+    a = {
+        **H,
+        "X-Flux-Client": "mcp",
+        "X-Flux-Tool": "get_job",
+        "X-Flux-Call": "c1",
+        "X-Flux-Args": '{"job_id": "nope"}',
+    }
     client.get("/api/queue", headers=a)
     client.get("/api/jobs/nope", headers=a)  # a second request of the same call, and a failing one
     client.get("/api/queue", headers={**H, "X-Flux-Client": "mcp", "X-Flux-Tool": "status", "X-Flux-Call": "c2"})
@@ -479,4 +485,39 @@ def test_untagged_requests_of_one_tool_fold_into_one_call(tmp_path):
     log.record("abc", "get_task", "", "GET", "/api/tasks/t", 200, 3)  # another tool is not folded into the wait
     s = AgentLog(str(tmp_path / "log.jsonl")).summary()  # and the same holds when the file is read back
     assert s["total"] == 3
-    assert sorted((c["tool"], c["requests"]) for c in s["calls"]) == [("get_task", 1), ("wait_for_task", 1), ("wait_for_task", 5)]
+    assert sorted((c["tool"], c["requests"]) for c in s["calls"]) == [
+        ("get_task", 1),
+        ("wait_for_task", 1),
+        ("wait_for_task", 5),
+    ]
+
+
+# ------------------------------------------------------------------ external runs
+
+
+def test_external_runs_register_list_update_and_delete(client):
+    assert client.get("/api/external-runs", headers=H).json() == {"runs": []}
+    r = client.put(
+        "/api/external-runs/lid-z6", headers=H, json={"title": "Lid z=6", "status": "running", "pid": os.getpid()}
+    )
+    assert r.status_code == 200 and r.json()["pid_alive"] is True and r.json()["started"]
+    client.put("/api/external-runs/lid-z6", headers=H, json={"summary": "cycle 40", "status": "ok"})
+    run = client.get("/api/external-runs/lid-z6", headers=H).json()
+    assert (
+        run["title"] == "Lid z=6" and run["summary"] == "cycle 40" and run["status"] == "ok"
+    )  # a later write keeps earlier fields
+    assert run["log_tail"] is None
+    assert [x["id"] for x in client.get("/api/external-runs", headers=H).json()["runs"]] == ["lid-z6"]
+    assert client.put("/api/external-runs/bad id", headers=H, json={}).status_code == 400
+    assert client.put("/api/external-runs/ok1", headers=H, json={"status": "weird"}).status_code == 400
+    assert client.get("/api/external-runs/nope", headers=H).status_code == 404
+    assert client.delete("/api/external-runs/lid-z6", headers=H).status_code == 200
+    assert client.get("/api/external-runs", headers=H).json() == {"runs": []}
+
+
+def test_external_run_serves_the_end_of_its_log(client, tmp_path):
+    log = tmp_path / "x.log"
+    log.write_text("\n".join(f"line {i}" for i in range(100)))
+    client.put("/api/external-runs/a", headers=H, json={"log": str(log)})
+    tail = client.get("/api/external-runs/a?tail=3", headers=H).json()["log_tail"]
+    assert tail == "line 97\nline 98\nline 99"

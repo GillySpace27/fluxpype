@@ -430,7 +430,7 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 18 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 20 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):

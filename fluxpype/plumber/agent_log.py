@@ -19,6 +19,8 @@ TOOLS = [
     ("submit_job", "write", "Queue a new job from a profile"),
     ("list_jobs", "read", "List recent jobs"),
     ("get_job", "read", "Read one job with a per-task stage summary"),
+    ("list_external_runs", "read", "List runs started outside Plumber that registered themselves"),
+    ("get_external_run", "read", "Read one external run and the end of its log"),
     ("get_task", "read", "Read one task: stages, relaxation, warnings, images"),
     ("get_relax_series", "read", "Read a task's relaxation history"),
     ("read_task_log", "read", "Read or search a task's log"),
