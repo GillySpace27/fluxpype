@@ -26,7 +26,7 @@ DOCS = Path(__file__).parent / "ask"
 MODEL = "sonnet"
 TIMEOUT_S = 120
 MAX_BUDGET_USD = "1"
-READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "list_external_runs", "get_external_run", "get_task", "get_relax_series", "read_task_log", "cache_summary", "get_task_image", "list_proposals"]
+READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "list_external_runs", "get_external_run", "get_task", "get_relax_series", "read_task_log", "cache_summary", "get_task_image", "list_proposals", "list_scenes", "get_scene"]
 PROPOSE_TOOLS = list(proposals.TOOLS) + ["withdraw_proposal"]  # only store or close a proposal (mcp_server)
 NO_TOOLS = ["wait_for_task"]  # polls for up to 300 s, past the 120 s a question may take
 # Repo documents added to the prompt when the checkout has them (a pip install has only the shipped ask/*.md). The

@@ -6,6 +6,7 @@ import { JobsPage } from "./pages/Jobs";
 import { NewRun } from "./pages/NewRun";
 import { Overview } from "./pages/Overview";
 import { PresetsPage } from "./pages/Presets";
+import { ScenesPage } from "./pages/Scenes";
 import { SettingsPage } from "./pages/Settings";
 
 /** The old Run layout's tab names, as tabs of the job page. */
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="jobs/new" element={<NewRun />} />
         <Route path="jobs/:id" element={<JobDetail />} />
         <Route path="jobs/:id/:taskId" element={<JobDetail />} />
+        <Route path="scenes" element={<ScenesPage />} />
         <Route path="cache" element={<CachePage />} />
         <Route path="run" element={<Navigate to="/jobs" replace />} />
         <Route path="run/new" element={<RunNewRedirect />} />

@@ -41,6 +41,17 @@
     "values"
    ]
   },
+  "create_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "spec"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -94,6 +105,16 @@
    "args": [
     "max_points",
     "task_id"
+   ]
+  },
+  "get_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id"
    ]
   },
   "get_task": {
@@ -159,6 +180,14 @@
     "limit",
     "status"
    ]
+  },
+  "list_scenes": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
   },
   "read_task_log": {
    "annotations": {
@@ -278,6 +307,18 @@
     "values"
    ]
   },
+  "create_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "spec",
+    "supersedes"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -318,6 +359,16 @@
    "args": [
     "max_points",
     "task_id"
+   ]
+  },
+  "get_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id"
    ]
   },
   "get_task": {
@@ -383,6 +434,14 @@
     "limit",
     "status"
    ]
+  },
+  "list_scenes": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": []
   },
   "read_task_log": {
    "annotations": {

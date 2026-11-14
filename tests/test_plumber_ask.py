@@ -37,7 +37,9 @@ def client(make_scheduler, tmp_path, monkeypatch):
     cli.write_text(FAKE.format(py=sys.executable))
     cli.chmod(cli.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("FLUX_PLUMBER_CLAUDE", str(cli))
-    with TestClient(create_app(make_scheduler(), TOKEN, demo=True, tick_interval=0.1), base_url="http://localhost") as c:
+    with TestClient(
+        create_app(make_scheduler(), TOKEN, demo=True, tick_interval=0.1), base_url="http://localhost"
+    ) as c:
         yield c
 
 
@@ -46,12 +48,21 @@ def events(resp):
 
 
 def test_parse_maps_cli_events_and_ignores_the_rest():
-    delta = {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}}}
-    think = {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "x"}}}
+    delta = {
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "hi"}},
+    }
+    think = {
+        "type": "stream_event",
+        "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta", "thinking": "x"}},
+    }
     assert ask.parse(json.dumps(delta)) == {"type": "text", "text": "hi"}
     assert ask.parse(json.dumps(think)) is None and ask.parse("not json") is None
     assert ask.parse(json.dumps({"type": "result", "is_error": True, "result": "Not logged in"}))["type"] == "error"
-    assert ask.parse(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.02, "duration_ms": 9}))["cost"] == 0.02
+    assert (
+        ask.parse(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.02, "duration_ms": 9}))["cost"]
+        == 0.02
+    )
 
 
 def flag(cmd, name):
@@ -65,7 +76,12 @@ def test_the_cli_is_stripped_down_and_its_write_tools_only_propose():
     assert not any(t in tools for t in ("Bash", "Edit", "Write")) and "--add-dir" in cmd  # the repo, read-only
     allowed = {a.replace("mcp__fluxpype__", "") for a in flag(cmd, "--allowedTools").split(",")}
     assert allowed == set(ask.READ_TOOLS) | set(proposals.TOOLS) | {"withdraw_proposal"}  # writes only propose
-    assert {"get_task_image", "list_proposals", "submit_job", "create_preset"} <= allowed and "wait_for_task" not in allowed
+    assert {
+        "get_task_image",
+        "list_proposals",
+        "submit_job",
+        "create_preset",
+    } <= allowed and "wait_for_task" not in allowed
     assert not {"Read", "Grep", "Glob"} & allowed  # a bare allow rule reaches every path; unlisted, only the repo
     denied = flag(cmd, "--disallowedTools").split(",")
     assert denied == ["Read(//home/**)", "mcp__fluxpype__wait_for_task"]  # never the Plumber home (its token)
@@ -83,30 +99,58 @@ def test_ask_streams_text_tool_and_done(client):
     r = client.post("/api/ask", json={"question": "which end is positive?", "page": "/jobs"}, headers=H)
     ev = events(r)
     assert [e["type"] for e in ev] == ["tool", "text", "text", "text", "done"]
-    assert ev[0]["name"] == "status" and "".join(e["text"] for e in ev if e["type"] == "text").startswith("Hello|tools-off|")
+    assert ev[0]["name"] == "status" and "".join(e["text"] for e in ev if e["type"] == "text").startswith(
+        "Hello|tools-off|"
+    )
     assert "write-listed" in "".join(e.get("text", "") for e in ev)  # listed only in --disallowedTools
     assert ev[-1]["cost"] == 0.01
 
 
 def test_ask_keeps_model_tokens_and_plan_limits_for_the_agent_dialog(client):
-    assert client.get("/api/agent", headers=H).json()["ask"] == {"model": None, "today": {"questions": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost": 0}, "limits": None}
+    assert client.get("/api/agent", headers=H).json()["ask"] == {
+        "model": None,
+        "today": {"questions": 0, "input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "cost": 0},
+        "limits": None,
+    }
     client.post("/api/ask", json={"question": "hi"}, headers=H)
     client.post("/api/ask", json={"question": "again"}, headers=H)
     a = client.get("/api/agent", headers=H).json()["ask"]
     assert a["model"] == "claude-sonnet-5-5" and a["today"]["questions"] == 2
-    assert (a["today"]["input"], a["today"]["output"], a["today"]["cache_read"], a["today"]["cache_write"]) == (4, 12, 200, 1710)
+    assert (a["today"]["input"], a["today"]["output"], a["today"]["cache_read"], a["today"]["cache_write"]) == (
+        4,
+        12,
+        200,
+        1710,
+    )
     assert a["today"]["cost"] == pytest.approx(0.02)
     w = a["limits"]["windows"]
     assert w["five_hour"]["utilization"] == 0.23 and w["seven_day"]["resets_at"] == 4102444900
 
 
 def test_token_rate_and_plan_share_left_feed_the_system_monitor(client, tmp_path):
-    ev = {"type": "done", "cost": 0.01, "ms": 5, "model": "m", "tokens": {"input": 2, "output": 6, "cache_read": 9000, "cache_write": 52}}
+    ev = {
+        "type": "done",
+        "cost": 0.01,
+        "ms": 5,
+        "model": "m",
+        "tokens": {"input": 2, "output": 6, "cache_read": 9000, "cache_write": 52},
+    }
     ask._note(str(tmp_path), ev)
     assert ask.token_rate() >= 60 / 60  # 2 + 52 + 6 new tokens in the last minute; cache reads are not counted
-    ask._note(str(tmp_path), {"type": "limits", "windows": {"five_hour": {"utilization": 0.25, "resets_at": 4102444800}, "seven_day": {"utilization": 0.5, "resets_at": 1}}})
+    ask._note(
+        str(tmp_path),
+        {
+            "type": "limits",
+            "windows": {
+                "five_hour": {"utilization": 0.25, "resets_at": 4102444800},
+                "seven_day": {"utilization": 0.5, "resets_at": 1},
+            },
+        },
+    )
     p = ask.plan(str(tmp_path))
-    assert p["five_hour"]["left"] == pytest.approx(0.75) and p["seven_day"]["left"] is None  # that window has rolled over
+    assert (
+        p["five_hour"]["left"] == pytest.approx(0.75) and p["seven_day"]["left"] is None
+    )  # that window has rolled over
     client.post("/api/ask", json={"question": "hi"}, headers=H)
     d = client.get("/api/system", headers=H).json()
     assert d["plan"]["five_hour"]["left"] == pytest.approx(0.77) and d["now"]["tok"] > 0
@@ -154,7 +198,12 @@ def test_the_guide_the_cards_and_the_server_name_the_same_actions():
     titles = set(re.findall(r"^  (\w+): \{", tsx.split("const TITLES", 1)[1].split("\n};", 1)[0], re.M))
     guide = (ask.DOCS / "plumber_guide.md").read_text(encoding="utf-8")
     listed = set(re.findall(r"\w+", guide.split("Actions:", 1)[1].split(".", 1)[0]))
-    assert titles == listed == set(proposals.TOOLS) == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset"}
+    assert (
+        titles
+        == listed
+        == set(proposals.TOOLS)
+        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene"}
+    )
     assert "flux-action" not in guide + tsx  # the old model-written cards are gone
 
 
@@ -164,7 +213,9 @@ ASK = {**H, "X-Flux-Client": "ask"}
 
 
 def propose(c, tool, args, question="q1"):
-    return c.post("/api/proposals", json={"tool": tool, "args": args, "question": question}, headers={**ASK, "X-Flux-Tool": tool})
+    return c.post(
+        "/api/proposals", json={"tool": tool, "args": args, "question": question}, headers={**ASK, "X-Flux-Tool": tool}
+    )
 
 
 def job_count(c):
@@ -189,7 +240,13 @@ def test_only_the_ask_client_during_its_question_may_propose_and_nothing_else(cl
     assert client.post("/api/proposals", json={**body, "tool": "delete_job"}, headers=ASK).status_code == 422
     assert client.post("/api/proposals", json=body, headers=ASK).status_code == 201
     pid = client.get("/api/proposals", headers=ASK).json()["proposals"][0]["id"]
-    for method, path in [("POST", "/api/jobs"), ("PATCH", "/api/queue"), ("POST", "/api/profiles"), ("POST", f"/api/proposals/{pid}/approve"), ("POST", f"/api/proposals/{pid}/reject")]:
+    for method, path in [
+        ("POST", "/api/jobs"),
+        ("PATCH", "/api/queue"),
+        ("POST", "/api/profiles"),
+        ("POST", f"/api/proposals/{pid}/approve"),
+        ("POST", f"/api/proposals/{pid}/reject"),
+    ]:
         assert client.request(method, path, json={}, headers=ASK).status_code == 403, path
     assert client.get("/api/queue", headers=H).json()["paused"] is False  # still only a proposal
     assert client.get("/api/proposals", headers=H).json()["proposals"][0]["status"] == "pending"
@@ -201,7 +258,9 @@ def test_a_proposal_is_checked_stored_and_runs_once_on_a_click(asking):
     assert r.status_code == 201, r.text
     p = r.json()
     assert p["status"] == "pending" and p["origin"] == "ask" and p["args"]["backend"] == "fake"  # the backend is fixed
-    assert "4 task(s) from preset t_two" in p["summary"] and p["diff"] == [{"key": "batch_name", "from": "tb_two", "to": "tb_new"}]
+    assert "4 task(s) from preset t_two" in p["summary"] and p["diff"] == [
+        {"key": "batch_name", "from": "tb_two", "to": "tb_new"}
+    ]
     assert job_count(c) == n  # proposing ran nothing
     assert c.post(f"/api/proposals/{p['id']}/approve", headers={**H, "X-Flux-Client": "mcp"}).status_code == 403
     r = c.post(f"/api/proposals/{p['id']}/approve", headers=H)
@@ -217,7 +276,10 @@ def test_a_proposal_is_checked_stored_and_runs_once_on_a_click(asking):
     made = [x for x in calls if x["paths"] == ["POST /api/proposals"]]
     clicked = [x for x in calls if x["paths"] == [f"POST /api/proposals/{p['id']}/approve"]]
     assert made[0]["tool"] == "submit_job" and made[0]["via"] == "ask" and made[0]["status"] == 201
-    assert clicked[0]["via"] == "ask" and json.loads(clicked[0]["args"]) == {"proposal": p["id"], "decision": "approved"}
+    assert clicked[0]["via"] == "ask" and json.loads(clicked[0]["args"]) == {
+        "proposal": p["id"],
+        "decision": "approved",
+    }
 
 
 def test_approve_runs_the_stored_arguments_and_never_the_requests(asking):
@@ -267,7 +329,10 @@ def test_cancel_and_retry_proposals_name_what_they_touch(asking):
     c.post(f"/api/proposals/{p['id']}/approve", headers=H)
     assert c.get(f"/api/jobs/{jid}", headers=H).json()["status"] == "cancelled"
     r = propose(c, "retry_failed", {"job_id": jid}).json()
-    assert "4 failed" in r["summary"] and c.post(f"/api/proposals/{r['id']}/approve", headers=H).json()["status"] == "approved"
+    assert (
+        "4 failed" in r["summary"]
+        and c.post(f"/api/proposals/{r['id']}/approve", headers=H).json()["status"] == "approved"
+    )
     assert c.get(f"/api/jobs/{jid}", headers=H).json()["counts"]["pending"] == 4
 
 
@@ -283,7 +348,10 @@ def test_reject_expiry_and_caps(asking, monkeypatch, tmp_path):
     assert c.post("/api/proposals/nope/approve", headers=H).status_code == 404
     assert c.get("/api/queue", headers=H).json()["cpu_budget"] == 64  # six proposals, no change
     monkeypatch.setattr(proposals, "PER_QUESTION", 100)
-    while len([p for p in c.get("/api/proposals", headers=H).json()["proposals"] if p["status"] == "pending"]) < proposals.MAX_PENDING:
+    while (
+        len([p for p in c.get("/api/proposals", headers=H).json()["proposals"] if p["status"] == "pending"])
+        < proposals.MAX_PENDING
+    ):
         assert propose(c, "set_queue", {"max_parallel": 8}).status_code == 201
     r = propose(c, "set_queue", {"max_parallel": 8})
     assert r.status_code == 429 and "waiting" in r.json()["detail"]
@@ -302,9 +370,11 @@ def test_the_answer_ends_with_plumbers_list_of_its_proposals(client, monkeypatch
     seen = []
     monkeypatch.setattr(proposals, "for_question", lambda path, q: seen.append(q) or ["abc123def456"])
     ev = events(client.post("/api/ask", json={"question": "queue t_one"}, headers=H))
-    assert ev[-2] == {"type": "text", "text": '\n\n```flux-proposals\n["abc123def456"]\n```\n'} and ev[-1]["type"] == "done"
+    assert (
+        ev[-2] == {"type": "text", "text": '\n\n```flux-proposals\n["abc123def456"]\n```\n'}
+        and ev[-1]["type"] == "done"
+    )
     assert len(seen[0]) == 12 and ask.current_question() == ""  # the id lived only while the question ran
-
 
 
 def withdraw(c, pid, question="q1", headers=None):

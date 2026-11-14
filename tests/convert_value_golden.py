@@ -8,6 +8,7 @@ Each corpus string maps to "type<TAB>repr" of what convert_value returns, or "ra
 value in config.ini plus EDGE below. The golden file is the contract: if convert_value changes, test_convert_value_golden
 names every string whose result moved, so the change can be reviewed or reverted line by line.
 """
+
 import argparse
 import ast
 import configparser
@@ -20,11 +21,65 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GOLDEN = os.path.join(HERE, "golden", "convert_value.golden")
 EDGE = [  # shapes real configs and pipeline output use, then values the Plumber validator lets through today
-    "42", "-1", "0", "1e-3", "1.5", "0x10", "True", "False", "None", "nan", "inf", " 5", "5 ", "", "'a'", '"a"', "abc", "a b",
-    "[1, 2]", "[1,2,3]", "(1, 2)", "(0,10,2)", "[]", "{}", "[a]", "[wsa]", "[parker, wsa]", "1/3", "2*3", "10**3", "-2**2", "1e3/7",
-    "~/x", "${base_dir}/x", "/abs/path", "C:\\x", "1,2", "3.0.1", "2014-12-23", "1_000", "07", "1+", "(", "'", "True and False",
-    "os", "os.environ", "sys.modules", "exit", "~os", "1/0", "1 if os else 2", "[k for k in os.pardir]", "os.pardir", "__import__",
-    "[x for x in range(3)]", "range(3)", "float('x')", "len('abc')",
+    "42",
+    "-1",
+    "0",
+    "1e-3",
+    "1.5",
+    "0x10",
+    "True",
+    "False",
+    "None",
+    "nan",
+    "inf",
+    " 5",
+    "5 ",
+    "",
+    "'a'",
+    '"a"',
+    "abc",
+    "a b",
+    "[1, 2]",
+    "[1,2,3]",
+    "(1, 2)",
+    "(0,10,2)",
+    "[]",
+    "{}",
+    "[a]",
+    "[wsa]",
+    "[parker, wsa]",
+    "1/3",
+    "2*3",
+    "10**3",
+    "-2**2",
+    "1e3/7",
+    "~/x",
+    "${base_dir}/x",
+    "/abs/path",
+    "C:\\x",
+    "1,2",
+    "3.0.1",
+    "2014-12-23",
+    "1_000",
+    "07",
+    "1+",
+    "(",
+    "'",
+    "True and False",
+    "os",
+    "os.environ",
+    "sys.modules",
+    "exit",
+    "~os",
+    "1/0",
+    "1 if os else 2",
+    "[k for k in os.pardir]",
+    "os.pardir",
+    "__import__",
+    "[x for x in range(3)]",
+    "range(3)",
+    "float('x')",
+    "len('abc')",
 ]
 
 
@@ -84,7 +139,9 @@ def ini_values(paths):
 def corpus(home=None):
     vals = set(EDGE) | ini_values([os.path.join(ROOT, "fluxpype", "config.ini")])
     if home:
-        vals |= ini_values(glob.glob(os.path.join(home, "runs", "*", "config.snapshot.ini")) + [os.path.join(home, "presets.ini")])
+        vals |= ini_values(
+            glob.glob(os.path.join(home, "runs", "*", "config.snapshot.ini")) + [os.path.join(home, "presets.ini")]
+        )
     return sorted(vals)
 
 

@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BaseModel, Field, ValidationError
 
 from . import config_io, external_runs, paths, plotrun
+from ..scenes import store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
@@ -156,6 +157,10 @@ class UpdateIn(BaseModel):
 
 class DataDirIn(BaseModel):
     path: Optional[str] = None
+
+
+class SceneIn(BaseModel):
+    spec: Dict[str, Any]
 
 
 class PresetIn(BaseModel):
@@ -777,6 +782,25 @@ def create_app(
         except SchedulerError as e:
             fail(e)
 
+    @app.get("/api/scenes")
+    def scene_list():
+        """Scenes saved in the data folder (`scenes/<id>.scene.json` with its compiled `.flux` world)."""
+        return reply({"scenes": scene_store.list_scenes(sched.data_dir())})
+
+    @app.get("/api/scenes/{scene_id}")
+    def scene_get(scene_id: str):
+        row = scene_store.get(sched.data_dir(), scene_id)
+        if not row:
+            raise HTTPException(404, "unknown scene")
+        return reply(row)
+
+    @app.post("/api/scenes")
+    def scene_create(body: SceneIn):
+        try:
+            return reply(scene_store.save(sched.data_dir(), body.spec), 201)
+        except scene_store.SceneError as e:
+            fail(e)
+
     @app.get("/api/external-runs")
     def external_run_list(limit: int = 100):
         """Runs started outside Plumber (scripts, terminals, other Claudes) that registered themselves."""
@@ -1241,8 +1265,37 @@ def create_app(
                     + f" with {len(values)} setting(s) changed; it runs nothing",
                     diff,
                 )
+            if tool == "create_scene":
+                made = scene_store.prepare(SceneIn(**args).spec)
+                spec, rep = made["spec"], made["report"]
+                if os.path.exists(os.path.join(scene_store.folder(sched.data_dir()), spec.name + ".scene.json")):
+                    raise HTTPException(
+                        400, f"scene {spec.name!r} already exists; propose a new version under a new name"
+                    )
+                if any(
+                    x["tool"] == "create_scene" and x["args"]["spec"]["name"] == spec.name for x in proposals.pending()
+                ):
+                    raise HTTPException(400, f"a pending proposal already saves a scene named {spec.name!r}")
+                diff = [
+                    {"key": k, "from": None, "to": str(v)}
+                    for k, v in (
+                        ("lines", rep["lines"]),
+                        ("vertices", rep["vertices"]),
+                        ("pairing", ",".join(str(i) for i in spec.pairs())),
+                        ("photosphere", rep["photosphere"]),
+                        ("lid", rep["lid"] or "none"),
+                    )
+                ]
+                return (
+                    {"spec": spec.to_dict()},
+                    f"Save scene {spec.name}: a planar arcade of {rep['lines']} lines; it writes the scene file and "
+                    "its .flux world and runs nothing",
+                    diff,
+                )
         except ValidationError as e:
             raise HTTPException(400, "; ".join(f"{'.'.join(str(x) for x in d['loc'])}: {d['msg']}" for d in e.errors()))
+        except scene_store.SceneError as e:
+            raise HTTPException(400, str(e))
         except (SchedulerError, PresetError) as e:
             raise HTTPException(400, str(e))
         raise HTTPException(400, f"unknown tool {tool!r}")
@@ -1263,6 +1316,8 @@ def create_app(
                 for k, v in json.loads(patch_queue(QueueIn(**a)).body).items()
                 if k in ("paused", "max_parallel", "cpu_budget")
             }
+        if tool == "create_scene":
+            return {"scene": json.loads(scene_create(SceneIn(**a)).body)["id"]}
         return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}
 
     def decided(request: Request, p: Dict[str, Any], what: str, status: int = 200) -> None:
