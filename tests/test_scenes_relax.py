@@ -13,11 +13,14 @@ from fluxpype.scenes import PlanarArcadeSpec, compile_flux, shift_pairing
 from fluxpype.scenes import relax as R
 
 
-def test_settled_at_is_two_sided_and_ignores_a_turning_point():
+def test_settled_at_ignores_turning_points_and_plateaus_that_shift():
     # falls to a minimum at index 20, rises again, flat from 40; the first index flat 10 either side is 50
     v = [10 - 0.4 * i for i in range(21)] + [2 + 0.2 * i for i in range(1, 20)] + [6.0] * 30
     assert R.settled_at(v, window=10, tol=0.01) == 50
     assert R.settled_at(v[:45], window=10, tol=0.01) is None  # nothing at the turning point
+    # a plateau that holds for 30 cycles and then shifts is not settled; the later one is
+    w = [1.0] * 30 + [0.7] * 25
+    assert R.settled_at(w, window=10, tol=0.01) == 40
     assert R.settled_at([1.0] * 15, window=10) is None  # needs window values on both sides
     assert R.settled_at([5.0] * 21, window=10) == 10
     assert R.settled_at([1.0, None] + [1.0] * 30, window=10) == 12

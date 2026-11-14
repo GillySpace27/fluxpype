@@ -12,10 +12,11 @@ fluxons only (label > 0); FLUX's image fluxons (labels below 0) are left out.
 `compare` refuses two worlds that are not a fair pair (`checks.comparable`: same footpoints, photosphere, lid
 and vertex counts) and otherwise relaxes both at once and reports the energy difference B - A per cycle.
 
-Convergence is two-sided: a series counts as settled at cycle c when every value from c - window to c + window is
-within `tol` (relative) of the value at c. A one-sided "flat over the last 10 cycles" rule fires at turning points;
-this one cannot, but it needs `window` cycles after the answer, so the last `window` cycles can never be the
-answer. Settled means the numbers stopped moving, not that they are physically right.
+Convergence: a series counts as settled at cycle c when every value from c - window to the end of the run is
+within `tol` (relative) of the value at c, with at least `window` cycles after c. A one-sided "flat over the last 10
+cycles" rule fires at turning points, and "flat 10 either side" passes a plateau that later shifts (one sheared
+arcade held for 30 cycles, then fell 34 %); this rule passes neither. It can only say the numbers stopped moving
+within this run, not that they are physically right or that a longer run would not move them.
 
 FLUX needs its own Perl (the one that can `use Flux`): `--perl` or `$FLUX_PERL`, else `perl` on PATH. FLUX's
 Perl objects often crash when the process exits (SIGSEGV after all output is written); the driver prints `DONE`
@@ -82,14 +83,15 @@ print "DONE\n";
 
 
 def settled_at(values: Sequence[Optional[float]], window: int = 10, tol: float = 0.01) -> Optional[int]:
-    """First index c with every value in [c - window, c + window] within `tol` (relative) of values[c]; else None."""
+    """First index c (with `window` values after it) such that every value from c - window to the end is within `tol`
+    (relative) of values[c]; else None."""
     n = len(values)
     for c in range(window, n - window):
         ref = values[c]
         if ref is None or not math.isfinite(ref):
             continue
         scale = abs(ref) or 1.0
-        if all(v is not None and abs(v - ref) <= tol * scale for v in values[c - window : c + window + 1]):
+        if all(v is not None and abs(v - ref) <= tol * scale for v in values[c - window :]):
             return c
     return None
 
