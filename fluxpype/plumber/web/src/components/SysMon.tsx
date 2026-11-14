@@ -253,6 +253,20 @@ function Body({ d }: { d: SysSnapshot }) {
           {d.processes.tasks.length > 0 && (
             <Table title="Plumber tasks running now" head={["Task", "Processes", "CPU", "Memory"]} rows={d.processes.tasks.map((t) => [t.label, String(t.procs), `${t.cpu.toFixed(0)}%`, bytes(t.rss)])} />
           )}
+          {d.processes.external && d.processes.external.length > 0 && (
+            <Table
+              title="Other FLUX runs (not started by Plumber)"
+              head={["Command", "PID", "CPU", "Memory"]}
+              rows={d.processes.external.map((p) => [
+                <span key="c" className="block truncate font-mono text-[11px]" title={`${p.cmd}\n${p.cwd ?? ""}`}>
+                  {p.cmd}
+                </span>,
+                String(p.pid),
+                `${p.cpu.toFixed(0)}%`,
+                bytes(p.rss),
+              ])}
+            />
+          )}
           <Table
             title="Busiest processes"
             head={["Process", "PID", "CPU", "Memory"]}

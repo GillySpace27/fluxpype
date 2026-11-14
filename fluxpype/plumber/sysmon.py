@@ -152,4 +152,26 @@ class SysMon:
                 t["procs"] += 1
             rows.append({**row, "task": label})
         rows.sort(key=lambda r: r["cpu"], reverse=True)
-        return {"top": rows[:top], "tasks": sorted(tasks.values(), key=lambda t: -t["cpu"])}
+        return {"top": rows[:top], "tasks": sorted(tasks.values(), key=lambda t: -t["cpu"]), "external": external_flux(groups)}
+
+
+_FLUXISH = re.compile(r"\.(flux|pdl)\b|Flux")
+
+
+def external_flux(groups: Dict[int, str]) -> List[Dict[str, Any]]:
+    """FLUX runs Plumber did not start: perl processes outside its task groups whose command line names a .flux/.pdl file
+    or Flux. ponytail: a command-line heuristic; a script that loads Flux without saying so is missed."""
+    out = []
+    for p in psutil.process_iter(["pid", "name", "cmdline", "cwd", "create_time", "cpu_percent", "memory_info"]):
+        i = p.info
+        cmd = " ".join(i["cmdline"] or [])
+        if not (i["name"] or "").startswith("perl") or not _FLUXISH.search(cmd):
+            continue
+        try:
+            if os.getpgid(i["pid"]) in groups:
+                continue
+        except OSError:
+            continue
+        rss = i["memory_info"].rss if i["memory_info"] else 0
+        out.append({"pid": i["pid"], "cmd": cmd, "cwd": i["cwd"], "started": i["create_time"], "cpu": i["cpu_percent"] or 0.0, "rss": rss})
+    return sorted(out, key=lambda r: r["started"] or 0)
