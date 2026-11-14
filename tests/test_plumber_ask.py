@@ -24,6 +24,7 @@ def ev(**d): print(json.dumps(d), flush=True)
 def delta(t): ev(type="stream_event", event={{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": t}}}})
 ev(type="system", subtype="init")
 ev(type="stream_event", event={{"type": "content_block_start", "content_block": {{"type": "tool_use", "name": "mcp__fluxpype__status"}}}})
+ev(type="assistant", message={{"content": [{{"type": "tool_use", "name": "mcp__fluxpype__status", "input": {{"verbose": True}}}}]}})
 delta("Hel"); delta("lo")
 delta("|" + ("--tools" in sys.argv and "tools-off" or "") + "|" + ("submit_job" in " ".join(sys.argv) and "write-listed" or "") + "|" + prompt[-40:])
 ev(type="rate_limit_event", rate_limit_info={{"unifiedWindows": {{"five_hour": {{"utilization": 0.23, "resetsAt": 4102444800}}, "seven_day": {{"utilization": 0.3, "resetsAt": 4102444900}}}}}})
@@ -418,3 +419,30 @@ def test_the_prompt_names_plum_and_carries_the_scene_designer_plan():
     assert "Plumber Scene Designer: what is planned" in prompt
     assert "not built" in prompt
     assert "\u2014" not in (ask.DOCS / "scene_designer.md").read_text(encoding="utf-8")
+
+
+def test_each_question_is_logged_at_0600_and_the_next_one_sees_it(client, plumber_home):
+    client.post("/api/ask", json={"question": "first one", "page": "/jobs"}, headers=H)
+    client.post("/api/ask", json={"question": "second one"}, headers=H)
+    f = Path(plumber_home) / ask.TRANSCRIPT_FILE
+    assert stat.S_IMODE(f.stat().st_mode) == 0o600
+    rows = [json.loads(x) for x in f.read_text().splitlines()]
+    assert [r["question"] for r in rows] == ["first one", "second one"] and rows[0]["page"] == "/jobs"
+    assert rows[0]["answer"].startswith("Hello|") and rows[0]["tools"] == [{"name": "status", "input": '{"verbose": true}'}]
+    assert rows[0]["model"] == "claude-sonnet-5-5" and rows[0]["cost"] == 0.01 and rows[0]["error"] is None
+    assert [t["q"] for t in ask.earlier_turns(str(plumber_home))] == ["first one", "second one"]
+
+
+def test_earlier_turns_skip_old_and_failed_questions_and_the_log_rotates(tmp_path):
+    h = str(tmp_path)
+    ask._log_turn(h, {"ts": 1000, "question": "old", "answer": "a"})
+    ask._log_turn(h, {"ts": 1000 + 13 * 3600, "question": "failed", "answer": "x", "error": "boom"})
+    ask._log_turn(h, {"ts": 1000 + 13 * 3600, "question": "kept", "answer": "b", "error": None})
+    assert ask.earlier_turns(h, now=1000 + 14 * 3600) == [{"q": "kept", "a": "b"}]
+    assert ask.earlier_turns(str(tmp_path / "none")) == []
+    ask.TRANSCRIPT_MAX_BYTES, keep = 10, ask.TRANSCRIPT_MAX_BYTES
+    try:
+        ask._log_turn(h, {"ts": 1, "question": "new", "answer": "c"})
+    finally:
+        ask.TRANSCRIPT_MAX_BYTES = keep
+    assert (tmp_path / (ask.TRANSCRIPT_FILE + ".1")).exists() and len((tmp_path / ask.TRANSCRIPT_FILE).read_text().splitlines()) == 1

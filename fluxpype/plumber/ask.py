@@ -34,6 +34,9 @@ NO_TOOLS = ["wait_for_task"]  # polls for up to 300 s, past the 120 s a question
 REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
 REPO_TOOLS = "Read,Grep,Glob"
 USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
+TRANSCRIPT_FILE = "ask_transcripts.jsonl"  # in the Plumber home, 0600; never under ask/, which the CLI can read
+TRANSCRIPT_MAX_BYTES = 5_000_000  # past this the file is kept as .1 and a new one starts
+CONTINUITY_HOURS, CONTINUITY_TURNS = 12, 4  # earlier questions the server puts in front of a new one
 _recent: Deque[Tuple[float, int]] = deque(maxlen=200)  # (time, new tokens) of answered questions, for the spend rate
 _busy = threading.Lock()  # one question at a time: each one is a process and spends the user's quota
 _question = ""  # id of the question running now; a proposal must carry it (server.py, POST /api/proposals)
@@ -139,6 +142,10 @@ def parse(line: str) -> Optional[Dict[str, Any]]:
         b = e.get("content_block", {})
         if e.get("type") == "content_block_start" and b.get("type") == "tool_use":
             return {"type": "tool", "name": b.get("name", "").replace("mcp__fluxpype__", "")}
+    if d.get("type") == "assistant":  # the finished message: tool calls with their arguments (the stream events carry none)
+        calls = [b for b in (d.get("message") or {}).get("content") or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+        if calls:
+            return {"type": "calls", "calls": [{"name": b.get("name", "").replace("mcp__fluxpype__", ""), "input": b.get("input")} for b in calls]}
     if d.get("type") == "rate_limit_event":  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
         w = (d.get("rate_limit_info") or {}).get("unifiedWindows") or {}
         return {"type": "limits", "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()}}
@@ -166,6 +173,41 @@ def _note(home: str, ev: Dict[str, Any]) -> None:
                 json.dump({"ts": time.time(), "windows": ev["windows"]}, f)
     except OSError:
         pass  # the readout just misses a point
+
+
+def _log_turn(home: str, rec: Dict[str, Any]) -> None:
+    """Append one question to the transcript (0600). Tool results are left out: they are the untrusted bulk."""
+    path = os.path.join(home, TRANSCRIPT_FILE)
+    try:
+        if os.path.getsize(path) > TRANSCRIPT_MAX_BYTES:
+            os.replace(path, path + ".1")
+    except OSError:
+        pass
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass  # the log just misses a turn
+
+
+def earlier_turns(home: str, now: Optional[float] = None) -> List[Dict[str, str]]:
+    """The last few answered questions of the past hours, from the transcript, as the {q, a} pairs user_prompt takes."""
+    now = time.time() if now is None else now
+    try:
+        with open(os.path.join(home, TRANSCRIPT_FILE)) as f:
+            lines = f.read().splitlines()[-50:]
+    except OSError:
+        return []
+    out = []
+    for ln in lines:
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            continue
+        if r.get("answer") and not r.get("error") and now - r.get("ts", 0) <= CONTINUITY_HOURS * 3600:
+            out.append({"q": r.get("question", ""), "a": r["answer"]})
+    return out[-CONTINUITY_TURNS:]
 
 
 def token_rate(window: float = 60.0) -> float:
@@ -237,6 +279,7 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
     timer: Optional[threading.Timer] = None
     errfile = tempfile.TemporaryFile()
     finished = False
+    rec: Dict[str, Any] = {"ts": time.time(), "id": _question, "page": page, "question": question, "answer": "", "tools": [], "proposals": [], "error": None}
     try:
         cwd = Path(home) / "ask"  # empty, so no project CLAUDE.md is picked up
         cwd.mkdir(parents=True, exist_ok=True)
@@ -246,16 +289,25 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         timer = threading.Timer(TIMEOUT_S, proc.kill)
         timer.start()
         assert proc.stdin and proc.stdout
-        proc.stdin.write(user_prompt(question, page, history))
+        proc.stdin.write(user_prompt(question, page, earlier_turns(home) or history))  # the browser's pairs only when the log has none
         proc.stdin.close()  # the question travels on stdin, so nothing the person types can be read as a flag
         for line in proc.stdout:
             ev = parse(line)
             if ev:
                 _note(home, ev)
-                if ev["type"] == "limits":
-                    continue  # kept for the dashboard, nothing for the answer panel
+                if ev["type"] == "text":
+                    rec["answer"] += ev["text"]
+                elif ev["type"] == "calls":
+                    rec["tools"] += [{"name": c["name"], "input": json.dumps(c["input"])[:500]} for c in ev["calls"]]
+                elif ev["type"] == "done":
+                    rec.update(model=ev["model"], cost=ev["cost"])
+                elif ev["type"] == "error":
+                    rec["error"] = ev["message"]
+                if ev["type"] in ("limits", "calls"):
+                    continue  # kept for the dashboard or the log, nothing for the answer panel
                 finished = finished or ev["type"] in ("done", "error")
                 ids = proposals.for_question(os.path.join(home, "proposals.json"), _question) if ev["type"] == "done" else []
+                rec["proposals"] = ids
                 if ids:  # written by Plumber, not the model: the answer panel draws a card per id from GET /api/proposals
                     yield sse({"type": "text", "text": f"\n\n```flux-proposals\n{json.dumps(ids)}\n```\n"})
                 yield sse(ev)
@@ -263,12 +315,16 @@ def stream(question: str, page: str, history: List[Dict[str, str]], home: str) -
         if not finished:
             errfile.seek(0)
             tail = errfile.read().decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
-            yield sse({"type": "error", "message": f"claude exited with code {proc.returncode}. {tail[0][:300]}"})
+            rec["error"] = f"claude exited with code {proc.returncode}. {tail[0][:300]}"
+            yield sse({"type": "error", "message": rec["error"]})
     finally:  # also runs when the browser goes away mid-answer
         if timer:
             timer.cancel()
         if proc and proc.poll() is None:
             proc.kill()
         errfile.close()
+        if not finished and not rec["error"]:
+            rec["error"] = "stopped before the answer finished"  # timeout or the browser left
+        _log_turn(home, rec)
         _question = ""
         _busy.release()
