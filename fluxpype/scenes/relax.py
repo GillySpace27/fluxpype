@@ -97,11 +97,17 @@ def settled_at(values: Sequence[Optional[float]], window: int = 10, tol: float =
 
 
 def parse_line(line: str) -> Optional[Dict]:
-    """The record on a driver "CYCLE {...}" line, else None."""
-    if not line.startswith("CYCLE "):
+    """The record on a driver "CYCLE {...}" line, else None.
+
+    FLUX's Perl binding printf()s messages such as "Read 'x': N vertices" without a trailing newline and flushes them
+    from C's own buffer, so they can land in front of the driver's record on the same line. The record is therefore
+    looked for anywhere in the line, not only at its start.
+    """
+    i = line.find("CYCLE {")
+    if i < 0:
         return None
     try:
-        return json.loads(line[6:])
+        return json.loads(line[i + 6 :])
     except ValueError:
         return None
 
@@ -207,7 +213,7 @@ def relax(
                             ]
                         },
                     )
-            elif line.strip() == "DONE":
+            elif line.strip().endswith("DONE"):  # may also carry a C message in front of it
                 done = True
         rc = proc.wait()
     ok = done and len(series) == cycles + 1  # a crash after DONE is FLUX's exit-time segfault, not a failure

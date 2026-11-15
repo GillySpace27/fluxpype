@@ -94,6 +94,17 @@ def test_relax_keeps_stderr_off_the_record_pipe(tmp_path):
     assert res["ok"] and Path(res["log"] + ".stderr").exists()
 
 
+def test_relax_reads_records_that_a_c_message_prefixed(tmp_path):
+    w = tmp_path / "w.flux"
+    w.write_text("x")
+    lines = _cycles(4)
+    lines[2] = "Read 'w.flux': 750 vertices" + lines[2]  # C printf without a newline, flushed into the same line
+    lines.append("Read 'w.relaxed.flux': 750 verticesDONE\n")
+    res = R.relax(str(w), cycles=4, popen=fake_popen(lines))
+    assert R.parse_line('noise CYCLE {"cycle":1}')["cycle"] == 1 and R.parse_line("CYCLE {broken") is None
+    assert res["ok"] and len(res["series"]) == 5
+
+
 def test_relax_is_a_failure_without_done_or_with_missing_cycles(tmp_path):
     w = tmp_path / "w.flux"
     w.write_text("x")
