@@ -14,7 +14,7 @@ export const PLUM_SKINS: PlumSkin[] = [
   { id: "sky", label: "Sky", skin: "#c4e2ff", blush: "#ff9fb0", mouth: "#3a6fd8" },
 ];
 
-export const DEFAULT_PLUM_SKIN = "tan";
+export const DEFAULT_PLUM_SKIN = "sunlit-gold";
 const KEY = "plumber.plumSkin";
 
 const find = (id: string | null) => PLUM_SKINS.find((s) => s.id === id);
