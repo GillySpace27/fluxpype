@@ -23,6 +23,7 @@ from ..scenes import store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
+from .conversations import ConversationError, Conversations
 from .health import Health
 from .presets import PresetError
 from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
@@ -287,6 +288,7 @@ def create_app(
 
     def agent_alive() -> None:
         now = time.time()
+    ask_token: Optional[str] = None,
         link["alive"] = link["seen"] = now
         if now - link["saved"] > 30:  # a few writes a minute at most
             link["saved"] = now
@@ -297,6 +299,11 @@ def create_app(
 
     if updater is None:
         from .updates import Updater
+
+    from . import ask as ask_mod  # imported here so the routes and the system monitor below share it
+
+    # a turn Plumber runs itself (a job Plum proposed finished) is stored; the panel fetches it on this push
+    waker = ask_mod.Waker(str(scheduler.home), lambda cid: hub.publish("ask_turn", {"conversation": cid}))
 
         updater = Updater(str(paths.checkout_root()))
 
@@ -317,7 +324,13 @@ def create_app(
     log_offsets: Dict[str, int] = {}
     last_state: Dict[str, str] = {}
     app.state.hub, app.state.scheduler = hub, sched
-    sched.on_change = hub.publish
+
+    def on_sched_change(kind: str, payload: Any) -> None:
+        hub.publish(kind, payload)
+        if kind == "job_state" and payload:
+            waker.job_finished(payload)  # a job Plum proposed has ended: wake her conversation (ask.Waker)
+
+    sched.on_change = on_sched_change
     # the event log: runs in the loop whether or not a browser is connected (notify.py)
     notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
     app.state.notifier = notifier
@@ -352,9 +365,24 @@ def create_app(
         )
 
     def origin_ok(headers) -> bool:
+        """The person's token (cookie or header): pages, the WebSocket and every write. The Ask token never counts."""
         origin = headers.get("origin")
         if not origin:
             return True
+    def role_of(cookies, headers) -> Optional[str]:
+        """ "main" for the person's token, "ask" for the Ask bar's own credential (header only), else None. The Ask
+        role comes from the secret, not from X-Flux-Client, which any caller can set to anything."""
+        if authed(cookies, headers):
+            return "main"
+        given = headers.get("x-flux-token") or ""
+        if ask_token and given and hmac.compare_digest(given.encode(), ask_token.encode()):
+            return "ask"
+        return None
+
+    def client_of(request: Request) -> str:
+        """The X-Flux-Client label, forced to "ask" for a request that carries the Ask token."""
+        return "ask" if getattr(request.state, "role", None) == "ask" else request.headers.get("x-flux-client") or ""
+
         return host_of(origin).lower() in allowed or host_of(origin) == host_of(headers.get("host", ""))
 
     @app.middleware("http")
@@ -377,11 +405,12 @@ def create_app(
                 return login_page("That token is not this Plumber's current token.", 403)
             return with_cookie(RedirectResponse("/", status_code=303))
         if path.startswith("/api/"):
-            if not authed(request.cookies, request.headers):
+            request.state.role = role_of(request.cookies, request.headers)
+            if request.state.role is None:
                 return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-            client = request.headers.get("x-flux-client")
+            client = client_of(request) or None
             # a second lock behind the CLI: the Ask bar's MCP server may only read and store proposals
             if (
                 client == "ask"
@@ -560,8 +589,6 @@ def create_app(
         """Process-group id -> label for each running task (a task's pid leads its group)."""
         return {t["pid"]: f"CR{t['cr']} f{t['nflux']}" for t in sched.store.tasks_with_status("running") if t["pid"]}
 
-    from . import ask as ask_mod
-
     sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
 
     @app.get("/api/system")
@@ -576,19 +603,25 @@ def create_app(
 
     @app.get("/api/ask")
     def ask_status():
-        from . import ask
-
-        return reply(ask.availability())
+        return reply(ask_mod.availability(str(sched.home)))
 
     @app.post("/api/ask")
     def ask_post(body: AskIn):
         """Answer a question about FLUX or Plumber (server-sent events); see ask.py."""
-        from . import ask
-
         return StreamingResponse(
-            ask.stream(body.question, body.page, body.history, str(sched.home)),
+            ask_mod.stream(
+                body.question, body.page, body.history, str(sched.home), body.conversation, body.mode, body.model
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        conversation: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,40}$")  # made by the panel
+        mode: Literal["explain", "codesign"] = "explain"  # fixed when the conversation starts
+        model: Optional[Literal["sonnet", "opus"]] = None  # the mode's default when omitted
+
+    class AskSettingsIn(BaseModel):
+        wake_on_results: Optional[bool] = None
+        codesign_daily_cap_usd: Optional[float] = None
+        flux_source: Optional[str] = None
         )
 
     @app.get("/api/agent-prompt")
@@ -607,6 +640,32 @@ def create_app(
         counts = {k: 0 for k in ("magnetogram", "footpoints", "pfss", "world", "relaxed_world")}
         for adapt, cr, nflux, _method in sample:
             ctx = sched.probe_context_for(name, cr, nflux, adapt, parsed=cf)
+    @app.get("/api/ask/conversations")
+    def ask_conversations():
+        return reply({"conversations": Conversations(str(sched.home)).list()})
+
+    @app.get("/api/ask/conversations/{cid}")
+    def ask_conversation(cid: str):
+        try:
+            rec = Conversations(str(sched.home)).load(cid)
+        except ConversationError as e:
+            fail(e, 404)
+        if not rec:
+            raise HTTPException(404, "unknown conversation")
+        return reply({k: v for k, v in rec.items() if k != "session"})  # the CLI session id is Plumber's own
+
+    @app.get("/api/ask/settings")
+    def ask_settings_get():
+        return reply(ask_mod.settings(str(sched.home)))
+
+    @app.put("/api/ask/settings")
+    def ask_settings_put(body: AskSettingsIn):
+        try:
+            patch = body.model_dump(exclude_unset=True)
+            return reply(ask_mod.save_settings(str(sched.home), patch))
+        except ValueError as e:
+            fail(e)
+
             if not ctx:
                 continue
             for k, v in first_match_for_context(ctx).items():
@@ -1334,7 +1393,7 @@ def create_app(
         """Only the Ask bar's MCP server, during its question: check and store, never run."""
         from . import ask
 
-        if request.headers.get("x-flux-client") != "ask":
+        if client_of(request) != "ask":
             raise HTTPException(403, "proposals come from the Ask bar; act through the normal routes")
         if not body.question or body.question != ask.current_question():
             raise HTTPException(409, "no Ask question is running with this id")
@@ -1354,7 +1413,7 @@ def create_app(
         question like creation does, but the proposal may come from an earlier question: iteration spans turns."""
         from . import ask
 
-        if request.headers.get("x-flux-client") != "ask":
+        if client_of(request) != "ask":
             raise HTTPException(403, "only the Ask bar withdraws; a person rejects from the card")
         if not body.question or body.question != ask.current_question():
             raise HTTPException(409, "no Ask question is running with this id")
@@ -1369,7 +1428,7 @@ def create_app(
     @app.post("/api/proposals/{pid}/approve")
     def proposal_approve(request: Request, pid: str):
         """The person's click. Runs the stored arguments once; nothing in this request's body is read."""
-        if request.headers.get("x-flux-client"):
+        if client_of(request):
             raise HTTPException(403, "only a person can approve a proposal, from the card")
         try:
             p = proposals.claim(pid)
@@ -1460,6 +1519,8 @@ def create_app(
         n = sched.store.ack_events(body.seqs, all_=body.all, job=body.job)
         hub.publish("events_read", sched.store.event_counts())
         return reply({**event_reply([]), "acked": n})
+        if body.tool in ask.CODESIGN_ONLY and ask.current_mode() != "codesign":
+            raise HTTPException(403, f"{body.tool} is for Co-design mode; this conversation is in Explain mode")
 
     @app.get("/api/overview")
     def overview():

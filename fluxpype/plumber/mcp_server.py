@@ -200,6 +200,11 @@ def _read_json(path: Path) -> Optional[dict]:
 
 
 def discover_existing(home: Path) -> Optional[Tuple[str, str]]:
+def token_file_name() -> str:
+    """The Ask bar's MCP copy signs in with its own token file; every other copy with the person's token."""
+    return "ask_token" if os.environ.get("FLUX_MCP_CLIENT") == "ask" else "token"
+
+
     """`(url, token)` of the live Plumber for `home`, validated against /api/status; None if there is none."""
     info = _read_json(home / "server.json")
     if not info or not isinstance(info.get("pid"), int) or not isinstance(info.get("port"), int):
@@ -207,7 +212,7 @@ def discover_existing(home: Path) -> Optional[Tuple[str, str]]:
     if not process_alive(info["pid"], info.get("pid_start")):
         return None
     try:
-        token = (home / "token").read_text(encoding="utf-8").strip()
+        token = (home / token_file_name()).read_text(encoding="utf-8").strip()
     except OSError:
         return None
     host = info.get("host") or "127.0.0.1"
