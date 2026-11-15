@@ -10,6 +10,7 @@ import { useCache, useJobs, useProfiles, useQueue } from "../lib/hooks";
 import { useTheme } from "../lib/theme";
 import { AskAnswer } from "./AskAnswer";
 import { Plum } from "./Plum";
+import { PlumActor } from "./PlumActor";
 
 const MAC = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 const KEY = MAC ? "⌘K" : "Ctrl K";
@@ -243,11 +244,11 @@ function Palette({ onClose }: { onClose: () => void }) {
         <RDialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
         <RDialog.Content
           aria-describedby={undefined}
-          className="fixed left-1/2 top-[10vh] z-50 flex max-h-[78vh] w-[min(720px,calc(100vw-2rem))] -translate-x-1/2 animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop focus:outline-none"
+          className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(720px,calc(100vw-2rem))] -translate-x-1/2 animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop focus:outline-none"
         >
           <RDialog.Title className="sr-only">Ask or search</RDialog.Title>
           <div className="flex items-center gap-3 border-b hair px-4 py-3">
-            {asking ? <Plum className="h-8 w-8" /> : <Search className="h-4 w-4 text-faint" />}
+            <Search className="h-4 w-4 text-faint" />
             <input
               autoFocus
               value={q}
@@ -304,7 +305,7 @@ function Palette({ onClose }: { onClose: () => void }) {
                         onMouseEnter={() => setSel(i)}
                         onClick={() => choose(i)}
                       >
-                        {r === null ? <Plum className="h-6 w-6" /> : <Icon className="h-4 w-4 shrink-0 text-faint" />}
+                        {r === null ? <Plum pose="head" className="h-6 w-8" /> : <Icon className="h-4 w-4 shrink-0 text-faint" />}
                         <span className="min-w-0 flex-1 truncate">{r === null ? `Ask Plum: ${q.trim()}` : r.title}</span>
                         {r && r.hint && <span className="shrink-0 text-[11px] text-faint">{r.hint}</span>}
                         {i === sel && <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-faint" />}
@@ -325,6 +326,8 @@ function Palette({ onClose }: { onClose: () => void }) {
 /** The box in the middle of the top bar. Cmd+K (Ctrl+K) opens it from anywhere. */
 export function AskBar() {
   const [open, setOpen] = useState(false);
+  const [away, setAway] = useState(false); // Plum has hopped out of the bar onto the panel
+  const slot = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
@@ -347,11 +350,14 @@ export function AskBar() {
         className="flex h-9 w-full max-w-[420px] items-center gap-2.5 rounded-xl border border-line bg-raised/70 px-3 text-left text-[13px] text-faint transition-colors hover:bg-raised focus:outline-none focus-visible:ring-1 focus-visible:ring-accent/60"
         aria-label="Ask or search"
       >
-        <Plum className="h-8 w-8" />
+        <span ref={slot} className="grid h-8 w-10 shrink-0 place-items-center" style={{ visibility: away ? "hidden" : "visible" }}>
+          <Plum pose="head" className="h-8 w-10" />
+        </span>
         <span className="min-w-0 flex-1 truncate">Ask Plum or search</span>
         <kbd className="hidden rounded border border-line px-1.5 py-0.5 text-[10px] sm:inline">{KEY}</kbd>
       </button>
       {open && <Palette onClose={() => setOpen(false)} />}
+      <PlumActor slot={slot} open={open} onAway={setAway} />
     </>
   );
 }
