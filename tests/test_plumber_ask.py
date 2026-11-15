@@ -203,7 +203,7 @@ def test_the_guide_the_cards_and_the_server_name_the_same_actions():
         titles
         == listed
         == set(proposals.TOOLS)
-        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene", "relax_scene"}
+        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene", "relax_scene", "draft_handoff"}
     )
     assert "flux-action" not in guide + tsx  # the old model-written cards are gone
 

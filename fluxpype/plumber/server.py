@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config_io, external_runs, paths, plotrun, scene_jobs
+from . import config_io, external_runs, handoff, paths, plotrun, scene_jobs
 from ..scenes import store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
@@ -1471,9 +1471,21 @@ def create_app(
                 if b.speed is not None:
                     norm["speed"] = b.speed
                 return norm, planned["summary"] + f", on the {backend} backend", planned["diff"]
+            if tool == "draft_handoff":
+                w = handoff.validate(args)
+                unknown = [i for i in w["ids"] if not sched.store.get_job(i) and not sched.store.get_task(i)]
+                if unknown:
+                    raise HTTPException(400, "unknown job or task id(s): " + ", ".join(unknown))
+                diff = [{"key": k, "from": None, "to": ", ".join(w[k])} for k in ("ids", "refs", "files") if w[k]]
+                return (
+                    w,
+                    f"Hand-off work order: {w['title']}. It runs nothing; Save writes it to a file, Launch opens Claude "
+                    "Code on a new branch in a separate worktree",
+                    diff,
+                )
         except ValidationError as e:
             raise HTTPException(400, "; ".join(f"{'.'.join(str(x) for x in d['loc'])}: {d['msg']}" for d in e.errors()))
-        except (scene_store.SceneError, scene_jobs.SceneJobError) as e:
+        except (scene_store.SceneError, scene_jobs.SceneJobError, handoff.HandoffError) as e:
             raise HTTPException(400, str(e))
         except (SchedulerError, PresetError) as e:
             raise HTTPException(400, str(e))
@@ -1499,6 +1511,8 @@ def create_app(
             return {"scene": json.loads(scene_create(SceneIn(**a)).body)["id"]}
         if tool == "relax_scene":
             return {"job_id": json.loads(_create_scene_job(SceneRelaxIn(**a), origin).body)["id"]}
+        if tool == "draft_handoff":  # the card's Save: the work order as a file in the Plumber home
+            return {"path": handoff.save(str(sched.home), a)}
         return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}
 
     def decided(request: Request, p: Dict[str, Any], what: str, status: int = 200) -> None:
@@ -1508,7 +1522,11 @@ def create_app(
 
     @app.get("/api/proposals")
     def proposals_list():
-        return reply({"proposals": proposals.list()})
+        rows = proposals.list()
+        for p in rows:
+            if p["tool"] == "draft_handoff":  # rendered here, not stored: the card's Copy prompt button reads it
+                p["prompt"] = handoff.render(p["args"])
+        return reply({"proposals": rows})
 
     @app.post("/api/proposals")
     def proposal_add(request: Request, body: ProposalIn):
@@ -1576,6 +1594,37 @@ def create_app(
             decided(request, p, "failed", 500)
             raise HTTPException(500, f"the proposal failed: {type(e).__name__}") from None
         decided(request, p, "approved")
+        hub.publish("proposals", {})
+        return reply(out)
+
+    @app.post("/api/proposals/{pid}/launch")
+    def proposal_launch(request: Request, pid: str):
+        """The person's click on a hand-off card: a worktree on a new branch off origin/main with a guard hook, the work
+        order in it, and Claude Code opened there (macOS Terminal) or the command to run. Once per card."""
+        if client_of(request):
+            raise HTTPException(403, "only a person can launch a hand-off, from the card")
+        try:
+            p = proposals.get(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        if p["tool"] != "draft_handoff":
+            raise HTTPException(400, "only a hand-off card can launch Claude Code")
+        if p["status"] not in ("pending", "approved"):
+            raise HTTPException(409, f"this hand-off is {p['status']}")
+        if (p.get("result") or {}).get("launch"):
+            raise HTTPException(
+                409, "this hand-off was already launched; its worktree is " + p["result"]["launch"]["worktree"]
+            )
+        from . import ask
+
+        try:
+            out = handoff.launch(str(sched.home), str(paths.checkout_root()), p["args"], ask.find_cli())
+        except handoff.HandoffError as e:
+            fail(e)
+        except Exception as e:  # noqa: BLE001 - git or the OS failed in a way the card should name, not a 500 page
+            raise HTTPException(500, f"launch failed: {type(e).__name__}: {e}") from None
+        proposals.annotate(pid, launch=out)
+        decided(request, p, "launched")
         hub.publish("proposals", {})
         return reply(out)
 

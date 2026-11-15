@@ -371,6 +371,28 @@
     "supersedes"
    ]
   },
+  "draft_handoff": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "change",
+    "diagnosis",
+    "files",
+    "goal",
+    "happened",
+    "ids",
+    "refs",
+    "scene",
+    "supersedes",
+    "test_command",
+    "test_expected",
+    "title"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,

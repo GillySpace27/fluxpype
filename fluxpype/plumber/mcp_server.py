@@ -1091,6 +1091,48 @@ def build_server(
             p = (await api("POST", f"/api/proposals/{ident(proposal_id, 'proposal_id')}/withdraw", body=body)).json()
             return dumps({"proposal_id": p["id"], "status": p["status"]})
 
+    if propose:
+
+        @tool(
+            "Draft a hand-off work order for a coding agent when something is broken or missing in fluxpype itself "
+            "(never in fluxon-mhd, the FLUX core). Fields: `title` (one line), `goal` (what the person was trying to "
+            "do), `happened` (the evidence: job and task ids go in `ids`, the log lines or output that show it, the "
+            "scene in `scene`; copy log text verbatim, it is shown fenced as untrusted data), `diagnosis` (your reading, "
+            "with file:line in `refs`, for example fluxpype/plumber/monitor.py:84), `change` (the change you propose), "
+            "`files` (the files likely touched), `test_command` and `test_expected` (a command and the result that "
+            "proves it fixed). Plumber appends the standing constraints itself. The card lets the person copy the "
+            "prompt, save it, or launch Claude Code on a new branch in a separate worktree; nothing runs until they "
+            "click.",
+            write,
+        )
+        async def draft_handoff(
+            title: str,
+            goal: str,
+            happened: str,
+            diagnosis: str,
+            change: str,
+            test_command: str,
+            test_expected: str,
+            ids: Optional[List[str]] = None,
+            scene: Optional[str] = None,
+            refs: Optional[List[str]] = None,
+            files: Optional[List[str]] = None,
+        ) -> str:
+            body = dict(
+                title=title,
+                goal=goal,
+                happened=happened,
+                diagnosis=diagnosis,
+                change=change,
+                test_command=test_command,
+                test_expected=test_expected,
+                ids=ids,
+                scene=scene,
+                refs=refs,
+                files=files,
+            )
+            return await proposal("draft_handoff", {k: v for k, v in body.items() if v is not None})
+
     @tool(
         "What is in the data cache: totals by kind, and a page of files filtered by kind, rotation (cr) or "
         "fluxon count (nflux). `rescan` re-reads the disk first.",

@@ -576,7 +576,7 @@ def test_the_ask_bars_copy_supersedes_and_withdraws_its_own_proposals(rig, monke
             return {t.name: t.input_schema["properties"] for t in (await c.list_tools()).tools}
 
     s = anyio.run(schemas, asker.server)
-    assert set(s) == {n for n, _, _ in TOOLS} - {"get_notifications"} | {"withdraw_proposal"}
+    assert set(s) == {n for n, _, _ in TOOLS} - {"get_notifications"} | {"withdraw_proposal", "draft_handoff"}
     assert all("supersedes" in s[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
     plain = anyio.run(schemas, rig.server)  # the agents' copy: no supersedes
     assert "withdraw_proposal" not in plain and "supersedes" not in plain["submit_job"]
