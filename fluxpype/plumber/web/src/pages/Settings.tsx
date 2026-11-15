@@ -11,6 +11,8 @@ import { notifyEnabled, notifySupported, setNotifyEnabled } from "../lib/events"
 import { useHealth, useQueue, useStatus } from "../lib/hooks";
 import { Dot, useSetBackend } from "../components/SystemBar";
 import { useTheme } from "../lib/theme";
+import { Plum } from "../components/Plum";
+import { PLUM_SKINS, plumSkin, setPlumSkin } from "../lib/plumSkin";
 
 function Row({ title, hint, children }: { title: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -53,6 +55,34 @@ function BrowserNotifications() {
         setOn(v);
       }}
     />
+  );
+}
+
+/** Skin tone for Plum, the Ask agent. Kept in this browser; changes every Plum on the page at once. */
+function PlumSkinPicker() {
+  const [id, setId] = useState(plumSkin());
+  return (
+    <div className="flex items-center gap-3">
+      <Plum pose="head" className="h-9 w-11" />
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Plum's skin tone">
+        {PLUM_SKINS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            role="radio"
+            aria-checked={s.id === id}
+            aria-label={s.label}
+            title={s.label}
+            className={cn("h-6 w-6 rounded-full border border-black/20 outline-offset-2", s.id === id && "outline outline-2 outline-[rgb(var(--accent))]")}
+            style={{ background: s.skin }}
+            onClick={() => {
+              setPlumSkin(s.id);
+              setId(s.id);
+            }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -100,7 +130,7 @@ export function SettingsPage() {
 
       <section>
         <SectionTitle title="Appearance" />
-        <Card>
+        <Card className="divide-y divide-line/60">
           <Row title="Theme">
             <Segmented
               value={choice}
@@ -111,6 +141,9 @@ export function SettingsPage() {
                 { value: "system", label: <span className="flex items-center gap-1.5"><Monitor className="h-3.5 w-3.5" />System</span> },
               ]}
             />
+          </Row>
+          <Row title="Plum's skin tone" hint="For the Ask assistant. Saved in this browser.">
+            <PlumSkinPicker />
           </Row>
         </Card>
       </section>
