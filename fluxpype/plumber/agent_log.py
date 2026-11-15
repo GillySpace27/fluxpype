@@ -34,6 +34,10 @@ TOOLS = [
     ("list_scenes", "read", "List the saved scenes"),
     ("get_scene", "read", "Read one scene file"),
     ("create_scene", "write", "Save a new planar scene and compile its world (runs nothing)"),
+    ("relax_scene", "write", "Queue FLUX relaxations of saved scenes, a lid sweep included"),
+    ("validate_scene", "read", "Check a scene's construction without saving or running it"),
+    ("preview_scene", "read", "See a scene's compiled world in brief"),
+    ("get_scene_result", "read", "Read a scene relaxation's energies and the energy difference D"),
     ("list_proposals", "read", "See the Ask bar's proposals and what became of them"),
     ("get_notifications", "read", "Read recent job events, one line each"),
 ]

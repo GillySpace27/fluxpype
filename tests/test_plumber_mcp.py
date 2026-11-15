@@ -430,7 +430,7 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 23 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 27 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
@@ -578,7 +578,7 @@ def test_the_ask_bars_copy_supersedes_and_withdraws_its_own_proposals(rig, monke
     s = anyio.run(schemas, asker.server)
     assert set(s) == {n for n, _, _ in TOOLS} - {"get_notifications"} | {"withdraw_proposal"}
     assert all("supersedes" in s[t] for t in ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset"))
-    plain = anyio.run(schemas, rig.server)  # the agents' copy: 18 tools, no supersedes
+    plain = anyio.run(schemas, rig.server)  # the agents' copy: no supersedes
     assert "withdraw_proposal" not in plain and "supersedes" not in plain["submit_job"]
     a = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [200]})["proposal_id"]
     b = asker.ok("submit_job", profile="t_one", overrides={"fluxon_count": [300]}, supersedes=a)
@@ -803,3 +803,42 @@ def test_the_ask_bar_proposes_a_scene_and_a_person_saves_it(rig, monkeypatch):
     assert [s["id"] for s in rig.ok("list_scenes")["scenes"]] == ["ask_arc"]
     err, msg = asker.call("create_scene", spec={"name": "ask_arc"})
     assert err and "already exists" in msg
+
+
+def test_scene_tools_validate_preview_relax_and_read_results(rig):
+    for name, lid in (("arc_a", 4), ("arc_b", 4)):
+        rig.ok(
+            "create_scene",
+            spec={
+                "name": name,
+                "n_lines": 4,
+                "lid_height": lid,
+                "pairing": [0, 1, 2, 3] if name == "arc_a" else [1, 0, 3, 2],
+            },
+        )
+    v = rig.ok("validate_scene", scene_id="arc_a", compare_with="arc_b")
+    assert v["ok"] and v["report"]["lines"] == 4 and v["fair_pair_with"]["fair"] is True
+    bad = rig.ok("validate_scene", spec={"name": "x1", "n_lines": 3, "lid_height": 1.0})  # lid below max_height x 1.2
+    assert bad["ok"] is False and "lid_height" in bad["problem"]
+    err, msg = rig.call("validate_scene")
+    assert err and "exactly one" in msg
+    p = rig.ok("preview_scene", spec={"name": "pv", "n_lines": 3})
+    assert p["lines"] == 3 and p["rows"][0]["chord"] == 2.0 and p["pairing"] == [0, 1, 2]
+    err, msg = rig.call("relax_scene", mode="compare", a="arc_a", b="arc_a")
+    assert err and "two different" in msg
+    job = rig.ok(
+        "relax_scene", mode="compare", a="arc_a", b="arc_b", cycles=6, steps=10
+    )  # the agent copy acts directly
+    assert job["tasks"][0]["method"] == "compare" and job["tasks"][0]["slots"] == 2
+    end = time.time() + 60
+    while time.time() < end and rig.tc.get(f"/api/jobs/{job['id']}", headers=H).json()["status"] not in (
+        "ok",
+        "failed",
+    ):
+        time.sleep(0.1)
+    res = rig.ok("get_scene_result", task_id=job["tasks"][0]["id"], points=4)
+    assert res["done"] and len(res["worlds"]) == 2 and len(res["D"]["series"]) <= 4 and res["D"]["final"] is not None
+    table = rig.ok("get_scene_result", job_id=job["id"])
+    assert table["tasks"][0]["D_final"] == res["D"]["final"]
+    err, msg = rig.call("get_scene_result", task_id="x", job_id="y")
+    assert err and "exactly one" in msg

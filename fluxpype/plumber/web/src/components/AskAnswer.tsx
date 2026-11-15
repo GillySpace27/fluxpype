@@ -28,6 +28,7 @@ const TITLES: Record<string, { title: string; danger?: boolean }> = {
   set_queue: { title: "Change the queue" },
   create_preset: { title: "Save a preset" },
   create_scene: { title: "Save a scene" },
+  relax_scene: { title: "Relax scenes" },
 };
 
 const linkOf = (p: Proposal) =>

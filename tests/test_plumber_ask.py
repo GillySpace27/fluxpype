@@ -76,7 +76,7 @@ def test_the_cli_is_stripped_down_and_its_write_tools_only_propose():
     tools = " ".join(flag(cmd, f) for f in ("--tools", "--allowedTools", "--disallowedTools"))
     assert not any(t in tools for t in ("Bash", "Edit", "Write")) and "--add-dir" in cmd  # the repo, read-only
     allowed = {a.replace("mcp__fluxpype__", "") for a in flag(cmd, "--allowedTools").split(",")}
-    assert allowed == set(ask.READ_TOOLS) | set(proposals.TOOLS) | {"withdraw_proposal"}  # writes only propose
+    assert allowed == set(ask.READ_TOOLS) | (set(proposals.TOOLS) - set(ask.CODESIGN_ONLY)) | {"withdraw_proposal"}  # writes only propose
     assert {
         "get_task_image",
         "list_proposals",
@@ -203,7 +203,7 @@ def test_the_guide_the_cards_and_the_server_name_the_same_actions():
         titles
         == listed
         == set(proposals.TOOLS)
-        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene"}
+        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene", "relax_scene"}
     )
     assert "flux-action" not in guide + tsx  # the old model-written cards are gone
 
