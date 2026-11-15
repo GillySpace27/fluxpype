@@ -2,6 +2,8 @@
 
 Status: scope draft 5 (2026-11-13). Draft 5 adds section 13: Gilly's decisions and the build order A, B, C. Nothing built. Long-term goal, not a sprint. Draft 2 adds the Designer panel (section 9: a shared editor that Gilly, Claude and scripts all edit live) and reorders the phases so the panel comes before the conversational designer. Draft 3 adds section 10: FLUXlight as fluxpype's general light layer. Draft 4 adds section 11: the 3-D graphical editor, structure gallery and library, drag-and-drop pipeline timeline, live script preview, test run, scene selector, help system, download manager and an affordance review; and section 12: an independent critique and what changed because of it.
 Code read for this: `GillySpace27/fluxon-mhd` at `3f65ebd` and `GillySpace27/fluxpype` main at `4187b41`. I read the code; I did not run any planar or synthetic world. Each claim below is marked **checked** (I read the line), **inherited** (from the earlier "Run FLUX on a high-res photospheric patch" thread or `fluxpype/plumber/ask/flux_reference.md`, not re-read) or **uncertain**.
+Mockup: https://claude.ai/artifact/8DCKtdY9kPg7hrWVuTyDxk (design canvas, five screens: Main, Scenes, Light, Review, Help; updated 2026-11-13; private to Gilly). Build sessions should work from these screens as well as this text. Built so far (2026-11-15): only the first slice of A (planar scene compiler, headless relax and compare, planar viewer, create_scene Ask tool, Scenes list); none of the mockup's Designer screens exist yet. See section 14.
+
 
 ## 1. Bottom line
 
@@ -572,3 +574,14 @@ B also needs: a driver (`rotate_poles`, `rotation_spiro` exist as scripts but we
 ### 13.3 Remaining open questions
 
 Of the 22, Q16 is answered. Q1 to Q15 and Q17 to Q22 keep their stated defaults until Gilly changes them, except these three, which do change what gets built first and will be asked one at a time: Q20 (hand-set topology, decides whether fluxon mode exists), Q19 (several structures in one world), and Q21 (splitting `magnetogram2wind.pdl`, which only matters once C starts).
+
+## 14. Finding: planar energies depend on the lid height (2026-11-15)
+
+Measured on Gilly's Mac (relax tool, fluxpype PR #55; 150 x 100 steps; model units). Full write-up: `planar_lid_note.pdf` and `repro-bundle.tar.gz` in `~/Documents/NWRA/flux_planar_lid/` on Gilly's Mac.
+
+- Shear: D = E(K) minus E(K=0) for a 9-line arcade with identical footpoints, photosphere and vertex counts falls with lid height and has not converged at lid 24 (K=2: 0.267, 0.414, 0.263, 0.234, 0.193, 0.160, 0.123 at lids 3, 4, 6, 8, 12, 16, 24).
+- Twist (FLUX `twisted_loop`, 1 turn vs 0): D = 2.497, 1.554, 1.400 at lids 4, 8, 12; lids 8 and 12 not settled in 150 cycles.
+- B2 is a mirror wall (image fluxels), not a PFSS-style source surface. Flux per line does not affect FLUX energy (e_simple2 hard-codes flux = 1).
+- "potential.flux" in the menagerie is untwisted semicircles, not a solved potential field, so D is a pairing or twist comparison, not free energy above a potential state.
+
+Consequences for the design: a scene must declare its lid and every energy is quoted with it; no lid-free free-energy claim for slice A until the drift is understood (no FLUX core edits for now); `flux_per_line` is a physical-units scale applied in fluxpype (energy scales as flux squared), not an input to the run; the fair-pair check compares footpoints with a tolerance; twist enters as a scene parameter built on `twisted_loop`; slice B can reuse FLUX's "ductions" footpoint drivers.
