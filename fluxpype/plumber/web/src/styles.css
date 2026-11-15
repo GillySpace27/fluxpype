@@ -154,6 +154,149 @@
   background: rgb(var(--accent) / 0.12);
 }
 
+/* Plum: the body folds up behind the head and unfolds again; tails, eyes and wrench move on their own.
+   Only transform and opacity change. PlumActor adds .plum-full, .plum-land and .plum-wave. */
+.plum-head-only .plum-part {
+  display: none;
+}
+.plum-part,
+.plum-tail,
+.plum-eyes {
+  transform-box: fill-box;
+}
+.plum-arm-r {
+  transform-box: view-box;
+  transform-origin: 41.5px 47.5px;
+}
+.plum-torso,
+.plum-legs {
+  transform-origin: 50% 0%;
+}
+.plum-arm-l {
+  transform-origin: 90% 5%;
+}
+.plum-part {
+  transition: transform 0.46s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease-out;
+}
+.plum:not(.plum-full):not(.plum-head-only) .plum-part {
+  opacity: 0;
+  transition-duration: 0.18s, 0.14s;
+  transition-timing-function: ease-in;
+  transition-delay: 0s;
+}
+.plum:not(.plum-full):not(.plum-head-only) .plum-torso {
+  transform: translateY(-8px) scale(0.5);
+}
+.plum:not(.plum-full):not(.plum-head-only) .plum-legs {
+  transform: translateY(-15px) scale(0.3);
+}
+.plum:not(.plum-full):not(.plum-head-only) .plum-arm-l {
+  transform: translate(3px, -3px) rotate(-70deg) scale(0.3);
+}
+.plum:not(.plum-full):not(.plum-head-only) .plum-arm-r {
+  transform: rotate(50deg) scale(0.2);
+}
+.plum-full .plum-torso {
+  transition-delay: 0.1s;
+}
+.plum-full .plum-legs {
+  transition-delay: 0.2s;
+}
+.plum-full .plum-arm-l {
+  transition-delay: 0.28s;
+}
+.plum-full .plum-arm-r {
+  transition-delay: 0.34s;
+}
+.plum-tail {
+  transform-origin: 50% 6%;
+  animation: plumSway 3.4s ease-in-out infinite;
+}
+.plum-tail-r {
+  animation-delay: -1.7s;
+}
+.plum-eyes {
+  transform-origin: 50% 55%;
+  animation: plumBlink 4.8s infinite;
+}
+.plum-fly .plum-tail,
+.plum-fly .plum-eyes {
+  animation: none;
+}
+.plum-land .plum-tail {
+  animation: plumSwing 0.9s ease-out 0.04s 1;
+}
+.plum-land .plum-tail-r {
+  animation-delay: 0.1s;
+}
+.plum-wave .plum-arm-r {
+  animation: plumWave 1.5s ease-in-out 0.1s 2;
+}
+@keyframes plumSway {
+  0%,
+  100% {
+    transform: rotate(-2.5deg);
+  }
+  50% {
+    transform: rotate(2.5deg);
+  }
+}
+@keyframes plumSwing {
+  0% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-16deg);
+  }
+  55% {
+    transform: rotate(9deg);
+  }
+  80% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes plumBlink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.08);
+  }
+}
+@keyframes plumWave {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-14deg);
+  }
+  60% {
+    transform: rotate(7deg);
+  }
+}
+.plum-actor {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  width: 64px;
+  height: 72px;
+  transform-origin: 0 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+.plum-squash {
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 99%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
