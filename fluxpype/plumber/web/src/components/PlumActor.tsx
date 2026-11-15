@@ -111,6 +111,7 @@ export function PlumActor({ slot, open, onAway }: { slot: RefObject<HTMLElement>
     if (open) onAway(true);
 
     svg.classList.remove("plum-land", "plum-wave");
+    svg.classList.add("plum-fly"); // the idle sway and blink pause while she is in the air
     if (open) svg.classList.add("plum-full");
     else later(() => svg.classList.remove("plum-full"), 170);
 
@@ -118,9 +119,10 @@ export function PlumActor({ slot, open, onAway }: { slot: RefObject<HTMLElement>
       busy.current = false;
       if (open) {
         el.style.transform = css(perchPose());
+        svg.classList.remove("plum-fly");
       } else {
         el.style.visibility = "hidden";
-        svg.classList.remove("plum-full");
+        svg.classList.remove("plum-full", "plum-fly");
         onAway(false);
       }
     };
@@ -171,6 +173,7 @@ export function PlumActor({ slot, open, onAway }: { slot: RefObject<HTMLElement>
       const lx = to.x + to.s * 32;
       const ly = to.y + to.s * FEET_Y;
       if (layer.current) burst(layer.current, lx, ly, open ? 11 : 5);
+      svg.classList.remove("plum-fly");
       svg.classList.add("plum-land");
       if (open) later(() => svg.classList.add("plum-wave"), 300);
       later(() => svg.classList.remove("plum-land"), 1100);
