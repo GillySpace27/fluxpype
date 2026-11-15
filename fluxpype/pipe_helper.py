@@ -1309,27 +1309,22 @@ def get_ADAPT_file(
     else:
         emit("\t\tNo file found!")
 
-    emit("\tSearching FIDO for ADAPT Map...")
-    # fluxpype.fidoclients was removed in 3fa0209; use sunpy's ADAPT client (same NSO archive)
-    from sunpy.net.dataretriever.attrs.adapt import ADAPTLonType as ADAPTLngType
+    emit("\tSearching the NSO archive for an ADAPT map...")
+    # sunpy's ADAPTClient finds nothing before 2024-09-28 since NSO renamed its
+    # older files, so read NSO's directory listing directly (fluxpype.adapt_nso).
+    from fluxpype import adapt_nso
 
-    LngType = "0"  # 0 is carrington, 1 is central meridian
-    res = Fido.search(
-        a.Instrument("adapt"), a.Time(get_date, get_date_end), ADAPTLngType(LngType)
-    )
-    if res.file_num == 0:
-        # ponytail: known gap, sunpy 7.1's client found no files for current NSO names
-        # (e.g. adapt40311_044012_...fts.gz) on 2026-10-17; a direct NSO listing is the fix
+    to_dt = lambda t: t.to_datetime() if hasattr(t, "to_datetime") else t
+    url = adapt_nso.find(to_dt(date), to_dt(date_end), lon_type=0)
+    if url is None:
         raise RuntimeError(
-            f"No ADAPT map found for {get_date} to {get_date_end} via sunpy's ADAPT client. "
-            "Download it by hand from https://gong.nso.edu/adapt/maps/gong/ into "
-            f"{mag_dir}, or run with adapts = [0] (HMI)."
+            f"No Carrington-fixed ADAPT map found for {get_date} to {get_date_end} in "
+            f"{adapt_nso.BASE_URL}. Download one by hand into {mag_dir}, or run with "
+            "adapts = [0] (HMI)."
         )
-    emit("\tDownloading ADAPT map...")
-    out = Fido.fetch(res, path=mag_dir)
-    assert len(out) == 1, f"More than one file found! {out}"
-    if len(out) == 1:
-        emit("\tSuccess!")
+    emit(f"\tDownloading {os.path.basename(url)}...")
+    out = [adapt_nso.download(url, os.path.join(mag_dir, os.path.basename(url)))]
+    emit("\tSuccess!")
 
     file_all = str(out[0])
     # file_end = file_all.split('adapt')[1].split('.')
