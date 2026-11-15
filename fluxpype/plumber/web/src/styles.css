@@ -219,6 +219,10 @@
   transform-origin: 50% 55%;
   animation: plumBlink 4.8s infinite;
 }
+.plum-fly .plum-tail,
+.plum-fly .plum-eyes {
+  animation: none;
+}
 .plum-land .plum-tail {
   animation: plumSwing 0.9s ease-out 0.04s 1;
 }

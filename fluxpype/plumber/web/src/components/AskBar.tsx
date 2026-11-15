@@ -241,7 +241,8 @@ function Palette({ onClose }: { onClose: () => void }) {
   return (
     <RDialog.Root open onOpenChange={(o) => !o && onClose()}>
       <RDialog.Portal>
-        <RDialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
+        {/* a plain dim, not a blur: a full-screen backdrop-filter fading in cost about 50 ms a frame in the hop */}
+        <RDialog.Overlay className="fixed inset-0 z-50 bg-black/65 data-[state=open]:animate-fade-in" />
         <RDialog.Content
           aria-describedby={undefined}
           className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] w-[min(720px,calc(100vw-2rem))] -translate-x-1/2 animate-rise flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-pop focus:outline-none"
