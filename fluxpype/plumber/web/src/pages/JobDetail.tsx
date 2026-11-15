@@ -7,6 +7,7 @@ import { LogPane } from "../components/LogPane";
 import { PipelineChips } from "../components/PipelineChips";
 import { ResultsPane } from "../components/ResultsPane";
 import { RunFiles, RunSettings } from "../components/RunTabs";
+import { SceneResult } from "../components/SceneResult";
 import { SameRotation } from "../components/SameRotation";
 import { StagePanel } from "../components/StagePanel";
 import { RelaxCharts } from "../components/RelaxCharts";
@@ -65,9 +66,10 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
   // ?view=compact swaps the strip for the stage rail beside the panel (kept for a compact view elsewhere)
   const compact = sp.get("view") === "compact";
   // the tab lives in the URL (?tab=) so a link opens on it
-  const tabs = ["progress", "log", ...(results ? ["results"] : []), ...(job ? ["files", "settings"] : []), "sources"];
+  const tabs = ["progress", "log", ...(results && t.adapt !== "scene" ? ["results"] : []), ...(job ? ["files", "settings"] : []), "sources"];
   const tab = tabs.includes(sp.get("tab") ?? "") ? (sp.get("tab") as string) : defaultTab;
   const setTab = (v: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("tab", v); return n; }, { replace: true });
+  const scene = t.adapt === "scene"; // a scene relaxation task: the label is the scene, not a Carrington rotation
   const bad = ["failed", "timeout", "crashed"].includes(t.status);
   const failedStage = t.stages.find((x) => x.status === "failed");
   const reason = failedStage?.detail ?? (t.outcome && t.outcome !== "failed" ? t.outcome : null) ?? t.warnings[0] ?? null;
@@ -91,11 +93,11 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="flex items-center gap-2.5 text-[17px]">
-              CR {t.cr} <span className="font-normal text-muted">· {t.nflux} fluxons</span>
+              {scene ? t.cr : `CR ${t.cr}`} {!scene && <span className="font-normal text-muted">· {t.nflux} fluxons</span>}
               <StatusBadge status={t.status} />
             </h2>
             <p className="mt-1 text-xs text-muted">
-              {instOf(t.adapt)} · {t.method} · attempt {t.attempt} · {t.started ? `started ${dateTime(t.started)}` : "waiting for a slot"}
+              {scene ? "scene relaxation" : instOf(t.adapt)} · {t.method} · attempt {t.attempt} · {t.started ? `started ${dateTime(t.started)}` : "waiting for a slot"}
             </p>
           </div>
           {live && t.status === "running" && (
@@ -144,11 +146,13 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
         )}
       </Card>
 
+      {scene && <SceneResult taskId={t.id} running={live} />}
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabList>
           <Tab value="progress">Progress</Tab>
           <Tab value="log">Log</Tab>
-          {results && (
+          {results && !scene && (
             <Tab value="results">
               Results
             </Tab>
@@ -227,7 +231,7 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
                 </Card>
             }
           />
-            <SameRotation task={t} />
+            {!scene && <SameRotation task={t} />}
           </TabPanel>
         )}
         <TabPanel value="log" className="pt-5">
@@ -316,7 +320,7 @@ export function JobDetail() {
               )}
             >
               <StatusDot status={r.status} />
-              CR {r.cr} · {r.nflux}
+              {r.adapt === "scene" ? r.cr : `CR ${r.cr} · ${r.nflux}`}
             </Link>
           ))}
         </div>

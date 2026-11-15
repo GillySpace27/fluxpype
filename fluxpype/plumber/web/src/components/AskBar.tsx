@@ -36,7 +36,14 @@ interface Turn {
   error?: string;
   cost?: number;
   model?: string;
+  /** the server's id for the turn (a stored turn), so a pushed conversation is merged without doubling it */
+  id?: string;
+  /** a turn Plumber ran itself because a job Plum proposed finished */
+  system?: boolean;
+  conversationCost?: number;
 }
+
+type Mode = "explain" | "codesign";
 
 /** GET /api/ask: whether the CLI is there, and whether the MCP SDK is (without it answers cannot read live state). */
 interface AskStatus {
@@ -44,11 +51,49 @@ interface AskStatus {
   reason: string | null;
   model: string;
   tools: boolean;
+  models?: string[];
+  modes?: Record<string, { model: string; timeout_s: number; budget_usd: number }>;
+  settings?: { wake_on_results: boolean; codesign_daily_cap_usd: number; flux_source: string | null };
+  codesign?: { cap_usd: number; spent_today_usd: number };
+  flux_source?: string | null;
+}
+
+/** What the server stores per turn (GET /api/ask/conversations/{id}). */
+interface StoredTurn {
+  id?: string;
+  q: string;
+  answer: string;
+  tools?: string[];
+  error?: string | null;
+  cost?: number;
+  model?: string;
+  system?: boolean;
 }
 
 // The conversation lives outside the palette so closing it keeps the turns (and a running answer keeps streaming).
 let turns: Turn[] = [];
 let ctrl: AbortController | null = null;
+// One panel conversation = one id, which the server maps to a CLI session (resumed, so a follow-up costs less).
+// Mode and model are chosen per conversation; changing either starts a new one.
+const newId = () => (crypto.randomUUID?.() ?? `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9]/g, "").slice(0, 32).padEnd(8, "0");
+const stored = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null; // private window or blocked storage: the conversation just starts fresh
+  }
+};
+const keep = (k: string, v: string | null) => {
+  try {
+    v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v);
+  } catch {
+    /* not kept */
+  }
+};
+let conversation: string = stored("flux:ask-conv") ?? newId();
+let mode: Mode = stored("flux:ask-mode") === "codesign" ? "codesign" : "explain";
+let model: string | null = stored("flux:ask-model");
+keep("flux:ask-conv", conversation);
 const subs = new Set<() => void>();
 const setTurns = (f: (ts: Turn[]) => Turn[]) => {
   turns = f(turns);
@@ -59,7 +104,8 @@ const useTurns = () => useSyncExternalStore((s) => (subs.add(s), () => subs.dele
 async function ask(question: string) {
   ctrl?.abort();
   const c = (ctrl = new AbortController());
-  const history = turns.filter((t) => t.state === "done").map((t) => ({ q: t.q, a: t.text }));
+  // the server resumes the CLI session from the conversation id; history is only its fallback transcript
+  const history = turns.filter((t) => t.state === "done" && !t.system).map((t) => ({ q: t.q, a: t.text }));
   const n = turns.length;
   const patch = (p: Partial<Turn> | ((t: Turn) => Partial<Turn>)) =>
     !c.signal.aborted && setTurns((ts) => ts.map((t, i) => (i === n ? { ...t, ...(typeof p === "function" ? p(t) : p) } : t)));
@@ -69,14 +115,14 @@ async function ask(question: string) {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, page: window.location.pathname, history }),
+      body: JSON.stringify({ question, page: window.location.pathname, history, conversation, mode, ...(model ? { model } : {}) }),
       signal: c.signal,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? res.statusText);
     for await (const e of events(res)) {
       if (e.type === "text") patch((t) => ({ text: t.text + e.text }));
       else if (e.type === "tool") patch((t) => ({ tools: [...t.tools, e.name] }));
-      else if (e.type === "done") patch({ state: "done", cost: e.cost ?? undefined, model: e.model ?? undefined });
+      else if (e.type === "done") patch({ state: "done", cost: e.turn_cost ?? e.cost ?? undefined, model: e.model ?? undefined, conversationCost: e.conversation_cost ?? undefined });
       else if (e.type === "error") patch({ state: "error", error: e.message });
     }
     patch((t) => (t.state === "running" ? { state: "done" } : {}));
@@ -87,7 +133,52 @@ async function ask(question: string) {
 
 function newChat() {
   ctrl?.abort();
+  conversation = newId();
+  keep("flux:ask-conv", conversation);
   setTurns(() => []);
+}
+
+function chooseMode(m: Mode) {
+  if (m === mode) return;
+  mode = m;
+  keep("flux:ask-mode", m);
+  newChat(); // a conversation keeps the mode and model it started with
+}
+
+function chooseModel(m: string | null) {
+  model = m;
+  keep("flux:ask-model", m);
+  if (turns.length) newChat();
+}
+
+const fromStored = (t: StoredTurn): Turn => ({
+  id: t.id,
+  q: t.system ? "Plumber" : t.q,
+  text: t.answer || "",
+  tools: t.tools ?? [],
+  state: t.error && !t.answer ? "error" : "done",
+  error: t.error ?? undefined,
+  cost: t.cost,
+  model: t.model,
+  system: t.system,
+});
+
+/** Pull the stored turns of the current conversation: after a reload, and when Plumber ran a turn by itself. */
+async function syncConversation(id: string) {
+  try {
+    const rec = await api.get<{ turns: StoredTurn[]; cost?: number }>(`/api/ask/conversations/${id}`);
+    if (id !== conversation) return;
+    setTurns((ts) => {
+      const have = new Set(ts.map((t) => t.id).filter(Boolean));
+      const running = ts.some((t) => t.state === "running");
+      // while a question streams here its own turn is not stored yet: only add what is new, and never reorder
+      const fresh = rec.turns.filter((t) => t.id && !have.has(t.id)).map(fromStored);
+      if (running) return fresh.length && ts.length === 0 ? fresh : ts;
+      return ts.length === 0 ? rec.turns.map(fromStored) : [...ts, ...fresh.filter((t) => t.system)];
+    });
+  } catch {
+    /* a conversation the server does not know yet (nothing asked): nothing to show */
+  }
 }
 
 /** Open the palette; with a question, ask it straight away (the "Ask why this failed" buttons use this). */
@@ -206,6 +297,18 @@ function Palette({ onClose }: { onClose: () => void }) {
   const rows = q.trim() ? [...hits, null] : hits; // null is the "Ask Claude" row
   const asking = turns.length > 0;
   const running = turns[turns.length - 1]?.state === "running";
+  const qc = useQueryClient();
+  const codesign = !!status?.modes?.codesign;
+  const picked = useSyncExternalStore((s) => (subs.add(s), () => subs.delete(s)), () => mode + "|" + (model ?? ""));
+  const [curMode, curModel] = picked.split("|") as [Mode, string];
+  const wake = useMutation({
+    mutationFn: (v: boolean) => api.put("/api/ask/settings", { wake_on_results: v }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ask-status"] }),
+  });
+  const spent = status?.codesign;
+  useEffect(() => {
+    if (!turns.length) void syncConversation(conversation); // reopened after a reload: the stored turns come back
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     // a question, or nothing that matches, goes to Ask by default
@@ -273,18 +376,64 @@ function Palette({ onClose }: { onClose: () => void }) {
                 : 'Plumber\'s Python lacks the MCP SDK, so answers come from the docs only and cannot read your jobs, logs or cache. Install it with pip install -e ".[mcp]" and restart Plumber.'}
             </p>
           )}
+          {status?.available && codesign && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b hair px-4 py-1.5 text-[11px] text-muted">
+              <div className="flex overflow-hidden rounded-md border border-line" role="group" aria-label="Mode">
+                {(["explain", "codesign"] as Mode[]).map((k) => (
+                  <button
+                    key={k}
+                    aria-pressed={curMode === k}
+                    disabled={running}
+                    onClick={() => chooseMode(k)}
+                    title={k === "explain" ? "Answer questions and propose small changes. Quick and cheap." : "Design scenes, run relaxations and hand work to Claude Code. Slower, costs more, keeps the conversation."}
+                    className={cn("px-2 py-0.5", curMode === k ? "bg-accent/20 text-ink" : "hover:bg-raised")}
+                  >
+                    {k === "explain" ? "Explain" : "Co-design"}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center gap-1">
+                Model
+                <select
+                  className="rounded border border-line bg-transparent px-1 py-0.5"
+                  value={curModel}
+                  disabled={running}
+                  onChange={(e) => chooseModel(e.target.value || null)}
+                  aria-label="Model"
+                >
+                  <option value="">{`default (${status.modes?.[curMode]?.model ?? status.model})`}</option>
+                  {(status.models ?? []).map((x) => (
+                    <option key={x} value={x}>
+                      {x}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {curMode === "codesign" && status.settings && (
+                <label className="flex items-center gap-1" title="When a job Plum proposed finishes, Plum reads the result and reports in this conversation (one turn per job; it counts toward the daily cap).">
+                  <input type="checkbox" checked={status.settings.wake_on_results} onChange={(e) => wake.mutate(e.target.checked)} />
+                  Report when jobs finish
+                </label>
+              )}
+              {curMode === "codesign" && spent && (
+                <span className="ml-auto" title="Co-design spend today against the daily cap">
+                  Today ${spent.spent_today_usd.toFixed(2)} of ${spent.cap_usd.toFixed(0)}
+                </span>
+              )}
+            </div>
+          )}
           <div ref={body} className="min-h-0 flex-1 overflow-y-auto">
             {asking ? (
               <div className="space-y-5 px-5 py-4">
                 {turns.map((t, i) => (
                   <div key={i}>
-                    <p className="text-xs font-medium text-muted">{t.q}</p>
+                    <p className={cn("text-xs font-medium text-muted", t.system && "italic")}>{t.system ? "Plumber woke Plum: a job finished" : t.q}</p>
                     {t.tools.length > 0 && <p className="mt-1 text-[11px] text-faint">Looked at: {[...new Set(t.tools)].join(", ")}</p>}
                     {t.text ? <AskAnswer text={t.text} streaming={t.state === "running"} /> : t.state === "running" && <p className="mt-2 text-xs text-faint">Thinking...</p>}
                     {t.state === "error" && <p className="mt-2 rounded-lg border border-fail/30 bg-fail/10 px-3 py-2 text-xs">{t.error}</p>}
                     {t.state === "done" && (
                       <p className="mt-1 text-[10.5px] text-faint">
-                        {t.model ? `Answered by ${t.model}. ` : ""}Check anything you will act on.{t.cost != null ? ` About $${t.cost.toFixed(3)}.` : ""}
+                        {t.model ? `Answered by ${t.model}. ` : ""}Check anything you will act on.{t.cost != null ? ` This turn about $${t.cost.toFixed(3)}` : ""}{t.conversationCost != null ? `, conversation $${t.conversationCost.toFixed(3)}.` : t.cost != null ? "." : ""}
                       </p>
                     )}
                   </div>
@@ -333,11 +482,18 @@ export function AskBar() {
       }
     };
     const show = () => setOpen(true);
+    // Plumber ran a turn by itself (a job Plum proposed finished): fetch it, whether or not the palette is open
+    const pushed = (e: Event) => {
+      const id = (e as CustomEvent).detail?.conversation;
+      if (id === conversation) void syncConversation(id);
+    };
     window.addEventListener("keydown", key);
     window.addEventListener("flux:ask", show);
+    window.addEventListener("flux:ask-turn", pushed);
     return () => {
       window.removeEventListener("keydown", key);
       window.removeEventListener("flux:ask", show);
+      window.removeEventListener("flux:ask-turn", pushed);
     };
   }, []);
   return (
