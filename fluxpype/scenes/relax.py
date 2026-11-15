@@ -161,12 +161,14 @@ def relax(
     series: List[Dict] = []
     done = False
     t0 = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    with open(log, "w") as logf:
+    # FLUX prints its own messages on stderr. Sharing a pipe with the cycle records split a record line in every
+    # run, so stderr goes to its own file next to the log and the pipe carries only the driver's output.
+    with open(log, "w") as logf, open(log + ".stderr", "w") as errf:
         proc = (popen or subprocess.Popen)(
             args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=errf,
             text=True,
             cwd=str(Path(out).parent),
         )
