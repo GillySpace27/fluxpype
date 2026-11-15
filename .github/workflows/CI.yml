@@ -41,4 +41,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install black
-      - run: black --check --diff . | tail -n 50
+      - run: |
+          set -o pipefail
+          black --check --diff . | tail -n 50
