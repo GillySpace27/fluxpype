@@ -39,14 +39,40 @@ MODES: Dict[str, Dict[str, Any]] = {
 MODELS = ("sonnet", "opus")
 CODESIGN_DAILY_CAP_USD = 20.0  # across all Co-design turns today (ask_usage.jsonl); Explain has no cap
 SETTINGS_FILE = "ask_settings.json"  # in the Plumber home
-SETTING_DEFAULTS: Dict[str, Any] = {"wake_on_results": True, "codesign_daily_cap_usd": CODESIGN_DAILY_CAP_USD, "flux_source": None}
+SETTING_DEFAULTS: Dict[str, Any] = {
+    "wake_on_results": True,
+    "codesign_daily_cap_usd": CODESIGN_DAILY_CAP_USD,
+    "flux_source": None,
+}
 CODESIGN_ONLY = ("relax_scene", "draft_handoff")  # proposals that need Co-design
-READ_TOOLS = ["status", "list_profiles", "get_profile", "list_jobs", "get_job", "list_external_runs", "get_external_run", "get_task", "get_relax_series", "read_task_log", "cache_summary", "get_task_image", "list_proposals", "list_scenes", "get_scene", "validate_scene", "preview_scene", "get_scene_result"]
+READ_TOOLS = [
+    "status",
+    "list_profiles",
+    "get_profile",
+    "list_jobs",
+    "get_job",
+    "list_external_runs",
+    "get_external_run",
+    "get_task",
+    "get_relax_series",
+    "read_task_log",
+    "cache_summary",
+    "get_task_image",
+    "list_proposals",
+    "list_scenes",
+    "get_scene",
+    "validate_scene",
+    "preview_scene",
+    "get_scene_result",
+]
 PROPOSE_TOOLS = list(proposals.TOOLS) + ["withdraw_proposal"]  # only store or close a proposal (mcp_server)
 NO_TOOLS = ["wait_for_task"]  # polls for up to 300 s, past the 120 s a question may take
 # Repo documents added to the prompt when the checkout has them (a pip install has only the shipped ask/*.md). The
 # rest of the repo is reachable through the read-only tools.
-REPO_DOCS = [("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"), ("docs/PORTABILITY.md", "Install and environment notes")]
+REPO_DOCS = [
+    ("docs/mcp/TOOLS.md", "Plumber's MCP server: tools and operation"),
+    ("docs/PORTABILITY.md", "Install and environment notes"),
+]
 REPO_TOOLS = "Read,Grep,Glob"
 USAGE_FILE, LIMITS_FILE = "ask_usage.jsonl", "ask_limits.json"  # in the Plumber home
 TRANSCRIPT_FILE = "ask_transcripts.jsonl"  # in the Plumber home, 0600; never under ask/, which the CLI can read
@@ -88,7 +114,9 @@ def save_settings(home: str, patch: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in patch.items():
         if k == "wake_on_results" and not isinstance(v, bool):
             raise ValueError("wake_on_results is true or false")
-        if k == "codesign_daily_cap_usd" and not (isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1000):
+        if k == "codesign_daily_cap_usd" and not (
+            isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1000
+        ):
             raise ValueError("codesign_daily_cap_usd is a number of dollars, 0 to 1000")
         if k == "flux_source" and v is not None and not (isinstance(v, str) and os.path.isdir(os.path.expanduser(v))):
             raise ValueError("flux_source is the path of an existing folder, or null")
@@ -108,6 +136,7 @@ def flux_source(home: str) -> Optional[Path]:
     p = Path(os.path.expanduser(raw)).resolve() if raw else None
     return p if p and p.is_dir() else None
 
+
 PREAMBLE = (
     "You are Plum, the assistant built into Fluxpype Plumber, a web app for running the fluxpype pipeline, used by solar "
     "physicists. Below are the FLUX reference, a guide to Plumber and the plan for the Scene Designer. Answer from them.\n\n"
@@ -118,7 +147,10 @@ def find_cli() -> Optional[str]:
     env = os.environ.get("FLUX_PLUMBER_CLAUDE")
     if env:
         return env
-    for p in (shutil.which("claude"), *(os.path.expanduser(x) for x in ("~/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude"))):
+    for p in (
+        shutil.which("claude"),
+        *(os.path.expanduser(x) for x in ("~/.local/bin/claude", "/usr/local/bin/claude", "/opt/homebrew/bin/claude")),
+    ):
         if p and os.access(p, os.X_OK):
             return p
     return None
@@ -128,10 +160,17 @@ def availability(home: Optional[str] = None) -> Dict[str, Any]:
     cli = find_cli()
     out: Dict[str, Any] = {
         "available": cli is not None,
-        "reason": None if cli else "The Claude Code CLI was not found. Install it and sign in, or set FLUX_PLUMBER_CLAUDE to its path.",
+        "reason": (
+            None
+            if cli
+            else "The Claude Code CLI was not found. Install it and sign in, or set FLUX_PLUMBER_CLAUDE to its path."
+        ),
         "model": MODEL,
         "tools": importlib.util.find_spec("mcp") is not None,  # live state needs the MCP SDK in Plumber's Python
-        "modes": {k: {"model": v["model"], "timeout_s": v["timeout"], "budget_usd": float(v["budget"])} for k, v in MODES.items()},
+        "modes": {
+            k: {"model": v["model"], "timeout_s": v["timeout"], "budget_usd": float(v["budget"])}
+            for k, v in MODES.items()
+        },
         "models": list(MODELS),
     }
     if home:
@@ -139,7 +178,10 @@ def availability(home: Optional[str] = None) -> Dict[str, Any]:
         src = flux_source(home)
         out.update(
             settings=cfg,
-            codesign={"cap_usd": cfg["codesign_daily_cap_usd"], "spent_today_usd": round(spent_today(home, "codesign"), 4)},
+            codesign={
+                "cap_usd": cfg["codesign_daily_cap_usd"],
+                "spent_today_usd": round(spent_today(home, "codesign"), 4),
+            },
             flux_source=str(src) if src else None,
         )
     return out
@@ -165,12 +207,18 @@ def system_prompt(mode: str = "explain", flux_src: Optional[Path] = None) -> str
                 parts.append(f"## {title} ({rel})\n\n{f.read_text(encoding='utf-8')}")
         ini = root / "fluxpype" / "config.ini"
         if ini.is_file():
-            head = ini.read_text(encoding="utf-8").split("\n[quickstart]")[0]  # the [DEFAULT] section: each setting with its comment
+            head = ini.read_text(encoding="utf-8").split("\n[quickstart]")[
+                0
+            ]  # the [DEFAULT] section: each setting with its comment
             parts.append(f"## config.ini defaults (fluxpype/config.ini)\n\n```ini\n{head}\n```")
     if mode == "codesign":
         parts.append(
             "## This conversation is in Co-design mode\n\nThe tools and proposals marked Co-design in the guide are yours here"
-            + (f", and the FLUX source (the fluxon-mhd checkout) is readable at {flux_src} with Read, Grep and Glob. It is read-only and not part of fluxpype; never propose a change to it." if flux_src else ". No FLUX source checkout is configured, so you cannot read it.")
+            + (
+                f", and the FLUX source (the fluxon-mhd checkout) is readable at {flux_src} with Read, Grep and Glob. It is read-only and not part of fluxpype; never propose a change to it."
+                if flux_src
+                else ". No FLUX source checkout is configured, so you cannot read it."
+            )
             + " A turn may be a message written by Plumber (not the person) that a job you proposed has finished: read its results and report briefly."
         )
     parts.append((DOCS / "flux_reference.md").read_text(encoding="utf-8"))
@@ -179,11 +227,22 @@ def system_prompt(mode: str = "explain", flux_src: Optional[Path] = None) -> str
 
 def user_prompt(question: str, page: str, history: List[Dict[str, str]]) -> str:
     # the page and earlier turns go in the user message so the system prompt stays identical and caches
-    earlier = "".join(f"Earlier question: {h.get('q', '')[:500]}\nEarlier answer: {h.get('a', '')[:1500]}\n\n" for h in history[-3:])
+    earlier = "".join(
+        f"Earlier question: {h.get('q', '')[:500]}\nEarlier answer: {h.get('a', '')[:1500]}\n\n" for h in history[-3:]
+    )
     return f"{earlier}The person is on this page: {page or 'unknown'}.\n\nQuestion: {question}"
 
 
-def command(cli: str, home: str, tools: bool, question: str = "", mode: str = "explain", model: Optional[str] = None, session: Optional[str] = None, resume: bool = False) -> List[str]:
+def command(
+    cli: str,
+    home: str,
+    tools: bool,
+    question: str = "",
+    mode: str = "explain",
+    model: Optional[str] = None,
+    session: Optional[str] = None,
+    resume: bool = False,
+) -> List[str]:
     """The CLI's argv. Explain is stateless (`--no-session-persistence`). Co-design keeps a CLI session: the first turn
     names it (`--session-id`), later ones resume it (`--resume`)."""
     cfg = MODES[mode]
@@ -196,11 +255,27 @@ def command(cli: str, home: str, tools: bool, question: str = "", mode: str = "e
             "env": {"FLUX_MCP_CLIENT": "ask", "FLUX_ASK_QUESTION": question},  # "ask": its write tools only propose
         }
     cmd = [
-        cli, "-p", "--model", model or cfg["model"], "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+        cli,
+        "-p",
+        "--model",
+        model or cfg["model"],
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
         *(["--no-session-persistence"] if not session else ["--resume" if resume else "--session-id", session]),
-        "--tools", REPO_TOOLS if repo_root() else "", "--strict-mcp-config", "--mcp-config", json.dumps(mcp),
-        "--setting-sources", "", "--disable-slash-commands", "--max-budget-usd", cfg["budget"],
-        "--system-prompt", system_prompt(mode, flux_src),
+        "--tools",
+        REPO_TOOLS if repo_root() else "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        json.dumps(mcp),
+        "--setting-sources",
+        "",
+        "--disable-slash-commands",
+        "--max-budget-usd",
+        cfg["budget"],
+        "--system-prompt",
+        system_prompt(mode, flux_src),
     ]
     # Read, Grep and Glob stay out of the allow list: a bare allow rule lets them read any path (the token in the
     # Plumber home included); unlisted, they reach only the cwd and --add-dir. The deny rule locks the home as well.
@@ -230,21 +305,53 @@ def parse(line: str) -> Optional[Dict[str, Any]]:
         b = e.get("content_block", {})
         if e.get("type") == "content_block_start" and b.get("type") == "tool_use":
             return {"type": "tool", "name": b.get("name", "").replace("mcp__fluxpype__", "")}
-    if d.get("type") == "assistant":  # the finished message: tool calls with their arguments (the stream events carry none)
-        calls = [b for b in (d.get("message") or {}).get("content") or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+    if (
+        d.get("type") == "assistant"
+    ):  # the finished message: tool calls with their arguments (the stream events carry none)
+        calls = [
+            b
+            for b in (d.get("message") or {}).get("content") or []
+            if isinstance(b, dict) and b.get("type") == "tool_use"
+        ]
         if calls:
-            return {"type": "calls", "calls": [{"name": b.get("name", "").replace("mcp__fluxpype__", ""), "input": b.get("input")} for b in calls]}
-    if d.get("type") == "rate_limit_event":  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
+            return {
+                "type": "calls",
+                "calls": [
+                    {"name": b.get("name", "").replace("mcp__fluxpype__", ""), "input": b.get("input")} for b in calls
+                ],
+            }
+    if (
+        d.get("type") == "rate_limit_event"
+    ):  # the plan's usage windows (five_hour, seven_day): the account's, not Plumber's
         w = (d.get("rate_limit_info") or {}).get("unifiedWindows") or {}
-        return {"type": "limits", "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()}}
+        return {
+            "type": "limits",
+            "windows": {k: {"utilization": v.get("utilization"), "resets_at": v.get("resetsAt")} for k, v in w.items()},
+        }
     if d.get("type") == "result":
         if d.get("is_error"):
-            return {"type": "error", "message": str(d.get("result") or "; ".join(map(str, d.get("errors") or [])) or "the model returned an error")[:500]}
+            return {
+                "type": "error",
+                "message": str(
+                    d.get("result") or "; ".join(map(str, d.get("errors") or [])) or "the model returned an error"
+                )[:500],
+            }
         usage = d.get("modelUsage") or {}
         model = next(iter(usage), None)
         u = usage.get(model) or {}
-        tokens = {"input": u.get("inputTokens", 0), "output": u.get("outputTokens", 0), "cache_read": u.get("cacheReadInputTokens", 0), "cache_write": u.get("cacheCreationInputTokens", 0)}
-        return {"type": "done", "cost": d.get("total_cost_usd"), "ms": d.get("duration_ms"), "model": model, "tokens": tokens}
+        tokens = {
+            "input": u.get("inputTokens", 0),
+            "output": u.get("outputTokens", 0),
+            "cache_read": u.get("cacheReadInputTokens", 0),
+            "cache_write": u.get("cacheCreationInputTokens", 0),
+        }
+        return {
+            "type": "done",
+            "cost": d.get("total_cost_usd"),
+            "ms": d.get("duration_ms"),
+            "model": model,
+            "tokens": tokens,
+        }
     return None
 
 
@@ -255,7 +362,19 @@ def _note(home: str, ev: Dict[str, Any], mode: str = "explain") -> None:
             t = ev["tokens"]
             _recent.append((time.time(), t["input"] + t["cache_write"] + t["output"]))
             with open(os.path.join(home, USAGE_FILE), "a") as f:
-                f.write(json.dumps({"ts": time.time(), "model": ev["model"], "cost": ev["cost"] or 0, "ms": ev["ms"], "mode": mode, **ev["tokens"]}) + "\n")
+                f.write(
+                    json.dumps(
+                        {
+                            "ts": time.time(),
+                            "model": ev["model"],
+                            "cost": ev["cost"] or 0,
+                            "ms": ev["ms"],
+                            "mode": mode,
+                            **ev["tokens"],
+                        }
+                    )
+                    + "\n"
+                )
         elif ev["type"] == "limits" and ev["windows"]:
             with open(os.path.join(home, LIMITS_FILE), "w") as f:
                 json.dump({"ts": time.time(), "windows": ev["windows"]}, f)
@@ -346,7 +465,9 @@ def _midnight() -> float:
 def spent_today(home: str, mode: str) -> float:
     """Dollars the CLI reported for `mode` turns since local midnight (rows from before modes were kept count as explain)."""
     midnight = _midnight()
-    return sum(float(r.get("cost") or 0) for r in _usage_rows(home) if r["ts"] >= midnight and r.get("mode", "explain") == mode)
+    return sum(
+        float(r.get("cost") or 0) for r in _usage_rows(home) if r["ts"] >= midnight and r.get("mode", "explain") == mode
+    )
 
 
 def usage(home: str) -> Dict[str, Any]:
@@ -372,7 +493,9 @@ def _run_cli(cmd: List[str], prompt: str, timeout: int, cwd: Path) -> Iterator[A
     timer: Optional[threading.Timer] = None
     plain = ""  # the last stdout line that was not an event: the CLI prints some refusals as plain text
     try:
-        proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1)
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errfile, text=True, bufsize=1
+        )
         timer = threading.Timer(timeout, proc.kill)
         timer.start()
         assert proc.stdin and proc.stdout
@@ -398,7 +521,9 @@ def _run_cli(cmd: List[str], prompt: str, timeout: int, cwd: Path) -> Iterator[A
 
 def _pairs(conv: Dict[str, Any]) -> List[Dict[str, str]]:
     """The conversation's answered turns as the {q, a} pairs user_prompt re-sends when the CLI has no session to resume."""
-    return [{"q": t["q"], "a": t.get("answer", "")} for t in conv["turns"] if t.get("answer") and not t.get("error")][-CONTINUITY_TURNS:]
+    return [{"q": t["q"], "a": t.get("answer", "")} for t in conv["turns"] if t.get("answer") and not t.get("error")][
+        -CONTINUITY_TURNS:
+    ]
 
 
 def stream(
@@ -447,7 +572,17 @@ def stream(
         if spent >= cap:
             msg = f"Co-design has spent ${spent:.2f} today, at the ${cap:.2f} daily cap. Use Explain, or raise codesign_daily_cap_usd in {SETTINGS_FILE}."
             if conv and system:  # a wake turn the cap stopped: say so in the conversation instead of staying silent
-                convs.add_turn(conv["id"], {"id": uuid.uuid4().hex[:12], "ts": time.time(), "q": question, "answer": "", "system": True, "error": msg})
+                convs.add_turn(
+                    conv["id"],
+                    {
+                        "id": uuid.uuid4().hex[:12],
+                        "ts": time.time(),
+                        "q": question,
+                        "answer": "",
+                        "system": True,
+                        "error": msg,
+                    },
+                )
                 notify and notify(conv["id"])
             yield sse({"type": "error", "message": msg})
             return
@@ -457,7 +592,17 @@ def stream(
     global _question, _mode
     _question, _mode = uuid.uuid4().hex[:12], mode
     cfg = MODES[mode]
-    rec: Dict[str, Any] = {"ts": time.time(), "id": _question, "page": page, "question": question, "answer": "", "tools": [], "proposals": [], "error": None, "mode": mode}
+    rec: Dict[str, Any] = {
+        "ts": time.time(),
+        "id": _question,
+        "page": page,
+        "question": question,
+        "answer": "",
+        "tools": [],
+        "proposals": [],
+        "error": None,
+        "mode": mode,
+    }
     if conv:
         rec["conversation"] = conv["id"]
     finished, turn_cost = False, 0.0
@@ -504,14 +649,26 @@ def stream(
                 if ev["type"] in ("limits", "calls"):
                     continue  # kept for the dashboard or the log, nothing for the answer panel
                 finished = finished or ev["type"] in ("done", "error")
-                ids = proposals.for_question(os.path.join(home, "proposals.json"), _question) if ev["type"] == "done" else []
+                ids = (
+                    proposals.for_question(os.path.join(home, "proposals.json"), _question)
+                    if ev["type"] == "done"
+                    else []
+                )
                 rec["proposals"] = ids
-                if ids:  # written by Plumber, not the model: the answer panel draws a card per id from GET /api/proposals
+                if (
+                    ids
+                ):  # written by Plumber, not the model: the answer panel draws a card per id from GET /api/proposals
                     block = f"\n\n```flux-proposals\n{json.dumps(ids)}\n```\n"
                     rec["answer"] += block
                     yield sse({"type": "text", "text": block})
                 if ev["type"] == "done" and conv:
-                    ev = {**ev, "turn_cost": turn_cost, "conversation_cost": round(float(conv.get("cost", 0)) + turn_cost, 6), "conversation": conv["id"], "mode": mode}
+                    ev = {
+                        **ev,
+                        "turn_cost": turn_cost,
+                        "conversation_cost": round(float(conv.get("cost", 0)) + turn_cost, 6),
+                        "conversation": conv["id"],
+                        "mode": mode,
+                    }
                 yield sse(ev)
             if not retry:
                 break
@@ -523,7 +680,8 @@ def stream(
         if conv:
             convs.add_turn(
                 conv["id"],
-                {k: rec.get(k) for k in ("id", "ts", "tools", "proposals", "error", "model")} | {"q": question, "answer": rec["answer"], "cost": turn_cost, "system": system, "page": page},
+                {k: rec.get(k) for k in ("id", "ts", "tools", "proposals", "error", "model")}
+                | {"q": question, "answer": rec["answer"], "cost": turn_cost, "system": system, "page": page},
                 turn_cost,
             )
             notify and notify(conv["id"])
@@ -539,7 +697,9 @@ def wake_text(view: Dict[str, Any]) -> str:
     """The message Plumber writes into a Co-design conversation when a job from one of its proposals ends. Ids,
     statuses and counts only: nothing from a log or a file, so there is nothing in it to follow."""
     tasks = view.get("tasks") or []
-    rows = ", ".join(f"{t['id']} {t['status']}" for t in tasks[:12]) + (f", and {len(tasks) - 12} more" if len(tasks) > 12 else "")
+    rows = ", ".join(f"{t['id']} {t['status']}" for t in tasks[:12]) + (
+        f", and {len(tasks) - 12} more" if len(tasks) > 12 else ""
+    )
     return (
         f"[Plumber, not the person] Job {view['id']} (preset {view.get('profile')}), which you proposed and the person ran, "
         f"has finished with status {view['status']}. Tasks: {rows}. Read the results with get_job, get_scene_result or "
@@ -588,5 +748,16 @@ class Waker:
                 return  # restarted on the next wake
             rec = self.convs.load(cid)
             if rec:
-                for _ in stream(text, "", [], self.home, conversation=cid, mode=rec["mode"], model=rec.get("model"), wait_s=WAKE_WAIT_S, system=True, notify=self.notify):
+                for _ in stream(
+                    text,
+                    "",
+                    [],
+                    self.home,
+                    conversation=cid,
+                    mode=rec["mode"],
+                    model=rec.get("model"),
+                    wait_s=WAKE_WAIT_S,
+                    system=True,
+                    notify=self.notify,
+                ):
                     pass

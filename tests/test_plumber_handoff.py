@@ -56,7 +56,7 @@ def test_the_standing_constraints_come_last_and_the_evidence_cannot_close_its_fe
     text = handoff.render(handoff.validate(GOOD))
     head, tail = text.split("## Standing constraints (added by Plumber)")
     assert "fluxon-mhd" in tail and "GillySpace27/fluxpype" in tail and "Never merge" in tail and "em dashes" in tail
-    assert "—" not in text  # no em dash in what Plumber writes
+    assert "\u2014" not in text  # no em dash in what Plumber writes
     ev = head.split("evidence\n", 1)[1]
     fence = head.split("evidence", 1)[0].splitlines()[-1]
     assert len(fence) >= 4  # longer than the ``` inside the evidence, so it cannot be closed from inside
