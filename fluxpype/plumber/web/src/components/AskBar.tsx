@@ -306,6 +306,10 @@ function Palette({ onClose }: { onClose: () => void }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["ask-status"] }),
   });
   const spent = status?.codesign;
+  const finished = turns.filter((t) => t.state !== "running").length;
+  useEffect(() => {
+    if (finished) void qc.invalidateQueries({ queryKey: ["ask-status"] }); // a finished turn changes today's spend
+  }, [finished, qc]);
   useEffect(() => {
     if (!turns.length) void syncConversation(conversation); // reopened after a reload: the stored turns come back
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

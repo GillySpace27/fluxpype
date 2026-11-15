@@ -30,11 +30,11 @@ TIMEOUT_S = 120
 MAX_BUDGET_USD = "1"
 # Two modes. Explain is the Ask bar as it always was (sonnet, 120 s, $1, a stateless question with the last turns
 # re-sent). Co-design is for designing scenes with Plum: a CLI session that resumes between turns, opus by default,
-# 600 s and $3 a turn, the scene relax and hand-off proposals, and the FLUX source to read. The mode is fixed when a
+# 600 s and $1 a turn, the scene relax and hand-off proposals, and the FLUX source to read. The mode is fixed when a
 # conversation starts (the CLI records the system prompt once per session), so the panel starts a new one to switch.
 MODES: Dict[str, Dict[str, Any]] = {
     "explain": {"model": "sonnet", "timeout": 120, "budget": "1", "resume": False},
-    "codesign": {"model": "opus", "timeout": 600, "budget": "3", "resume": True},
+    "codesign": {"model": "opus", "timeout": 600, "budget": "1", "resume": True},
 }
 MODELS = ("sonnet", "opus")
 CODESIGN_DAILY_CAP_USD = 20.0  # across all Co-design turns today (ask_usage.jsonl); Explain has no cap

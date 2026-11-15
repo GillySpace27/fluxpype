@@ -139,7 +139,7 @@ def test_codesign_names_a_cli_session_then_resumes_it_and_explain_stays_stateles
     one, two = (c["argv"] for c in client.calls())
     assert (
         flag(one, "--model") == "opus"
-        and flag(one, "--max-budget-usd") == "3"
+        and flag(one, "--max-budget-usd") == "1"
         and "--no-session-persistence" not in one
     )
     sid = flag(one, "--session-id")
@@ -173,7 +173,7 @@ def test_the_model_is_chosen_per_turn_and_a_conversation_keeps_its_mode(client):
     say(client, "q", "conv-eeee5555", model="sonnet")
     assert flag(client.calls()[0]["argv"], "--model") == "sonnet"
     say(client, "q2", "conv-eeee5555", mode="explain")  # the mode was fixed when the conversation began
-    assert flag(client.calls()[1]["argv"], "--max-budget-usd") == "3"
+    assert flag(client.calls()[1]["argv"], "--max-budget-usd") == "1"
     r = client.post("/api/ask", json={"question": "q", "model": "gpt"}, headers=H)
     assert r.status_code == 422
     r = client.post("/api/ask", json={"question": "q", "conversation": "../../etc"}, headers=H)

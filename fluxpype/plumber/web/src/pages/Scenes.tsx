@@ -35,7 +35,7 @@ function RelaxForm({ s, others }: { s: SceneRow; others: SceneRow[] }) {
   const badLids = heights.some((h) => !(h > 0));
   const go = useMutation({
     mutationFn: () =>
-      api.post<{ job_id: string }>("/api/scene-jobs", {
+      api.post<{ id?: string; job_id?: string }>("/api/scene-jobs", {
         ...(other ? { mode: "compare", a: s.id, b: other } : { mode: "run", scene: s.id }),
         ...(heights.length ? { lids: heights } : {}),
         cycles: Number(cycles),
@@ -79,9 +79,9 @@ function RelaxForm({ s, others }: { s: SceneRow; others: SceneRow[] }) {
         <button className="btn btn-sm btn-primary" onClick={() => go.mutate()} disabled={go.isPending || badLids || !(Number(cycles) >= 1) || !(Number(steps) >= 1)}>
           <Play className="h-3 w-3" /> {go.isPending ? "Queuing..." : "Relax"}
         </button>
-        {go.data && (
-          <Link className="text-xs underline" to={`/jobs/${go.data.job_id}`}>
-            Queued: open job {go.data.job_id}
+        {go.data && (go.data.id ?? go.data.job_id) && (
+          <Link className="text-xs underline" to={`/jobs/${go.data.id ?? go.data.job_id}`}>
+            Queued: open job {go.data.id ?? go.data.job_id}
           </Link>
         )}
         {badLids && <span className="text-xs text-fail">Lid heights are positive numbers.</span>}
