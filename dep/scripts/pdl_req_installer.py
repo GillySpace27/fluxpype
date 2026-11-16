@@ -4,9 +4,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def log(message):
     """Simple logger function."""
     print(f"[PDL Installer] {message}")
+
 
 def run_command(command, check=True, shell=False):
     """Runs a system command and prints output live."""
@@ -20,6 +22,7 @@ def run_command(command, check=True, shell=False):
         if check:
             sys.exit(1)
 
+
 def install_perl_modules():
     """Installs the required Perl modules on macOS or Linux."""
     pl_prefix = Path.home() / ".local" / "perl5"  # Default Perl installation prefix
@@ -27,25 +30,40 @@ def install_perl_modules():
 
     modules = [
         # Core
-        "local::lib", "Devel::CheckLib", "List::MoreUtils", "Capture::Tiny", "PDL",
+        "local::lib",
+        "Devel::CheckLib",
+        "List::MoreUtils",
+        "Capture::Tiny",
+        "PDL",
         # Config
         "Config::IniFiles",
         # File Handling
-        "File::HomeDir", "File::ShareDir", "File::ShareDir::Install",
+        "File::HomeDir",
+        "File::ShareDir",
+        "File::ShareDir::Install",
         # Testing
         "Test::Builder",
         # Parallel
         "Parallel::ForkManager",
         # Math
-        "Math::GSL::Alien", "Math::GSL", "Math::Interpolate", "Math::Interpolator", "Math::RungeKutta",
+        "Math::GSL::Alien",
+        "Math::GSL",
+        "Math::Interpolate",
+        "Math::Interpolator",
+        "Math::RungeKutta",
         # PDL
-        "PDL::GSL::INTEG", "PDL::Graphics::Gnuplot", "PDL::Graphics::Simple",
+        "PDL::GSL::INTEG",
+        "PDL::Graphics::Gnuplot",
+        "PDL::Graphics::Simple",
         # Inline
-        "Inline", "Inline::C", "Inline::Python",
+        "Inline",
+        "Inline::C",
+        "Inline::Python",
         # Web
         "Net::SSLeay",
         # Charts
-        "Chart::Gnuplot", "Alien::Build::Plugin::Gather::Dino",
+        "Chart::Gnuplot",
+        "Alien::Build::Plugin::Gather::Dino",
         # CSV
         "Text::CSV",
         # Moose-like
@@ -69,6 +87,7 @@ def install_perl_modules():
     # eval_command = f"eval $(perl -I {pl_prefix}/lib/perl5 -Mlocal::lib={pl_prefix})"
     # log(f"🔧 Setting up Perl environment with: {eval_command}")
     # run_command(eval_command, shell=True)
+
 
 if __name__ == "__main__":
     install_perl_modules()

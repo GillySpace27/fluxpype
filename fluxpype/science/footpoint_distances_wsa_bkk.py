@@ -148,8 +148,7 @@ def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
 
 
 # --- Helper: outline for distance queries, omitting polar map-edge rims ---
-def _outline_for_distance(region_mask: np.ndarray,
-                          lat_1d: np.ndarray) -> np.ndarray:
+def _outline_for_distance(region_mask: np.ndarray, lat_1d: np.ndarray) -> np.ndarray:
     """
     Return a 1‑px perimeter to use for distance queries that
     *excludes* artificial rims along the polar map edges.
@@ -173,9 +172,7 @@ def _outline_for_distance(region_mask: np.ndarray,
 
 
 # --- Helper: clean mask of open (pols == 0) regions from PFSS topology ---
-def _open_region_mask_from_pols(P: np.ndarray,
-                                min_size: int = 16,
-                                close_iters: int = 1) -> np.ndarray:
+def _open_region_mask_from_pols(P: np.ndarray, min_size: int = 16, close_iters: int = 1) -> np.ndarray:
     """
     Build a clean boolean mask of OPEN (pols == 0) regions using only the topology
     in `P`. Lightly close tiny gaps (8-connected) to seal cracks, then drop tiny islands.
@@ -196,6 +193,7 @@ def _open_region_mask_from_pols(P: np.ndarray,
 
 # --- Helper: extract 1-px interface outline directly from pols (open/closed interface) ---
 
+
 def _interface_outline_from_pols(P: np.ndarray) -> np.ndarray:
     """
     Return a 1-pixel outline that lies exactly on the open/closed interface.
@@ -210,7 +208,7 @@ def _interface_outline_from_pols(P: np.ndarray) -> np.ndarray:
     4) Drop first/last latitude rows so poles cannot act like boundaries.
     """
     st8 = generate_binary_structure(2, 2)
-    open_mask = (P == 0)
+    open_mask = P == 0
     closed_mask = ~open_mask
 
     # 2) morphological gradient (open minus eroded-open) -> ~1 px ring
@@ -979,7 +977,15 @@ def magnet_plot(
                         aspect="auto",
                     )
                     # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        ch_distance_deg,
+                        levels=[5, 10, 20, 30],
+                        colors="k",
+                        linewidths=0.6,
+                        alpha=0.4,
+                    )
                     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
                     ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
                     cs_raw = ax_ch.contour(
@@ -1106,7 +1112,15 @@ def magnet_plot(
                         aspect="auto",
                     )
                     # sanity contours to check symmetry of distances inside vs outside
-                    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+                    ax_ch.contour(
+                        lon_1d,
+                        np.sin(lat_1d),
+                        ch_distance_deg,
+                        levels=[5, 10, 20, 30],
+                        colors="k",
+                        linewidths=0.6,
+                        alpha=0.4,
+                    )
                     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
                     ax_ch.set_title("Distance to Nearest Coronal-Hole Boundary")
                     cs_raw = ax_ch.contour(
@@ -1143,10 +1157,8 @@ def magnet_plot(
             print(f"\t\t{shorten_path(fluxon_map_histput_path)}")
             print(f"\t\t{shorten_path(fluxon_map_histput_path_top)}")
     if do_print:
-        print(
-            f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
-                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}"
-        )
+        print(f"\n\t    n_open: {_n_open}, n_closed: {_n_closed}, \
+                n_total: {_n_flux}, n_all: {_fnum}, n_outliers: {_n_outliers}")
 
     if do_print_top:
         print("\t\t    Success!")

@@ -42,6 +42,7 @@ def install_flux():
 def install():
     return post_build_check()
 
+
 def post_build_check():
     """Run after fluxpype is built to check for FLUX."""
     # Check if FLUXcore was explicitly requested

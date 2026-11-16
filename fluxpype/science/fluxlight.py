@@ -83,6 +83,7 @@ nxy = configs.get("nxy", configs.get("npix", def_nxy))
 fov = configs.get("fov", def_fov)
 observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
 
+
 def do_fluxlight(flux_world_file, save=True, force=False):
     results_file = flux_world_file.replace(".flux", ".light")
 
@@ -95,7 +96,7 @@ def do_fluxlight(flux_world_file, save=True, force=False):
     # flux_world.plot_all()
 
     world_path = flux_world.out_dir
-    light_path = world_path.replace("world","light")
+    light_path = world_path.replace("world", "light")
     if not os.path.exists(light_path):
         os.makedirs(light_path)
 
@@ -112,7 +113,7 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         flux_world=flux_world,
         lower_bound=1.05,
         upper_bound=100.0,
-        parallel = True,
+        parallel=True,
         influence_length=influence_length,
         scale=20,
         method=method,
@@ -131,6 +132,7 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         pickle.dump(results, f)
     print(f"Saved Fluxlight results to {results_file}")
     return results
+
 
 def densplot(results, ax):
     Column_Density = results["Column_Density"]
@@ -208,11 +210,13 @@ def quadplot(results, save=True):
     axs[0, 0].set_title("Log Total Brightness (tB)")
     fig.colorbar(im1, ax=axs[0, 0], label="Intensity")
 
-    im2 = axs[0, 1].imshow(B_polarized.to_value(), origin="lower", extent=extent_val, cmap="plasma", norm=brightness_norm)
+    im2 = axs[0, 1].imshow(
+        B_polarized.to_value(), origin="lower", extent=extent_val, cmap="plasma", norm=brightness_norm
+    )
     axs[0, 1].set_title("Log Polarized Brightness (pB)")
     fig.colorbar(im2, ax=axs[0, 1], label="Intensity")
 
-    densplot(results, axs[1,0])
+    densplot(results, axs[1, 0])
 
     im4 = axs[1, 1].imshow(Polarization_fraction, origin="lower", extent=extent_val, cmap="viridis")
     axs[1, 1].set_title("Polarization Fraction (pB/tB)")
@@ -262,7 +266,7 @@ def triplot(results, fov_crop=None, save=True):
     extent_val = [-fov_val, fov_val, -fov_val, fov_val]
 
     # Create a 1x3 grid of plots to visualize the results
-    fig, axs = plt.subplots(1,3, figsize=(14, 4.5), sharex=True, sharey=True)
+    fig, axs = plt.subplots(1, 3, figsize=(14, 4.5), sharex=True, sharey=True)
     axes = axs.flatten()
 
     im1 = axes[0].imshow(B_total.to_value(), origin="lower", extent=extent_val, cmap="plasma", norm=brightness_norm)
@@ -312,7 +316,6 @@ if __name__ == "__main__":
 
     force = "--force" in sys.argv
     results = do_fluxlight(the_world_file, force=force)
-
 
     # Crops (R_sun) that fit inside the computed grid: the old 100/50/25/10 for the default fov, low-corona zooms for small fov.
     grid_fov = float(np.atleast_1d(getattr(results["fov"], "value", results["fov"]))[0])

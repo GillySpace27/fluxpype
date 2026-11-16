@@ -35,21 +35,39 @@ Dependencies:
 import os
 import os.path as path
 import argparse
+
 # import matplotlib as mpl; mpl.use("qt5agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 
 from fluxpype.science.pfss_funcs import pixel_to_latlon
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram, load_magnetogram_params,
-                            shorten_path, get_ax)
+from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path, get_ax
+
 
 def magnet_plot(
-        get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=None, force=False, reduce_amt=0,
-        nact=0, nwant=None, do_print_top=True, ax=None, verb=True, ext="png",
-        plot_all=True, plot_open=True, do_print=False, vmin=-500, vmax=500, configs=None, legend=False):
-
-    """ This function has been re-imagined into a
+    get_cr=None,
+    datdir=None,
+    _batch=None,
+    open_f=None,
+    closed_f=None,
+    force=False,
+    reduce_amt=0,
+    nact=0,
+    nwant=None,
+    do_print_top=True,
+    ax=None,
+    verb=True,
+    ext="png",
+    plot_all=True,
+    plot_open=True,
+    do_print=False,
+    vmin=-500,
+    vmax=500,
+    configs=None,
+    legend=False,
+):
+    """This function has been re-imagined into a
 
     Parameters
     ----------
@@ -72,9 +90,9 @@ def magnet_plot(
         datdir = datdir or configs.get("data_dir", None)
         _batch = _batch or configs.get("batch_name", None)
         get_cr = get_cr or configs.get("cr", None)
-        nwant = nwant   or int(configs.get("fluxon_count", None)[0])
+        nwant = nwant or int(configs.get("fluxon_count", None)[0])
         reduce_amt = reduce_amt or configs.get("mag_reduce", None)
-        if configs.get('adapt', False):
+        if configs.get("adapt", False):
             inst = "adapt"
             reduce_amt = "f" + str(configs.get("adapt_select"))
         else:
@@ -85,15 +103,15 @@ def magnet_plot(
 
     # Define the directory paths for the files
     floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-    top_dir   = f"{datdir}/batches/{_batch}/imgs/footpoints/"
+    top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
     if not path.exists(top_dir):
         os.makedirs(top_dir)
 
     # Define the file names with their complete paths
-    open_file   = open_f     or   f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
-    closed_file = closed_f   or   f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    open_file = open_f or f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    closed_file = closed_f or f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
     magnet_file = f"{datdir}/magnetograms/CR{get_cr}_r{reduce_amt}_{inst}.fits"
-    all_file    = closed_file.replace("closed_", "")
+    all_file = closed_file.replace("closed_", "")
     fname = magnet_file
 
     # Load the data
@@ -117,15 +135,15 @@ def magnet_plot(
 
     # Open fields
     oflnum_low = oflnum[np.isclose(orad, get_r, rtol)]
-    oflx_low =     oflx[np.isclose(orad, get_r, rtol)]
-    olat_low =     olat[np.isclose(orad, get_r, rtol)]
-    olon_low =     olon[np.isclose(orad, get_r, rtol)]
+    oflx_low = oflx[np.isclose(orad, get_r, rtol)]
+    olat_low = olat[np.isclose(orad, get_r, rtol)]
+    olon_low = olon[np.isclose(orad, get_r, rtol)]
 
     # Closed fields
     cflnum_low = cflnum[np.isclose(crad, get_r, rtol)]
-    cflx_low =     cflx[np.isclose(crad, get_r, rtol)]
-    clat_low =     clat[np.isclose(crad, get_r, rtol)]
-    clon_low =     clon[np.isclose(crad, get_r, rtol)]
+    cflx_low = cflx[np.isclose(crad, get_r, rtol)]
+    clat_low = clat[np.isclose(crad, get_r, rtol)]
+    clon_low = clon[np.isclose(crad, get_r, rtol)]
 
     # Convert to radians
     ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
@@ -135,12 +153,12 @@ def magnet_plot(
     _n_open = int(np.max(oflnum_low))
     _n_closed = int(np.max(cflnum_low))
     _n_flux = _n_open + _n_closed
-    _n_outliers = np.abs(_fnum-_n_flux)
+    _n_outliers = np.abs(_fnum - _n_flux)
     print(f"\t\t\tOpen: {_n_open}, Closed: {_n_closed}, Total: {_n_flux}, outliers: {_n_outliers}")
 
     # Define the file name for the plot
-    pic_name = f'distance_cr{get_cr}_f{nwant}_ou{_n_open}_footpoints.{ext}'
-    fluxon_map_histput_path =   path.join(floc_path, pic_name)
+    pic_name = f"distance_cr{get_cr}_f{nwant}_ou{_n_open}_footpoints.{ext}"
+    fluxon_map_histput_path = path.join(floc_path, pic_name)
     fluxon_map_histput_path_top = path.join(top_dir, pic_name)
     fluxon_csv_histput_path_top = path.join(floc_path, "distances.csv")
 
@@ -153,7 +171,7 @@ def magnet_plot(
             do_plot = True
             break
 
-    force=True
+    force = True
 
     if do_print:
         print("\tPlotting...", end="")
@@ -162,8 +180,18 @@ def magnet_plot(
 
         # ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
         #         extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=5, alpha=0.8)
-        ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-                extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=-5, alpha=1)
+        ax0.imshow(
+            magnet,
+            cmap="gray",
+            interpolation=None,
+            origin="lower",
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+            zorder=-5,
+            alpha=1,
+        )
 
         # # Plot all the fluxons
         # Filter positive and negative cases for closed fluxons
@@ -178,10 +206,10 @@ def magnet_plot(
 
         if plot_all:
             # Plot positive cases with labels
-            ax0.scatter(f_lon_positive_closed, f_lat_positive_closed, s=6**2, c='orange', alpha=0.8, label='Positive')
+            ax0.scatter(f_lon_positive_closed, f_lat_positive_closed, s=6**2, c="orange", alpha=0.8, label="Positive")
 
             # Plot negative cases with labels
-            ax0.scatter(f_lon_negative_closed, f_lat_negative_closed, s=6**2, c='teal', alpha=0.8, label='Negative')
+            ax0.scatter(f_lon_negative_closed, f_lat_negative_closed, s=6**2, c="teal", alpha=0.8, label="Negative")
 
         # Filter positive and negative cases for open fluxons
         positive_indices_open = [i for i, s in enumerate(oflx_low) if s > 0]
@@ -194,8 +222,24 @@ def magnet_plot(
         f_lat_negative_open = [ph_olow[i] for i in negative_indices_open]
 
         if plot_open:
-            ax0.scatter(f_lon_positive_open, f_lat_positive_open, s=5**2, c='red', alpha=1.0, label='Positive (Open)', edgecolors='k')
-            ax0.scatter(f_lon_negative_open, f_lat_negative_open, s=5**2, c='blue', alpha=1.0, label='Negative (Open)', edgecolors='k')
+            ax0.scatter(
+                f_lon_positive_open,
+                f_lat_positive_open,
+                s=5**2,
+                c="red",
+                alpha=1.0,
+                label="Positive (Open)",
+                edgecolors="k",
+            )
+            ax0.scatter(
+                f_lon_negative_open,
+                f_lat_negative_open,
+                s=5**2,
+                c="blue",
+                alpha=1.0,
+                label="Negative (Open)",
+                edgecolors="k",
+            )
         # print("A")
         # plt.show(block=True)
 
@@ -216,10 +260,10 @@ def magnet_plot(
 
         if True:
             # # Provided points (longitude, latitude)
-            points = np.array([th_olow, ph_olow]).T #These are in radians and sin(radians)
+            points = np.array([th_olow, ph_olow]).T  # These are in radians and sin(radians)
             kind = "open"
         else:
-            points = np.array([th_clow, ph_clow]).T #These are in radians and sin(radians)
+            points = np.array([th_clow, ph_clow]).T  # These are in radians and sin(radians)
             kind = "closed"
 
         # # Image dimensions
@@ -234,24 +278,31 @@ def magnet_plot(
 
         hist, xedges, yedges = np.histogram2d(th_olow, ph_olow, bins=(36, 18))
         hist = hist.T  # Transpose for correct orientation
-        ax.imshow(hist, cmap='viridis', origin='lower', interpolation='none',
-                extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]], aspect=2)
+        ax.imshow(
+            hist,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]],
+            aspect=2,
+        )
 
         # Original scatter plot
-        ax.scatter(th_olow, ph_olow, c='orange', s=50)
+        ax.scatter(th_olow, ph_olow, c="orange", s=50)
 
         # Find non-zero bins in the histogram
         open_points_inds = np.where(hist > 0)
 
         # Calculate the midpoints of bins for correct plotting
         # Note: Convert bin indices to the midpoint values in the original data space
-        open_points_lons = xedges[open_points_inds[1]] + np.mean(np.diff(xedges))/2
-        open_points_lats = yedges[open_points_inds[0]] + np.mean(np.diff(yedges))/2
+        open_points_lons = xedges[open_points_inds[1]] + np.mean(np.diff(xedges)) / 2
+        open_points_lats = yedges[open_points_inds[0]] + np.mean(np.diff(yedges)) / 2
 
         # Scatter plot on non-zero bins
-        ax.scatter(open_points_lons, open_points_lats, c='red', s=50, alpha=0.6)
+        ax.scatter(open_points_lons, open_points_lats, c="red", s=50, alpha=0.6)
 
         from scipy.spatial import cKDTree
+
         # # Normalize and scale points to image dimensions
         # Longitude: 0 to 2pi maps to 0 to img_width
         # Latitude: -1 to 1 maps to 0 to img_height
@@ -303,15 +354,24 @@ def magnet_plot(
 
         # Create a meshgrid for longitude and latitude
         latitude = np.linspace(-1, 1, img_height)  # Corresponds to -90 to 90 degrees if scaled properly
-        longitude = np.linspace(0, 2*np.pi, img_width)  # 0 to 360 degrees
+        longitude = np.linspace(0, 2 * np.pi, img_width)  # 0 to 360 degrees
         longitude_grid, latitude_grid = np.meshgrid(longitude, latitude)
 
         # Initialize the plot
         # fig, ax0 = plt.subplots()
-        im = new_ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
-                        alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        im.figure.colorbar(im, ax=new_ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
-        plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im = new_ax.imshow(
+            distance_array_degrees,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            alpha=1,
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        im.figure.colorbar(im, ax=new_ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
+        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
 
         # Create the interpolator function
         dist_interp = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
@@ -326,8 +386,18 @@ def magnet_plot(
         #             cmap='viridis', alpha=1, edgecolors='none', zorder=10, vmin=vmin, vmax=vmax)
 
         distances_points = dist_interp.ev(ph_olow.ravel(), th_olow.ravel())
-        new_ax.scatter(th_olow, ph_olow, c=distances_points, s=100, cmap='viridis',
-                    alpha=1, edgecolors='k', zorder=100000, vmin=vmin, vmax=vmax)
+        new_ax.scatter(
+            th_olow,
+            ph_olow,
+            c=distances_points,
+            s=100,
+            cmap="viridis",
+            alpha=1,
+            edgecolors="k",
+            zorder=100000,
+            vmin=vmin,
+            vmax=vmax,
+        )
 
         # Draw a contour and collect its vertex paths robustly using `allsegs`
         CS = new_ax.contour(longitude, latitude, img_distances, levels=[10])
@@ -344,10 +414,10 @@ def magnet_plot(
         figbox.append(fig)
 
         for pth in contour_paths:
-            ax.plot(pth[:, 0], pth[:, 1], 'r.', lw=0)  # Plotting contour lines in red
+            ax.plot(pth[:, 0], pth[:, 1], "r.", lw=0)  # Plotting contour lines in red
         plt.show(block=True)
 
-        points = np.array([pth[:, 0], pth[:, 1]]).T #These are in radians and sin(radians)
+        points = np.array([pth[:, 0], pth[:, 1]]).T  # These are in radians and sin(radians)
 
         # # Normalize and scale points to image dimensions
         # Longitude: 0 to 2pi maps to 0 to img_width
@@ -376,35 +446,54 @@ def magnet_plot(
         # # Reshape and display
         distance_array_degrees = distances_in_degrees.reshape((img_height, img_width))
 
-        im = ax.imshow(distance_array_degrees, cmap='viridis', origin='lower', interpolation='none',
-                        alpha=1, extent=(0, 2*np.pi, -1, 1), aspect='auto', vmin=vmin, vmax=vmax)
-        im.figure.colorbar(im, ax=ax, label=f'Distance to Nearest {kind} Footpoint (Degrees)')
-        plt.title(f'Distance to Nearest {kind} Footpoint (Degrees)')
+        im = ax.imshow(
+            distance_array_degrees,
+            cmap="viridis",
+            origin="lower",
+            interpolation="none",
+            alpha=1,
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        im.figure.colorbar(im, ax=ax, label=f"Distance to Nearest {kind} Footpoint (Degrees)")
+        plt.title(f"Distance to Nearest {kind} Footpoint (Degrees)")
 
         # Create the interpolator function
         dist_interp_2 = interpolate.RectBivariateSpline(latitude, longitude, distance_array_degrees)
         distances_points = dist_interp_2.ev(ph_olow.ravel(), th_olow.ravel())
-        ax.scatter(th_olow, ph_olow, c=distances_points, s=100, cmap='viridis',
-                    alpha=1, edgecolors='k', zorder=100000, vmin=vmin, vmax=vmax)
+        ax.scatter(
+            th_olow,
+            ph_olow,
+            c=distances_points,
+            s=100,
+            cmap="viridis",
+            alpha=1,
+            edgecolors="k",
+            zorder=100000,
+            vmin=vmin,
+            vmax=vmax,
+        )
 
         # plt.show()
         np.savetxt(fluxon_csv_histput_path_top, distance_array_degrees, delimiter=", ")
 
-        do_legend=False
+        do_legend = False
 
         if do_legend:
             ax0.legend(fontsize="small", loc="upper left", framealpha=0.75)
 
         if ax is None:
-            shp = magnet.shape #pixels
-            plt.axis('off')
-            sz0=6 #inches
-            ratio = shp[1]/shp[0]
-            sz1=sz0*ratio #inches
-            DPI = shp[1] / sz1 #pixels/inch
+            shp = magnet.shape  # pixels
+            plt.axis("off")
+            sz0 = 6  # inches
+            ratio = shp[1] / shp[0]
+            sz1 = sz0 * ratio  # inches
+            DPI = shp[1] / sz1  # pixels/inch
             fig.set_size_inches((sz1, sz0))
             plt.tight_layhist()
-            plt.savefig(fluxon_map_histput_path_top, bbox_inches='tight', dpi=4*DPI)
+            plt.savefig(fluxon_map_histput_path_top, bbox_inches="tight", dpi=4 * DPI)
             # plt.show()
             plt.close(fig)
 
@@ -422,7 +511,9 @@ def magnet_plot(
         print("\t\t\t```````````````````````````````\n\n")
 
     plt.show(block=True)
-    import pdb; pdb.set_trace()
+    import pdb
+
+    pdb.set_trace()
     for fig in figbox:
         plt.close(fig)
     return _n_open, _n_closed, _n_flux, _fnum, _n_outliers
@@ -435,14 +526,13 @@ def magnet_plot(
 
 if __name__ == "__main__":
     # Create the argument parser
-    parser = argparse.ArgumentParser(description=
-            'This script plots the expansion factor of the given radial_fr.dat')
-    parser.add_argument('--cr', type=int, default=2135, help='Carrington Rotation')
-    parser.add_argument('--file', type=str, default=None, help='Data File Name')
-    parser.add_argument('--nwant', type=int, default=None, help='Number of Fluxons')
-    parser.add_argument('--open', type=str, default=None)
-    parser.add_argument('--closed', type=str, default=None)
-    parser.add_argument('--adapt', type=str, default=None)
+    parser = argparse.ArgumentParser(description="This script plots the expansion factor of the given radial_fr.dat")
+    parser.add_argument("--cr", type=int, default=2135, help="Carrington Rotation")
+    parser.add_argument("--file", type=str, default=None, help="Data File Name")
+    parser.add_argument("--nwant", type=int, default=None, help="Number of Fluxons")
+    parser.add_argument("--open", type=str, default=None)
+    parser.add_argument("--closed", type=str, default=None)
+    parser.add_argument("--adapt", type=str, default=None)
 
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)

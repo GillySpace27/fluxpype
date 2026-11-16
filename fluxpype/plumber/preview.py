@@ -30,7 +30,9 @@ TEXT_LINES = 400
 MAX_HDUS = 4
 MAX_CARDS = 2000
 RENDER_TIMEOUT = 90.0
-_RENDERS = threading.Semaphore(2)  # a grid of FITS thumbnails asks for many renders at once; each one is a matplotlib process
+_RENDERS = threading.Semaphore(
+    2
+)  # a grid of FITS thumbnails asks for many renders at once; each one is a matplotlib process
 KEEP_RENDERS = 300
 
 

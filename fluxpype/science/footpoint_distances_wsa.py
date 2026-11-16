@@ -55,8 +55,8 @@ _REGION_DIALATE = 6
 
 # --- Polar cleanup (remove small purple islands near the poles) ---
 _MORPH_POLAR_PURPLE_MIN_SIZE = 5000  # pixels; set 0 to disable
-_MORPH_POLAR_ABS_LAT_DEG = 65.0      # operate where |lat| > this
-_BOUND_POLAR_ABS_LAT_DEG =80.0      # operate where |lat| > this
+_MORPH_POLAR_ABS_LAT_DEG = 65.0  # operate where |lat| > this
+_BOUND_POLAR_ABS_LAT_DEG = 80.0  # operate where |lat| > this
 
 # --- Morphology debug ---
 _MORPH_DEBUG = True  # set True to save a panel of intermediate stages
@@ -64,7 +64,7 @@ _MORPH_DEBUG_SAVE = True  # save PNG next to your quicklook
 
 # --- Distance map exclusion constants ---
 _POLAR_CAP_EXCLUDE_ROWS = None  # rows excluded at poles in distance map
-_PERIODIC_PADD_COLS = 10    # columns padded at periodic edges
+_PERIODIC_PADD_COLS = 10  # columns padded at periodic edges
 
 
 def _morph_spacefill(boundary_mask: np.ndarray) -> np.ndarray:
@@ -133,6 +133,7 @@ from matplotlib.colors import LinearSegmentedColormap
 red_transparent_cmap = LinearSegmentedColormap.from_list(
     "red_transparent", [(0, (1, 0, 0, 0)), (1, (1, 0, 0, 0.25))], N=256
 )
+
 
 # --- Helper: single-pixel outline from thick boundary mask ---
 def _singleline_outline(boundary_mask: np.ndarray) -> np.ndarray:
@@ -206,8 +207,9 @@ def _region_from_boundary(boundary_mask: np.ndarray) -> np.ndarray:
 
 
 # --- Helper: mask horizontal boundary lines confined to polar caps, preserving vertical peninsulas ---
-def _mask_polar_band_interior(boundary_mask: np.ndarray, lat_1d: np.ndarray,
-                              lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG) -> np.ndarray:
+def _mask_polar_band_interior(
+    boundary_mask: np.ndarray, lat_1d: np.ndarray, lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG
+) -> np.ndarray:
     """Remove horizontal boundary lines confined to polar caps, preserving vertical peninsulas."""
     B = boundary_mask.copy()
     lat_cut = np.deg2rad(lat_cut_deg)
@@ -223,9 +225,11 @@ def _mask_polar_band_interior(boundary_mask: np.ndarray, lat_1d: np.ndarray,
             print("\n---------Removing Band!--------\n")
     return B
 
+
 # --- Helper: treat all pixels above |lat| > lat_cut_deg as open field (True) ---
-def _treat_poles_as_open_field(region_mask: np.ndarray, lat_1d: np.ndarray,
-                               lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG) -> np.ndarray:
+def _treat_poles_as_open_field(
+    region_mask: np.ndarray, lat_1d: np.ndarray, lat_cut_deg: float = _BOUND_POLAR_ABS_LAT_DEG
+) -> np.ndarray:
     """Force all pixels above |lat| > lat_cut_deg to open field (True)."""
     R = region_mask.copy()
     lat_cut = np.deg2rad(lat_cut_deg)
@@ -371,12 +375,18 @@ def _debug_morph_steps(
             flipped &= polar_rows[:, None]
             if np.any(flipped):
                 ax_morph = axes.ravel()[-1]
-                ax_morph.imshow(flipped, aspect="auto", origin="lower", interpolation="nearest",
-                                extent=extent, alpha=0.45, cmap="Reds")
+                ax_morph.imshow(
+                    flipped,
+                    aspect="auto",
+                    origin="lower",
+                    interpolation="nearest",
+                    extent=extent,
+                    alpha=0.45,
+                    cmap="Reds",
+                )
                 ax_morph.set_title("Region (morphed) + polar cleanup Δ")
         except Exception:
             pass
-
 
     if savepath and _MORPH_DEBUG_SAVE:
         plt.savefig(savepath, dpi=200)
@@ -392,23 +402,23 @@ def _boundary_mask_from_pols(P: np.ndarray) -> np.ndarray:
     is *not* periodic and uses edge padding.
     """
     # Identify zero (CH) locations
-    is_zero = (P == 0)
+    is_zero = P == 0
 
     # Longitude neighbors: periodic wrap
-    nb_left  = is_zero & (np.roll(P,  1, axis=1) != 0)
+    nb_left = is_zero & (np.roll(P, 1, axis=1) != 0)
     nb_right = is_zero & (np.roll(P, -1, axis=1) != 0)
 
     # Latitude neighbors: non-periodic (use edge padding)
     P_pad = np.pad(P, ((1, 1), (0, 0)), mode="edge")
-    nb_up    = is_zero & (P_pad[:-2, :] != 0)
-    nb_down  = is_zero & (P_pad[ 2:, :] != 0)
+    nb_up = is_zero & (P_pad[:-2, :] != 0)
+    nb_down = is_zero & (P_pad[2:, :] != 0)
 
     boundary_mask = nb_up | nb_down | nb_left | nb_right
 
     return boundary_mask
 
 
-def _smooth_regions(B,erode=2, dialate=2):
+def _smooth_regions(B, erode=2, dialate=2):
     # Use 8-neighborhood to preserve structure
     st = generate_binary_structure(2, 2)
 
@@ -498,25 +508,25 @@ def precalc_wind_speed(fss, theta_b):
     # Define constants (from McGregor 2011)
     c1 = 2 / 9
     c2 = 0.8
-    c3 = 3.8   # phi
-    c4 = 3.6   # beta
+    c3 = 3.8  # phi
+    c4 = 3.6  # beta
     c5 = 3.0
 
-    v0 = 200   # km/s
-    vm = 750   # km/s
+    v0 = 200  # km/s
+    vm = 750  # km/s
 
     # Compute speed
     # Inputs: fss, theta_b
-    speed = v0 + (vm / (1 + fss)**c1) * (1 - c2 * np.exp(- (theta_b / c3)**c4))**c5
-    speed[fss==0] = np.NAN
+    speed = v0 + (vm / (1 + fss) ** c1) * (1 - c2 * np.exp(-((theta_b / c3) ** c4))) ** c5
+    speed[fss == 0] = np.NAN
     return speed
+
 
 def plot_all_results(distances, expfs, lon_1d, lat_1d, top_dir, cr):
     fig, axes = plt.subplots(3, figsize=(8, 8))
     extent = (lon_1d[0], lon_1d[-1], np.sin(lat_1d[0]), np.sin(lat_1d[-1]))
 
     speed = precalc_wind_speed(expfs, distances)
-
 
     dist = distances.copy()
     dist[expfs <= 0] = np.nan
@@ -617,10 +627,12 @@ def magnet_plot(
             pols, expfs, lon_1d, lat_1d = _load_pfss_results(output_file)
         else:
             pols, expfs, lon_1d, lat_1d = _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top)
-        distances = _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr=get_cr, expfs=expfs)
+        distances = _process_pfss_results(
+            pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top, cr=get_cr, expfs=expfs
+        )
 
         plot_all_results(distances, expfs, lon_1d, lat_1d, top_dir, cr)
-        #TODO add the actual wind speed here, save that to disk, and just load it in the plotting function.
+        # TODO add the actual wind speed here, save that to disk, and just load it in the plotting function.
 
     if do_print_top:
         print("\t\t    Success!\n\t\t\t```````````````````````````````\n")
@@ -646,6 +658,7 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
     import pfsspy
     from pfsspy import tracing
     from fluxpype.pipe_helper import shorten_path
+
     cr = get_cr
     output_file = floc_path + f"pfss_ofmap_cr{cr}.npz"
     if do_print_top:
@@ -655,10 +668,15 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
     # hmi_map = sunpy.map.Map(np.roll(hmi_map.data, shift=roll_cols, axis=1), hmi_map.meta)
     # print(f"[diag] Rolled SunPy map data by {roll_cols} columns (~2/3π radians).")
     if do_print_top:
-        print(f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True)
+        print(
+            f"\t[pfss] Loaded {shorten_path(magnet_file)}; resampling to {(2 * nsteps)}x{nsteps} pixels...", flush=True
+        )
     hmi_map = hmi_map.resample([2 * nsteps, nsteps] * u.pix)
     if do_print_top:
-        print("\t[pfss] Building PFSS input and running potential-field solver (pfsspy.pfss)... this can take a bit.", flush=True)
+        print(
+            "\t[pfss] Building PFSS input and running potential-field solver (pfsspy.pfss)... this can take a bit.",
+            flush=True,
+        )
     nrho = 40
     rss = 2.5
     pfss_in = pfsspy.Input(hmi_map, nrho, rss)
@@ -677,7 +695,10 @@ def _compute_pfss_results(magnet_file, floc_path, get_cr, nsteps, do_print_top):
     seeds = SkyCoord(lon.ravel(), lat.ravel(), r, frame=pfss_out.coordinate_frame)
     if do_print_top:
         seed_n = (2 * nsteps) * nsteps
-        print(f"\t[pfss] Using FortranTracer; tracing a {2*nsteps}x{nsteps} seed grid ({seed_n} field lines)... this can be slow.", flush=True)
+        print(
+            f"\t[pfss] Using FortranTracer; tracing a {2*nsteps}x{nsteps} seed grid ({seed_n} field lines)... this can be slow.",
+            flush=True,
+        )
     tracer = tracing.FortranTracer(max_steps=2500)
     field_lines = tracer.trace(seeds, pfss_out)
     if do_print_top:
@@ -699,6 +720,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     import numpy as np
     import matplotlib.pyplot as plt
     import time
+
     # pols shape is (nsteps, 2*nsteps); build matching lon/lat grids
     # Identify boundary pixels: ONLY 0 ↔ non-zero (±1) interfaces
     P = pols
@@ -749,9 +771,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
         print(f"[diag] percentile check skipped: {_e}")
     # Persist results alongside lon/lat for later reuse/interpolation
     ch_out_npz = floc_path + f"pfss_distances.npz"
-    np.savez_compressed(
-        ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
-    )
+    np.savez_compressed(ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8))
     # Original (legacy) saves - keep them to avoid breaking existing consumers
     ch_out_csv = floc_path + f"pfss_distances.csv"
     np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
@@ -776,7 +796,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
 
     # Helpful masks and quick stats (optional but nice for downstream)
     if expfs is not None:
-        open_mask = (expfs > 0)
+        open_mask = expfs > 0
         np.savetxt(floc_path + "pfss_open_mask_latlon.csv", open_mask.astype(int), delimiter=",", fmt="%d")
         nz = int(np.count_nonzero(open_mask))
         ntot = int(open_mask.size)
@@ -796,7 +816,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
         "orientation": "rows=lat, cols=lon",
         "lon_units": "radians",
         "lat_units": "radians",
-        "notes": "CSV companions provided in both [lat,lon] and [lon,lat] for easy loading from PDL; legacy files still written."
+        "notes": "CSV companions provided in both [lat,lon] and [lon,lat] for easy loading from PDL; legacy files still written.",
     }
     with open(floc_path + "pfss_maps_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
@@ -806,7 +826,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     # if do_print_top:
     #     print(f"\t\tWrote CSV: {shorten_path(compat_csv)}")
 
-    fig_ch, ax_ch = plt.subplots(figsize=(13,4))
+    fig_ch, ax_ch = plt.subplots(figsize=(13, 4))
     im = ax_ch.imshow(
         ch_distance_deg,
         cmap="viridis",
@@ -816,9 +836,15 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
         aspect="auto",
     )
     # sanity contours to check symmetry of distances inside vs outside
-    ax_ch.contour(lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors='k', linewidths=0.6, alpha=0.4)
+    ax_ch.contour(
+        lon_1d, np.sin(lat_1d), ch_distance_deg, levels=[5, 10, 20, 30], colors="k", linewidths=0.6, alpha=0.4
+    )
     im.figure.colorbar(im, ax=ax_ch, label="Distance to CH Boundary (deg)")
-    title = f"Distance to Nearest Coronal-Hole Boundary for CR {cr}" if cr is not None else "Distance to Nearest Coronal-Hole Boundary"
+    title = (
+        f"Distance to Nearest Coronal-Hole Boundary for CR {cr}"
+        if cr is not None
+        else "Distance to Nearest Coronal-Hole Boundary"
+    )
     ax_ch.set_title(title)
     cs_raw = ax_ch.contour(
         lon_1d,
@@ -849,6 +875,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
         aspect="auto",
     )
     from matplotlib.lines import Line2D
+
     handles = [
         Line2D([0], [0], color="white", lw=0.5, ls="--", label="raw"),
         Line2D([0], [0], color="red", lw=1.5, ls="-", label="morphed"),
@@ -874,7 +901,9 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
 
 if __name__ == "__main__":
     # Create the argument parser
-    parser = argparse.ArgumentParser(description="This script determines coronal hole boundary distances from a magnetogram")
+    parser = argparse.ArgumentParser(
+        description="This script determines coronal hole boundary distances from a magnetogram"
+    )
     parser.add_argument("--cr", type=int, default=2190, help="Carrington Rotation")
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)

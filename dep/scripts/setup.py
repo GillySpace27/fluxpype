@@ -47,9 +47,7 @@ setup(
     name="fluxpype",
     version="0.1.4",
     description="A wrapper and installer for the FLUX model",
-    long_description=(
-        Path("README.md").read_text() if Path("README.md").exists() else ""
-    ),
+    long_description=(Path("README.md").read_text() if Path("README.md").exists() else ""),
     long_description_content_type="text/markdown",
     url="https://github.com/gillyspace27/fluxpype",
     packages=find_packages(where="fluxpype"),

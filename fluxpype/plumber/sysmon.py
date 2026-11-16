@@ -76,7 +76,17 @@ class SysMon:
         if self.hist and now - self._t < 1.0:
             return self.hist[-1]
         self._t = now
-        s: Dict[str, Any] = {"t": now, "cpu": None, "mem": None, "net_rx": None, "net_tx": None, "disk_r": None, "disk_w": None, "gpu": None, "tok": None}
+        s: Dict[str, Any] = {
+            "t": now,
+            "cpu": None,
+            "mem": None,
+            "net_rx": None,
+            "net_tx": None,
+            "disk_r": None,
+            "disk_w": None,
+            "gpu": None,
+            "tok": None,
+        }
         if psutil:
             cores = self._cores = psutil.cpu_percent(None, percpu=True)
             s["cpu"] = sum(cores) / len(cores) if cores else None
@@ -113,7 +123,12 @@ class SysMon:
         if psutil:
             out["cores"] = self._cores
             vm, sw = psutil.virtual_memory(), psutil.swap_memory()
-            out["memory"] = {"total": vm.total, "used": vm.total - vm.available, "swap_used": sw.used, "swap_total": sw.total}
+            out["memory"] = {
+                "total": vm.total,
+                "used": vm.total - vm.available,
+                "swap_used": sw.used,
+                "swap_total": sw.total,
+            }
             if procs:
                 out["processes"] = self.processes()
         return out
@@ -129,7 +144,16 @@ class SysMon:
             except OSError:
                 continue
             seen.add(dev)
-            rows.append({"label": label, "path": path, "total": u.total, "used": u.used, "free": u.free, "pct": u.used / u.total * 100 if u.total else 0})
+            rows.append(
+                {
+                    "label": label,
+                    "path": path,
+                    "total": u.total,
+                    "used": u.used,
+                    "free": u.free,
+                    "pct": u.used / u.total * 100 if u.total else 0,
+                }
+            )
         return rows
 
     def processes(self, top: int = 8) -> Dict[str, Any]:
@@ -140,7 +164,12 @@ class SysMon:
             i = p.info
             if i["memory_info"] is None:
                 continue
-            row = {"pid": i["pid"], "name": i["name"] or "?", "cpu": i["cpu_percent"] or 0.0, "rss": i["memory_info"].rss}
+            row = {
+                "pid": i["pid"],
+                "name": i["name"] or "?",
+                "cpu": i["cpu_percent"] or 0.0,
+                "rss": i["memory_info"].rss,
+            }
             try:
                 label = groups.get(os.getpgid(i["pid"]))
             except OSError:
@@ -152,7 +181,11 @@ class SysMon:
                 t["procs"] += 1
             rows.append({**row, "task": label})
         rows.sort(key=lambda r: r["cpu"], reverse=True)
-        return {"top": rows[:top], "tasks": sorted(tasks.values(), key=lambda t: -t["cpu"]), "external": external_flux(groups)}
+        return {
+            "top": rows[:top],
+            "tasks": sorted(tasks.values(), key=lambda t: -t["cpu"]),
+            "external": external_flux(groups),
+        }
 
 
 _FLUXISH = re.compile(r"\.(flux|pdl)\b|Flux")
@@ -173,5 +206,14 @@ def external_flux(groups: Dict[int, str]) -> List[Dict[str, Any]]:
         except OSError:
             continue
         rss = i["memory_info"].rss if i["memory_info"] else 0
-        out.append({"pid": i["pid"], "cmd": cmd, "cwd": i["cwd"], "started": i["create_time"], "cpu": i["cpu_percent"] or 0.0, "rss": rss})
+        out.append(
+            {
+                "pid": i["pid"],
+                "cmd": cmd,
+                "cwd": i["cwd"],
+                "started": i["create_time"],
+                "cpu": i["cpu_percent"] or 0.0,
+                "rss": rss,
+            }
+        )
     return sorted(out, key=lambda r: r["started"] or 0)

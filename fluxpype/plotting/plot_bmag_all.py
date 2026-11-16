@@ -56,7 +56,10 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
         True
     """
     batch = args.batch
-    filename = args.file or f'{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat'
+    filename = (
+        args.file
+        or f"{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat"
+    )
     imagename = os.path.basename(filename.replace(".dat", f"_{r1:02d}.png"))
     imagedir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(filename))))
     bmagdir = os.path.join(imagedir, "imgs", "bmag", "all", "sets", f"cr{args.cr}_all_f{args.nwant}")
@@ -67,35 +70,35 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     ### GET TOP AND BOTTOM DATA
     # Load the dat file
     arr = np.loadtxt(filename, skiprows=1).T
-    nfluxon = int(arr[0,:].max())
+    nfluxon = int(arr[0, :].max())
 
     # Initialize Empty Arrays
     th0 = np.zeros(nfluxon)
     ph0 = np.zeros(nfluxon)
-    b1  = np.zeros(nfluxon)
+    b1 = np.zeros(nfluxon)
     th1 = np.zeros(nfluxon)
     ph1 = np.zeros(nfluxon)
-    b0  = np.zeros(nfluxon)
-    a0  = np.zeros(nfluxon)
-    a1  = np.zeros(nfluxon)
+    b0 = np.zeros(nfluxon)
+    a0 = np.zeros(nfluxon)
+    a1 = np.zeros(nfluxon)
 
     low_check = r1
     high_check = r2
 
     # Fill the arrays
     for i in np.arange(0, nfluxon):
-        floc = np.where(arr[0,:] == i)[0]
+        floc = np.where(arr[0, :] == i)[0]
         lower = floc[low_check]
         upper = floc[high_check]
 
         rad0 = arr[4, lower]
         rad1 = arr[4, upper]
 
-        th0[i] = -1 * arr[5, lower] + np.pi/2
-        th1[i] = -1 * arr[5, upper] + np.pi/2
+        th0[i] = -1 * arr[5, lower] + np.pi / 2
+        th1[i] = -1 * arr[5, upper] + np.pi / 2
 
-        ph0[i] = np.mod(arr[6, lower], 2*np.pi)
-        ph1[i] = np.mod(arr[6, upper], 2*np.pi)
+        ph0[i] = np.mod(arr[6, lower], 2 * np.pi)
+        ph1[i] = np.mod(arr[6, upper], 2 * np.pi)
 
         a0[i] = arr[7, lower]
         a1[i] = arr[7, upper]
@@ -127,14 +130,14 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
 
     skew = 5**2
     power = 1
-    br0 = skew*(6*b0/br0_max)**power
-    br1 = skew*(4*b1/br1_max)**power
+    br0 = skew * (6 * b0 / br0_max) ** power
+    br1 = skew * (4 * b1 / br1_max) ** power
     # ar0 = skew*(6*a0/ar0_max)**power
     # ar1 = skew*(4*a1/ar1_max)**power
 
     # fig, (ax0, ax1) = plt.subplots(2)
 
-    RS = 696340000 #meters
+    RS = 696340000  # meters
 
     # Using GridSpec for layout
     fig = plt.figure(figsize=(10, 8))  # Adjust the figure size as needed
@@ -153,8 +156,17 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     ### FIRST PLOT ###
     # Plot magnetogram
     magnet = load_fits_magnetogram(configs=configs)
-    ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-            extent=(0,2*np.pi,-1,1), aspect='auto', vmin=-500, vmax=500, alpha=0.5)
+    ax0.imshow(
+        magnet,
+        cmap="gray",
+        interpolation=None,
+        origin="lower",
+        extent=(0, 2 * np.pi, -1, 1),
+        aspect="auto",
+        vmin=-500,
+        vmax=500,
+        alpha=0.5,
+    )
 
     # Plot Magnetic Field Strength
     try:
@@ -168,8 +180,7 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
 
     if r1 and False:
         # sc00 = ax0.scatter(ph0, th0, c=b0, s=50, cmap="binary_r", alpha=0.8,
-        sc00 = ax0.scatter(ph0, th0, c="k", s=50, alpha=1-bb0,
-                           label=r"B(1.0Rs)", zorder=100) #, vmin=0, vmax=25)
+        sc00 = ax0.scatter(ph0, th0, c="k", s=50, alpha=1 - bb0, label=r"B(1.0Rs)", zorder=100)  # , vmin=0, vmax=25)
         cbar00 = fig.colorbar(sc00, ax=ax0)
         cbar00.set_label(f"B({r1:.2f} Rs)  [Gauss]")
         pass
@@ -177,14 +188,26 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     # Plot Latitude of points
     do_lat = True
     if do_lat:
-        sc01 = ax0.scatter(ph0, th0, c=maxlist, s = 100, cmap="brg",
-                    alpha=bb0, label=r"First Point Latitude", zorder = 99, marker='o', vmin=-1, vmax=1)
+        sc01 = ax0.scatter(
+            ph0,
+            th0,
+            c=maxlist,
+            s=100,
+            cmap="brg",
+            alpha=bb0,
+            label=r"First Point Latitude",
+            zorder=99,
+            marker="o",
+            vmin=-1,
+            vmax=1,
+        )
         cbar01 = fig.colorbar(sc01, ax=ax0)
         cbar01.set_label(f"First Point Sine Latitude")
 
     if do_r2:
-        sc01 = ax0.scatter(ph1, th1, c=b1, s = 10*b1, cmap="autumn",
-                    alpha=0.75, label=r"B(21.5Rs)", marker='s', vmin=0, vmax=25)
+        sc01 = ax0.scatter(
+            ph1, th1, c=b1, s=10 * b1, cmap="autumn", alpha=0.75, label=r"B(21.5Rs)", marker="s", vmin=0, vmax=25
+        )
         cbar01 = fig.colorbar(sc01, ax=ax0)
         # cbar01.set_label(f"B({r2:.2f} Rs) [Gauss]")
         cbar01.set_label("First Point Sine Latitude")
@@ -194,49 +217,50 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     blabel = r"Expansion Factor"
     tlabel = r"Latitude [Radians]"
 
-    ax1.set_xlabel(r'Heliocentric Radius [R$_\odot$]')
-    ax1.set_ylabel(alabel, color='r')
-    ax1.tick_params(axis='y', labelcolor='r')
-    ax1.set_yscale('log')
-    ax1.set_xscale('log')
+    ax1.set_xlabel(r"Heliocentric Radius [R$_\odot$]")
+    ax1.set_ylabel(alabel, color="r")
+    ax1.tick_params(axis="y", labelcolor="r")
+    ax1.set_yscale("log")
+    ax1.set_xscale("log")
 
     # Create a second y-axis for the expansion data
-    ax2.set_yscale('log')
-    ax2.set_ylabel(blabel, color='b')
-    ax2.tick_params(axis='y', labelcolor='b')
+    ax2.set_yscale("log")
+    ax2.set_ylabel(blabel, color="b")
+    ax2.tick_params(axis="y", labelcolor="b")
 
     # Plot the Curves
     for i in np.arange(0, nfluxon):
-        floc = np.where(arr[0,:] == i)[0]
+        floc = np.where(arr[0, :] == i)[0]
         rr = arr[4, floc]
 
         phi = arr[6, floc]
-        ttheta = -1 * arr[5, floc] + np.pi/2
-        pphi = np.mod(arr[6, floc], 2*np.pi)
+        ttheta = -1 * arr[5, floc] + np.pi / 2
+        pphi = np.mod(arr[6, floc], 2 * np.pi)
 
-        expansion = arr[7,floc]
-        field = arr[8,floc]
-        field_2 = arr[9,floc]
+        expansion = arr[7, floc]
+        field = arr[8, floc]
+        field_2 = arr[9, floc]
 
-        ax1.plot(rr-1, field, c=plt.cm.Reds(i / nfluxon), label=blabel if i == 0 else "", alpha=0.8)
-        ax2.plot(rr-1, expansion, c=plt.cm.Blues(i / nfluxon), label=alabel if i == 0 else "", alpha=0.8)
+        ax1.plot(rr - 1, field, c=plt.cm.Reds(i / nfluxon), label=blabel if i == 0 else "", alpha=0.8)
+        ax2.plot(rr - 1, expansion, c=plt.cm.Blues(i / nfluxon), label=alabel if i == 0 else "", alpha=0.8)
         # ax1.plot(rr, pphi, c=plt.cm.Purples(i / nfluxon), label=tlabel if i == 0 else "", alpha=0.8)
 
     r1 = rad0
     r2 = rad1
-    ax1.axvline(r1-1, ls=":", c='k', zorder=1000000)
+    ax1.axvline(r1 - 1, ls=":", c="k", zorder=1000000)
     if do_r2:
-        ax1.axvline(r2-1, ls=":", c='k', zorder=1000)
+        ax1.axvline(r2 - 1, ls=":", c="k", zorder=1000)
 
     ### THIRD PLOT ###
     # Plot the Sunspot Number
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
+    file_path = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
 
     # Load sunspot data (transpose as in your original code)
-    carrington = np.loadtxt(file_path).T    ## https://sidc.be/SILSO/datafiles#total ##
+    carrington = np.loadtxt(file_path).T  ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
+
     date = carrington[2]
     sunspots = carrington[3]
     this_date = sunpy.coordinates.sun.carrington_rotation_time(args.cr)
@@ -244,7 +268,7 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
 
     # fig, ax = plt.subplots()
     ax3.plot(date, sunspots, label="Sunspots")
-    ax3.axvline(this_date.decimalyear, ls=":", c='k', zorder=1000000)
+    ax3.axvline(this_date.decimalyear, ls=":", c="k", zorder=1000000)
     ax3.set_xlabel("Year")
     ax3.set_ylabel("Sunspots")
     ax3.set_title("Solar Cycle")
@@ -253,15 +277,15 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
     # fig.close()
     # plt.show()
 
-    fig.suptitle(F"Fluxon Magnetic Field Properties for CR {args.cr}, with {nfluxon} Open Fields")
-    ax0.set_title(F"Field Strength and Origin at r = {r1:.2f} Rs")
-    ax1.set_title(F"Magnetic Field Strength and Expansion Factor vs Height")
+    fig.suptitle(f"Fluxon Magnetic Field Properties for CR {args.cr}, with {nfluxon} Open Fields")
+    ax0.set_title(f"Field Strength and Origin at r = {r1:.2f} Rs")
+    ax1.set_title(f"Magnetic Field Strength and Expansion Factor vs Height")
 
-    ax0.set_xlabel('Longitude (Radians)')
-    ax0.set_ylabel('Sine latitude')
+    ax0.set_xlabel("Longitude (Radians)")
+    ax0.set_ylabel("Sine latitude")
 
     # Adjust layout
-    fig.set_size_inches((8,8))
+    fig.set_size_inches((8, 8))
     plt.tight_layout()
     plt.savefig(bmagname)
     if args.show or True:
@@ -274,7 +298,8 @@ def plot_bmag_all(args, r1=1, r2=-2, do_r2=False, maxlist=None):
 import cv2
 import os
 
-def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec='XVID', ttype="png"):
+
+def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec="XVID", ttype="png"):
     """
     Create a video from a sequence of images in a folder.
 
@@ -313,13 +338,15 @@ def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec='XV
 
 def run_plots(args, times=0):
     maxlist = None
-    for rr in np.arange(times+1):
+    for rr in np.arange(times + 1):
         tried = True
         try:
-            import pdb; pdb.set_trace()
+            import pdb
+
+            pdb.set_trace()
             bmagfull, maxlist = plot_bmag_all(args, rr, maxlist=maxlist)
             bmagdir = os.path.dirname(bmagfull)
-            bmagfile= os.path.basename(bmagfull)
+            bmagfile = os.path.basename(bmagfull)
             if rr == 0:
                 new_dir = os.path.join(bmagdir, "../..", "bottom")
                 if not os.path.exists(new_dir):
@@ -341,19 +368,20 @@ if __name__ == "__main__":
     # Create the argument parser
     print("\n\tPlotting Bmag_All...", end="")
     from fluxpype.pipe_helper import configurations
+
     configs = configurations()
 
-    parser = argparse.ArgumentParser(description=
-                            'This script plots the expansion factor of the given radial_bmag_all.dat')
-    parser.add_argument('--cr',     type=int, default=configs['rotations'][0],    help='Carrington Rotation')
-    parser.add_argument('--dat_dir',type=str, default=configs["data_dir"],        help='data directory')
-    parser.add_argument('--batch',  type=str, default=configs["batch_name"],      help='select the batch name')
-    parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
-    parser.add_argument('--show',   type=int, default=0)
-    parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
+    parser = argparse.ArgumentParser(
+        description="This script plots the expansion factor of the given radial_bmag_all.dat"
+    )
+    parser.add_argument("--cr", type=int, default=configs["rotations"][0], help="Carrington Rotation")
+    parser.add_argument("--dat_dir", type=str, default=configs["data_dir"], help="data directory")
+    parser.add_argument("--batch", type=str, default=configs["batch_name"], help="select the batch name")
+    parser.add_argument("--nwant", type=int, default=configs["fluxon_count"][0], help="magnetogram file")
+    parser.add_argument("--show", type=int, default=0)
+    parser.add_argument("--file", type=str, default=None)
+    parser.add_argument("--adapt", type=int, default=0, help="Use ADAPT magnetograms")
     args = parser.parse_args()
-
 
     bmagdir = run_plots(args)
     filename = "expansion_cr{}_f{}.avi".format(args.cr, args.nwant)

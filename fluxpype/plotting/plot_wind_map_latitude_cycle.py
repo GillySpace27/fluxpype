@@ -23,12 +23,13 @@ Functions:
 
 """
 
-
 import numpy as np
 import matplotlib as mpl
+
 try:
     mpl.use("qt5agg")
     import matplotlib.pyplot as plt
+
     fig = plt.figure()
 except ImportError as e:
     print(e)
@@ -41,8 +42,13 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
-from fluxpype.pipe_helper import (configurations, load_fits_magnetogram,
-                         load_magnetogram_params, get_fixed_coords, get_ax)
+from fluxpype.pipe_helper import (
+    configurations,
+    load_fits_magnetogram,
+    load_magnetogram_params,
+    get_fixed_coords,
+    get_ax,
+)
 from fluxpype.science.pfss_funcs import get_fluxon_locations
 
 from fluxpype.plotting.plot_fieldmap import magnet_plot
@@ -89,7 +95,7 @@ def generate_clean_wind_data(dat_file, pole_file, method, wind_file2, label_file
 
 
 def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, power=1):
-    """ Scale the data between 0 and 1, then raise to a power, then scale by a factor
+    """Scale the data between 0 and 1, then raise to a power, then scale by a factor
 
     Parameters
     ----------
@@ -118,17 +124,18 @@ def scale_data(vel0_clean, vel1_clean, outlier_V0, outlier_V1, scale=15**2, powe
     vel0_min = np.nanmin(vel0_clean)
     vel1_min = np.nanmin(vel1_clean)
 
-    v0 = scale * ((np.abs(vel0_clean) - vel0_min) / (vel0_max-vel0_min))**power
-    v1 = scale * ((np.abs(vel1_clean) - vel1_min) / (vel1_max-vel1_min))**power
+    v0 = scale * ((np.abs(vel0_clean) - vel0_min) / (vel0_max - vel0_min)) ** power
+    v1 = scale * ((np.abs(vel1_clean) - vel1_min) / (vel1_max - vel1_min)) ** power
 
-    outlier_V0_scaled = scale * ((np.abs(outlier_V0) - vel0_min) / (vel0_max-vel0_min))**power
-    outlier_V1_scaled = scale * ((np.abs(outlier_V1) - vel1_min) / (vel1_max-vel1_min))**power
+    outlier_V0_scaled = scale * ((np.abs(outlier_V0) - vel0_min) / (vel0_max - vel0_min)) ** power
+    outlier_V1_scaled = scale * ((np.abs(outlier_V1) - vel1_min) / (vel1_max - vel1_min)) ** power
 
     return v0, v1, outlier_V0_scaled, outlier_V1_scaled
 
+
 # Remove outliers from the dataset recursively
-def remove_outliers(data, ph, th, fr, thresh_low=4, thresh_high=2, n_times= 1):
-    """ Remove outliers from the dataset recursively
+def remove_outliers(data, ph, th, fr, thresh_low=4, thresh_high=2, n_times=1):
+    """Remove outliers from the dataset recursively
 
     Parameters
     ----------
@@ -155,10 +162,14 @@ def remove_outliers(data, ph, th, fr, thresh_low=4, thresh_high=2, n_times= 1):
     if n_times == 0:
         return data, ph, th, fr, np.array([]), np.array([]), np.array([]), np.array([])
     # Get the Good Points
-    mean = np.mean(data[data>0])
-    std = np.std(data[data>0])
-    data_good, inds_good = (list(t) for t in zip(*[(x,i) for i,x in enumerate(data)
-                        if (mean - thresh_low * std < x < mean + thresh_high * std) and x > 0]))
+    mean = np.mean(data[data > 0])
+    std = np.std(data[data > 0])
+    data_good, inds_good = (
+        list(t)
+        for t in zip(
+            *[(x, i) for i, x in enumerate(data) if (mean - thresh_low * std < x < mean + thresh_high * std) and x > 0]
+        )
+    )
     ph_good, th_good, fr_good = ph[inds_good], th[inds_good], fr[inds_good]
     data_good = np.asarray(data_good)
 
@@ -171,16 +182,30 @@ def remove_outliers(data, ph, th, fr, thresh_low=4, thresh_high=2, n_times= 1):
     if n_times <= 1:
         return data_good, ph_good, th_good, fr_good, data_bad, ph_bad, th_bad, inds_good
     else:
-        data_good_2, ph_good_2, th_good_2, data_bad_2, ph_bad_2, th_bad_2 = \
-                remove_outliers(data_good, ph_good, th_good, thresh_low, thresh_high, n_times-1)
+        data_good_2, ph_good_2, th_good_2, data_bad_2, ph_bad_2, th_bad_2 = remove_outliers(
+            data_good, ph_good, th_good, thresh_low, thresh_high, n_times - 1
+        )
         bad_data_all = np.concatenate((data_bad, data_bad_2))
-        bad_ph_all   = np.concatenate((  ph_bad,   ph_bad_2))
-        bad_th_all   = np.concatenate((  th_bad,   th_bad_2))
+        bad_ph_all = np.concatenate((ph_bad, ph_bad_2))
+        bad_th_all = np.concatenate((th_bad, th_bad_2))
         return data_good_2, ph_good_2, th_good_2, fr_good, bad_data_all, bad_ph_all, bad_th_all, inds_good
 
 
-def hex_plot(ph1_clean, th1_clean, vel1_clean, ax=None, nx=20, vmin=400, vmax=800, do_print_top=True, do_hex=False, configs=None, CR=None, cmap='autumn'):
-    """ Create a hexagon interpolation of the data
+def hex_plot(
+    ph1_clean,
+    th1_clean,
+    vel1_clean,
+    ax=None,
+    nx=20,
+    vmin=400,
+    vmax=800,
+    do_print_top=True,
+    do_hex=False,
+    configs=None,
+    CR=None,
+    cmap="autumn",
+):
+    """Create a hexagon interpolation of the data
 
     Parameters
     ----------
@@ -219,10 +244,10 @@ def hex_plot(ph1_clean, th1_clean, vel1_clean, ax=None, nx=20, vmin=400, vmax=80
     ## Plot the Interp. data
     # Define the x-boundaries of the domain
     x_min = 0
-    x_max = 2*np.pi
+    x_max = 2 * np.pi
 
     # Wrap the data around the edges of the domain
-    ph1 = (ph1_clean)%(2*np.pi)
+    ph1 = (ph1_clean) % (2 * np.pi)
     th1 = th1_clean
     vel1 = vel1_clean
 
@@ -241,30 +266,39 @@ def hex_plot(ph1_clean, th1_clean, vel1_clean, ax=None, nx=20, vmin=400, vmax=80
 
     # Plot the interpolated data
     sy, sx = grid_x.shape
-    ratio = float(sy)/float(sx)
-    gridsize = (int(nx*1.2), int(np.round(nx*ratio)))
+    ratio = float(sy) / float(sx)
+    gridsize = (int(nx * 1.2), int(np.round(nx * ratio)))
     grid_z1_NANed = grid_z1.copy()
-    grid_z1_NANed[grid_z1_NANed==0] = np.nan
+    grid_z1_NANed[grid_z1_NANed == 0] = np.nan
 
     z1_use = grid_z1_NANed
     if do_hex:
-        hex1 = high_lat_ax.hexbin(grid_x.flatten(), grid_y.flatten(), C=z1_use.flatten(),
-                gridsize=gridsize, cmap=cmap,
-                # vmin=np.nanmin(z1_use), vmax=np.nanmax(z1_use))
-                vmin=vmin, vmax=vmax)
+        hex1 = high_lat_ax.hexbin(
+            grid_x.flatten(),
+            grid_y.flatten(),
+            C=z1_use.flatten(),
+            gridsize=gridsize,
+            cmap=cmap,
+            # vmin=np.nanmin(z1_use), vmax=np.nanmax(z1_use))
+            vmin=vmin,
+            vmax=vmax,
+        )
         print("Success!")
         return hex1
     else:
-        hex1 = high_lat_ax.imshow(grid_z1, extent=(0, 2*np.pi, -1, 1), zorder=0, alpha=1, cmap=cmap, vmin=vmin, vmax=vmax, origin="lower")
+        hex1 = high_lat_ax.imshow(
+            grid_z1, extent=(0, 2 * np.pi, -1, 1), zorder=0, alpha=1, cmap=cmap, vmin=vmin, vmax=vmax, origin="lower"
+        )
         # contour1 = high_lat_ax.contourf(grid_z1, zorder=-10, alpha=1, cmap="autumn")
         # contour1 = high_lat_ax.contourf(grid_x, grid_y, grid_z1, zorder=0, alpha=1, cmap=cmap, vmin=0.5*vmin, vmax=2*vmax)
         print("Success!")
         return hex1, grid_z1
 
 
-def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=True,
-              CR="<unset>", cmap='autumn', do_gaussian = True):
-    """ Plot a histogram of the velocity data
+def hist_plot(
+    vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=True, CR="<unset>", cmap="autumn", do_gaussian=True
+):
+    """Plot a histogram of the velocity data
 
     Parameters
     ----------
@@ -291,7 +325,7 @@ def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=T
     """
 
     if do_print_top:
-        print("\n\t\tMaking Histogram Plot...", end='')
+        print("\n\t\tMaking Histogram Plot...", end="")
 
     ## The Histogram Plot
     fig, hist_ax = get_ax(ax)
@@ -308,18 +342,16 @@ def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=T
     norm = plt.Normalize(vmin=vmin, vmax=vmax)
     for i in range(len(bin_edges) - 1):
         color = cmap(norm(bin_centers[i]))
-        hist_ax.bar(
-            bin_edges[i], hist[i], width=bin_edges[i + 1] - bin_edges[i], color=color
-        )
+        hist_ax.bar(bin_edges[i], hist[i], width=bin_edges[i + 1] - bin_edges[i], color=color)
 
     if do_gaussian:
         try:
             # Define the Gaussian (normal) distribution function
             def gaussian(x, amplitude, mean, stddev, b):
-                return amplitude * np.exp(-((x - mean) / stddev) ** 2 / 2) + b
+                return amplitude * np.exp(-(((x - mean) / stddev) ** 2) / 2) + b
 
             # Fit the Gaussian curve to the histogram data
-            params, _ = curve_fit(gaussian, bin_centers, hist, p0=[1, np.median(vel_positive), np.std(vel_positive),0])
+            params, _ = curve_fit(gaussian, bin_centers, hist, p0=[1, np.median(vel_positive), np.std(vel_positive), 0])
 
             # Extract the fitted parameters
             amplitude, mean, stddev, b = params
@@ -327,7 +359,7 @@ def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=T
             # Generate the fitted curve
             fitted_curve = gaussian(bin_centers, *params)
 
-            plt.plot(bin_centers, fitted_curve, 'b-', label='Fitted Gaussian Curve')
+            plt.plot(bin_centers, fitted_curve, "b-", label="Fitted Gaussian Curve")
 
             mean1 = mean
             std1 = np.abs(stddev)
@@ -346,23 +378,23 @@ def hist_plot(vel1_clean, ax=None, vmin=400, vmax=800, n_bins=20, do_print_top=T
         # median_label = f"StatMedian: {median1:.0f} km/s"
         std_label = f"StatStd: {std1:.0f} km/s"
 
-
-    hist_ax.axvline(mean1, color='k', linestyle='dashed', linewidth=1, label=mean_label)
+    hist_ax.axvline(mean1, color="k", linestyle="dashed", linewidth=1, label=mean_label)
     # hist_ax.axvline(median1, color='lightgrey', linestyle='-.', linewidth=1, label=median_label)
-    hist_ax.axvline(mean1 + std1, color='k', linestyle=':', linewidth=1, label=std_label)
-    hist_ax.axvline(mean1 - std1, color='k', linestyle=':', linewidth=1)
+    hist_ax.axvline(mean1 + std1, color="k", linestyle=":", linewidth=1, label=std_label)
+    hist_ax.axvline(mean1 - std1, color="k", linestyle=":", linewidth=1)
 
-    hist_ax.legend(fontsize="small", loc = "center left")
+    hist_ax.legend(fontsize="small", loc="center left")
     hist_ax.set_xlabel("Wind Speed [km/s]")
     hist_ax.set_ylabel("Number of Fluxons")
     fig.suptitle(f'CR{CR}, {len(vel1_clean)} Open Fields, {str(configs.get("flow_method")).title()} wind')
 
-    hist_ax.set_xlim((vmin-25, vmax+25))
+    hist_ax.set_xlim((vmin - 25, vmax + 25))
 
     if do_print_top:
         print("Success!")
 
     return mean1, std1
+
 
 def plot_closed_footpoints(ax, closed_f):
     """
@@ -373,7 +405,7 @@ def plot_closed_footpoints(ax, closed_f):
     - closed_f: Filepath to the data for closed magnetic footpoints.
     """
 
-    all_file    = closed_f.replace("closed_", "")
+    all_file = closed_f.replace("closed_", "")
     f_lat, f_lon, f_sgn, _fnum = get_fluxon_locations(all_file, None, configs=None)
 
     # Filter positive and negative cases
@@ -387,10 +419,11 @@ def plot_closed_footpoints(ax, closed_f):
     f_lat_negative = [f_lat[i] for i in negative_indices]
 
     # Plot positive cases with labels
-    ax.scatter(f_lon_positive, f_lat_positive, s=3**2, c='lightcyan', alpha=0.4, label='Positive', edgecolors='none')
+    ax.scatter(f_lon_positive, f_lat_positive, s=3**2, c="lightcyan", alpha=0.4, label="Positive", edgecolors="none")
 
     # Plot negative cases with labels
-    ax.scatter(f_lon_negative, f_lat_negative, s=3**2, c='bisque', alpha=0.4, label='Negative', edgecolors='none')
+    ax.scatter(f_lon_negative, f_lat_negative, s=3**2, c="bisque", alpha=0.4, label="Negative", edgecolors="none")
+
 
 def plot_wind_map_latitude(configs):
     """
@@ -414,7 +447,7 @@ def plot_wind_map_latitude(configs):
     nwant = configs.get("nwant")
     reduce = configs.get("mag_reduce")
     CR = configs.get("cr")
-    dat_file = configs.get("file", f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat')
+    dat_file = configs.get("file", f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat")
     all_vmin, all_vmax = configs.get("all_vmin", 450), configs.get("all_vmax", 700)
     print(f"\n\tPlotting Windmap {CR} Lat Cycle...", end="\n" if __name__ == "__main__" else "")
 
@@ -444,20 +477,22 @@ def plot_wind_map_latitude(configs):
 
     ph0 += np.pi
     ph1 += np.pi
-    ph0 = np.mod(ph0, 2*np.pi)
-    ph1 = np.mod(ph1, 2*np.pi)
+    ph0 = np.mod(ph0, 2 * np.pi)
+    ph1 = np.mod(ph1, 2 * np.pi)
     # ph1 = np.unwrap(ph1)
 
     # Clean and process data (remove outliers, scale, etc.)
-    vel1_clean, ph1_clean, th1_clean, fr1_clean, v1b, ph1b, th1b, inds_good = remove_outliers(vel1, ph1, th1, fr1, 3, 2, 1)
+    vel1_clean, ph1_clean, th1_clean, fr1_clean, v1b, ph1b, th1b, inds_good = remove_outliers(
+        vel1, ph1, th1, fr1, 3, 2, 1
+    )
 
     n_total = len(vel1)
     n_clean = len(vel1_clean)
 
-    n_outliers = len(vel1[vel1<all_vmin]) + len(vel1[vel1>all_vmax])
+    n_outliers = len(vel1[vel1 < all_vmin]) + len(vel1[vel1 > all_vmax])
     percent_outliers = 100 * n_outliers / n_total
 
-    pole_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{reduce}_f{nwant}_hmi.dat'
+    pole_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{reduce}_f{nwant}_hmi.dat"
     arr2 = np.loadtxt(pole_file).T
     ffid, pol, _, _, _ = arr2
     # Get unique values of fid
@@ -471,27 +506,29 @@ def plot_wind_map_latitude(configs):
     polarity = np.array(polar)
 
     import matplotlib.gridspec as gridspec
+
     # Create a 6x1 grid with custom height ratios
     fig = plt.figure(figsize=(6, 8))
-    height_ratios = [ 1, 1, 0.4, 1, 1, 1]  # Adjust the height ratios as needed
+    height_ratios = [1, 1, 0.4, 1, 1, 1]  # Adjust the height ratios as needed
     gs = gridspec.GridSpec(6, 1, height_ratios=height_ratios)
     # Create subplots using gridspec
-    carr_ax =       plt.subplot(gs[2])
-    low_lat_ax =    plt.subplot(gs[0])
-    high_lat_ax =   plt.subplot(gs[1])
-    square_wind_ax =plt.subplot(gs[3])
-    dot_wind_ax =   plt.subplot(gs[4])
-    hist_ax =       plt.subplot(gs[5])
+    carr_ax = plt.subplot(gs[2])
+    low_lat_ax = plt.subplot(gs[0])
+    high_lat_ax = plt.subplot(gs[1])
+    square_wind_ax = plt.subplot(gs[3])
+    dot_wind_ax = plt.subplot(gs[4])
+    hist_ax = plt.subplot(gs[5])
 
     # Plot the Sunspot Number
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
+    file_path = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
 
     # Load sunspot data (transpose as in your original code)
     carrington = np.loadtxt(file_path).T
     ## https://sidc.be/SILSO/datafiles#total ##
     import sunpy.coordinates
+
     date = carrington[2]
     sunspots = carrington[3]
     this_date = sunpy.coordinates.sun.carrington_rotation_time(args.cr)
@@ -499,13 +536,14 @@ def plot_wind_map_latitude(configs):
 
     # fig, ax = plt.subplots()
     carr_ax.plot(date, sunspots, label="Sunspots")
-    carr_ax.axvline(this_date.decimalyear, ls=":", c='k', zorder=1000000)
+    carr_ax.axvline(this_date.decimalyear, ls=":", c="k", zorder=1000000)
     # carr_ax.set_xlabel("Year")
     carr_ax.set_ylabel("Sunspots")
     carr_ax.set_title("Solar Cycle Phase")
     carr_ax.set_xlim(2005, 2025)
     # set the major tick formatter to display integers
     from matplotlib.ticker import MaxNLocator
+
     carr_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     carr_ax.set_ylim(0, 200)
 
@@ -517,24 +555,67 @@ def plot_wind_map_latitude(configs):
 
     # Plot magnetogram
     magnet = load_fits_magnetogram(configs=configs, cr=args.cr)
-    low_lat_ax.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-            extent=(0,2*np.pi,-1,1), aspect='auto', vmin=-500, vmax=500, alpha=1)
+    low_lat_ax.imshow(
+        magnet,
+        cmap="gray",
+        interpolation=None,
+        origin="lower",
+        extent=(0, 2 * np.pi, -1, 1),
+        aspect="auto",
+        vmin=-500,
+        vmax=500,
+        alpha=1,
+    )
 
-    high_lat_ax.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-            extent=(0,2*np.pi,-1,1), aspect='auto', vmin=-500, vmax=500, alpha=1)
+    high_lat_ax.imshow(
+        magnet,
+        cmap="gray",
+        interpolation=None,
+        origin="lower",
+        extent=(0, 2 * np.pi, -1, 1),
+        aspect="auto",
+        vmin=-500,
+        vmax=500,
+        alpha=1,
+    )
 
     the_cmap = "Spectral"
 
-    sc01 = low_lat_ax.scatter(ph0, th0, c=th0, s = 60, cmap=the_cmap, edgecolors='k', linewidths=0.25,
-                alpha=0.75, zorder = 100, marker='o', vmin=-1, vmax=1)
+    sc01 = low_lat_ax.scatter(
+        ph0,
+        th0,
+        c=th0,
+        s=60,
+        cmap=the_cmap,
+        edgecolors="k",
+        linewidths=0.25,
+        alpha=0.75,
+        zorder=100,
+        marker="o",
+        vmin=-1,
+        vmax=1,
+    )
 
     # Add a colorbar
     cbar_ax_lat1 = fig.add_axes([0.9, 0.815, 0.03, 0.123])
     cbar01 = plt.colorbar(sc01, cax=cbar_ax_lat1, cmap=the_cmap, aspect=15)
     cbar01.set_label(f"Base Latitude", labelpad=-58)
 
-    sc02 = high_lat_ax.scatter(ph1, th1, c=th0, s = 60, cmap=the_cmap, zorder=100, edgecolors='k', linewidths=0.25,
-                alpha=0.75, label="First Point Latitude", marker='o', vmin=-1, vmax=1)
+    sc02 = high_lat_ax.scatter(
+        ph1,
+        th1,
+        c=th0,
+        s=60,
+        cmap=the_cmap,
+        zorder=100,
+        edgecolors="k",
+        linewidths=0.25,
+        alpha=0.75,
+        label="First Point Latitude",
+        marker="o",
+        vmin=-1,
+        vmax=1,
+    )
 
     # Add a colorbar
     cbar_ax_lat2 = fig.add_axes([0.9, 0.651, 0.03, 0.123])
@@ -543,7 +624,7 @@ def plot_wind_map_latitude(configs):
 
     nwant = configs.get("nwant", None)
     reduce_amt = configs.get("mag_reduce", None)
-    if configs['adapt']:
+    if configs["adapt"]:
         inst = "adapt"
         reduce_amt = "f" + str(configs.get("adapt_select"))
     else:
@@ -565,12 +646,23 @@ def plot_wind_map_latitude(configs):
         vmin=all_vmin,
         vmax=all_vmax,
         configs=configs,
-        cmap=cmap
+        cmap=cmap,
     )
 
-    clr = np.log(2*fr1/fr0)**1/2
-    clr = np.log(fr1/fr0)
-    sc11 = square_wind_ax.scatter(ph1, th1, c=clr, s = (4*fr1/fr0)**1/2, cmap="YlGnBu", alpha=0.75, label=r"A(21.5Rs)", marker='s', vmin=-0.3, vmax=0)
+    clr = np.log(2 * fr1 / fr0) ** 1 / 2
+    clr = np.log(fr1 / fr0)
+    sc11 = square_wind_ax.scatter(
+        ph1,
+        th1,
+        c=clr,
+        s=(4 * fr1 / fr0) ** 1 / 2,
+        cmap="YlGnBu",
+        alpha=0.75,
+        label=r"A(21.5Rs)",
+        marker="s",
+        vmin=-0.3,
+        vmax=0,
+    )
 
     # Add a colorbar
     cbar_ax_lat3 = fig.add_axes([0.91, 0.395, 0.03, 0.137])
@@ -596,13 +688,13 @@ def plot_wind_map_latitude(configs):
         th1_clean,
         c=vel1_clean,
         s=4**2,
-        lw = 0.1,
+        lw=0.1,
         alpha=0.6,
-        marker='o',
+        marker="o",
         vmin=all_vmin,
         vmax=all_vmax,
         cmap=cmap,
-        edgecolors='gray',
+        edgecolors="gray",
         # edgewidth=0.5
     )
     # cont1 = None
@@ -612,15 +704,7 @@ def plot_wind_map_latitude(configs):
 
     # Create histogram of wind speeds
     n_bins = np.linspace(all_vmin - 200, all_vmax + 300, 48)
-    mean1, std1 = hist_plot(
-        vel1_clean,
-        ax=hist_ax,
-        vmin=all_vmin,
-        vmax=all_vmax,
-        n_bins=n_bins,
-        CR=CR,
-        cmap=cmap
-    )
+    mean1, std1 = hist_plot(vel1_clean, ax=hist_ax, vmin=all_vmin, vmax=all_vmax, n_bins=n_bins, CR=CR, cmap=cmap)
 
     ## Plot Formatting #####
     # Set Titles
@@ -632,17 +716,17 @@ def plot_wind_map_latitude(configs):
 
     low_lat_ax.set_xlabel("Longitude [rad]", labelpad=-3)
 
-    square_wind_ax.set_facecolor('grey')
-    dot_wind_ax.set_facecolor('grey')
+    square_wind_ax.set_facecolor("grey")
+    dot_wind_ax.set_facecolor("grey")
     ax_list = [low_lat_ax, high_lat_ax, square_wind_ax, dot_wind_ax]
 
     for this_ax in ax_list:
-        this_ax.set_ylabel('sin(latitude)')
-        this_ax.axhline(-1, c='lightgrey', zorder=-10)
-        this_ax.axhline(1, c='lightgrey', zorder=-10)
-        this_ax.axvline(0, c='lightgrey', zorder=-10)
-        this_ax.axvline(2 * np.pi, c='lightgrey', zorder=-10)
-        this_ax.set_aspect('equal')
+        this_ax.set_ylabel("sin(latitude)")
+        this_ax.axhline(-1, c="lightgrey", zorder=-10)
+        this_ax.axhline(1, c="lightgrey", zorder=-10)
+        this_ax.axvline(0, c="lightgrey", zorder=-10)
+        this_ax.axvline(2 * np.pi, c="lightgrey", zorder=-10)
+        this_ax.set_aspect("equal")
         this_ax.set_ylim((-1.0, 1.0))
         this_ax.set_xlim((0, 2 * np.pi))
         this_ax.grid(True)
@@ -650,6 +734,7 @@ def plot_wind_map_latitude(configs):
     ax_list = [carr_ax, low_lat_ax, high_lat_ax, square_wind_ax, dot_wind_ax, hist_ax]
 
     import string
+
     # Iterate over the axes objects and their indices
     for ii, this_ax in enumerate(ax_list):
         # Generate label (a), (b), (c), etc.
@@ -659,31 +744,25 @@ def plot_wind_map_latitude(configs):
         # You can adjust the x, y coordinates and other properties as needed
 
         yy = 0.8 if ii > 0 else 0.6
-        this_ax.text(0.02, yy, label, transform=this_ax.transAxes, fontsize=12, va='bottom', ha='left', zorder=1000)
+        this_ax.text(0.02, yy, label, transform=this_ax.transAxes, fontsize=12, va="bottom", ha="left", zorder=1000)
 
-    for jj in [1,2,3]:
+    for jj in [1, 2, 3]:
         ax_list[jj].set_xticklabels([])
 
     # Add a colorbar
     cbar_ax = fig.add_axes([0.91, 0.05, 0.03, 0.32])
 
     # plotobjs = []
-    plotobjs = [ cont1]
+    plotobjs = [cont1]
     # # plotobjs = [scat1, cont1]
     for obj in plotobjs:
-        cbar = plt.colorbar(obj, cax=cbar_ax, extend='both', cmap=cmap, extendfrac=0.1, aspect=15)
+        cbar = plt.colorbar(obj, cax=cbar_ax, extend="both", cmap=cmap, extendfrac=0.1, aspect=15)
 
     cbar.set_label("Wind Speed [km/s]", labelpad=-53)
 
     fig.set_size_inches((6.5, 12.5))
 
-    plt.subplots_adjust(
-        top=0.940,
-        bottom=0.065,
-        left=0.12,
-        right=0.865,
-        hspace=0.360,
-        wspace=0)
+    plt.subplots_adjust(top=0.940, bottom=0.065, left=0.12, right=0.865, hspace=0.360, wspace=0)
 
     # Set the output file names
     method = configs.get("flow_method")
@@ -693,10 +772,10 @@ def plot_wind_map_latitude(configs):
         else:
             raise NotImplementedError
     filename = f"png_cr{CR}_f{nwant}_op{n_open}_radial_wind_{method}.png"
-    main_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/{filename}'
+    main_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/{filename}"
     wind_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
     wind_file2 = f"{dat_dir}/batches/{batch}/data/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
-    label_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt'
+    label_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt"
     outer_file = f"{dat_dir}/batches/{batch}/imgs/windmap/{filename}"
 
     if not path.exists(os.path.dirname(main_file)):
@@ -735,16 +814,17 @@ def plot_wind_map_latitude(configs):
     fr1_clean = fr1[inds_good]
     polarity_clean = polarity[inds_good]
 
-    to_save = [ph0_clean, th0_clean, fr0_clean, vel0_clean,
-               ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean]
+    to_save = [ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean]
 
     np.save(wind_file, np.vstack(to_save))
     np.save(wind_file2, np.vstack(to_save))
     print(f"SUccessfully saved {wind_file}")
 
-    with open(label_file, 'w') as file:
-        file.write("""ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean\n
-                   <------------ Solar Surface --------------> <----------- Outer Boundary ---------------->""")
+    with open(label_file, "w") as file:
+        file.write(
+            """ph0_clean, th0_clean, fr0_clean, vel0_clean, ph1_clean, th1_clean, fr1_clean, vel1_clean, polarity_clean\n
+                   <------------ Solar Surface --------------> <----------- Outer Boundary ---------------->"""
+        )
     # np.save(wind_file.replace(".npy", "_interp.npy"), grid_z1)
 
 
@@ -758,16 +838,20 @@ if __name__ == "__main__":
     do_one = True
     for rotation in configs["rotations"]:
         print(rotation)
-        parser = argparse.ArgumentParser(description='This script plots the expansion factor of the given radial_fr.dat')
-        parser.add_argument('--cr',     type=int, default=rotation, help='Carrington Rotation')
-        parser.add_argument('--interp', type=str, default="linear")
-        parser.add_argument('--show',   type=int, default=configs["verbose"])
-        parser.add_argument('--file',   type=str, default=None, help='select the file name')
-        parser.add_argument('--dat_dir',type=str, default=configs['data_dir'], help='data directory')
-        parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='number of fluxons')
-        parser.add_argument('--batch',  type=str, default=configs["batch_name"], help='select the batch name')
-        parser.add_argument('--adapt',  type=int, default=0, help='Use ADAPT magnetograms')
-        parser.add_argument('--resave_from_dat', action='store_true', help='Just load from .dat and re-save .npy and label files')
+        parser = argparse.ArgumentParser(
+            description="This script plots the expansion factor of the given radial_fr.dat"
+        )
+        parser.add_argument("--cr", type=int, default=rotation, help="Carrington Rotation")
+        parser.add_argument("--interp", type=str, default="linear")
+        parser.add_argument("--show", type=int, default=configs["verbose"])
+        parser.add_argument("--file", type=str, default=None, help="select the file name")
+        parser.add_argument("--dat_dir", type=str, default=configs["data_dir"], help="data directory")
+        parser.add_argument("--nwant", type=int, default=configs["fluxon_count"][0], help="number of fluxons")
+        parser.add_argument("--batch", type=str, default=configs["batch_name"], help="select the batch name")
+        parser.add_argument("--adapt", type=int, default=0, help="Use ADAPT magnetograms")
+        parser.add_argument(
+            "--resave_from_dat", action="store_true", help="Just load from .dat and re-save .npy and label files"
+        )
         args = parser.parse_args()
 
         if args.resave_from_dat:
@@ -780,10 +864,10 @@ if __name__ == "__main__":
             if isinstance(method, list):
                 method = method[0]
 
-            dat_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat'
+            dat_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat"
             pole_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{configs.get("mag_reduce")}_f{nwant}_hmi.dat'
             wind_file2 = f"{dat_dir}/batches/{batch}/data/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
-            label_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt'
+            label_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt"
 
             generate_clean_wind_data(dat_file, pole_file, method, wind_file2, label_file)
             exit()
