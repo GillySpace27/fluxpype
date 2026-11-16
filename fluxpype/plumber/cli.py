@@ -356,8 +356,6 @@ def main(argv=None) -> int:
         "demo": bool(args.demo),
         "url": f"http://{shown_host}:{args.port}",
     }
-    write_atomic(server_json_path(home), json.dumps(record))
-
     url = f"http://{shown_host}:{args.port}/?token={token}"
     if not args.headless:
         print(
@@ -371,7 +369,18 @@ def main(argv=None) -> int:
             threading.Thread(target=demo.seed, args=(scheduler,), daemon=True).start()
         if not args.no_browser:
             threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+        # Write server.json only once the socket accepts connections: clients (the MCP autostart, --open,
+        # the tests) read it as "Plumber is up", and writing it earlier let them hit a refused connection.
+        server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
+
+        def _announce():
+            while not server.started and not server.should_exit:
+                time.sleep(0.02)
+            if server.started:
+                write_atomic(server_json_path(home), json.dumps(record))
+
+        threading.Thread(target=_announce, daemon=True).start()
+        server.run()
     finally:
         try:  # best effort: only remove the record if it is still ours
             current = read_server_json(home)
