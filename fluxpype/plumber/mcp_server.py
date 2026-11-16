@@ -921,6 +921,24 @@ def build_server(
         return dumps((await api("POST", "/api/scenes", body={"spec": spec})).json())
 
     @tool(
+        "Edit a saved scene by saving a new version of it; the scene itself is never changed and nothing runs. `ops` "
+        'is a list (at most 20) of operations, applied in order: {"op": "set", "field": F, "value": V} changes one spec '
+        "field (the fields create_scene takes, except name; null clears lid_height or pairing), and "
+        '{"op": "shear", "k": K} pairs each positive footpoint with the negative one K steps along (K = 0 makes the '
+        "arcs perpendicular again). The new version is named `name`, or the next free <root>-vN. The reply lists the "
+        "fields that changed and whether the new version and its parent are a fair pair for an energy comparison "
+        "(only connectivity differs); say so when they are not. get_scene_history shows the version tree.",
+        write,
+    )
+    async def edit_scene(
+        scene: str, ops: List[Dict[str, Any]], label: Optional[str] = None, name: Optional[str] = None
+    ) -> str:
+        body = {k: v for k, v in dict(ops=ops, label=label, name=name).items() if v is not None}
+        if propose:
+            return await proposal("edit_scene", {"scene": scene, **body})
+        return dumps((await api("POST", f"/api/scenes/{ident(scene, 'scene')}/edit", body=body)).json())
+
+    @tool(
         "Relax saved scenes with FLUX as queue tasks, so they show on the job page and share the run slots and CPU "
         "budget. `mode` run: one `scene`. `mode` compare: a fair pair `a` and `b` (same footpoints, photosphere, lid "
         "and vertex counts; only the connectivity differs), relaxed at once; D is the energy difference B - A. `lids`: "
@@ -1034,6 +1052,16 @@ def build_server(
     )
     async def get_scene(scene_id: str) -> str:
         return dumps(await get(f"/api/scenes/{ident(scene_id, 'scene_id')}"))
+
+    @tool(
+        "A scene's version tree: `versions` runs from the first version to this one (each with its parent, label, "
+        "author, the operations that made it and the fields they changed) and `children` are the versions made from "
+        "it. Scenes saved whole by create_scene start a tree.",
+        ro,
+        True,
+    )
+    async def get_scene_history(scene_id: str) -> str:
+        return dumps(await get(f"/api/scenes/{ident(scene_id, 'scene_id')}/history"))
 
     @tool(
         "Changes proposed from the Ask bar, newest first: tool, the stored arguments, a summary, and status (pending, "

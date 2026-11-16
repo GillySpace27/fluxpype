@@ -212,6 +212,7 @@ def test_the_guide_the_cards_and_the_server_name_the_same_actions():
             "set_queue",
             "create_preset",
             "create_scene",
+            "edit_scene",
             "relax_scene",
             "draft_handoff",
         }

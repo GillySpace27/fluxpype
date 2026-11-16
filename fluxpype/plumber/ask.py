@@ -61,6 +61,7 @@ READ_TOOLS = [
     "list_proposals",
     "list_scenes",
     "get_scene",
+    "get_scene_history",
     "validate_scene",
     "preview_scene",
     "get_scene_result",

@@ -180,6 +180,25 @@ class SceneIn(BaseModel):
     spec: Dict[str, Any]
 
 
+class SceneEditBody(BaseModel):
+    """Typed operations on a saved scene (scenes/ops.py); the result is saved as a new version, never in place."""
+
+    ops: List[Dict[str, Any]]
+    label: Optional[str] = Field(None, max_length=120)
+    name: Optional[str] = None  # the new version's id; by default the next free <root>-vN
+
+
+class SceneEditIn(SceneEditBody):
+    scene: str
+
+
+def _shown(v: Any) -> Optional[str]:
+    """A spec value as a proposal card shows it."""
+    if v is None:
+        return None
+    return ",".join(str(i) for i in v) if isinstance(v, list) else str(v)
+
+
 class PresetIn(BaseModel):
     name: str
     base: Optional[str] = None
@@ -966,6 +985,38 @@ def create_app(
         except scene_store.SceneError as e:
             fail(e)
 
+    def _scene_edit(body: SceneEditIn, author: str, dry_run: bool = False):
+        try:
+            if dry_run:
+                plan = scene_store.plan_edit(sched.data_dir(), body.scene, body.ops, body.name)
+                return reply(
+                    {
+                        **{k: plan[k] for k in ("id", "parent", "changes", "fair_pair_with_parent", "report")},
+                        "spec": plan["spec"].to_dict(),
+                        "dry_run": True,
+                    }
+                )
+            return reply(
+                scene_store.edit(sched.data_dir(), body.scene, body.ops, body.label, body.name, author=author), 201
+            )
+        except scene_store.SceneError as e:
+            fail(e)
+
+    @app.post("/api/scenes/{scene_id}/edit")
+    def scene_edit(request: Request, scene_id: str, body: SceneEditBody, dry_run: bool = False):
+        """Apply typed operations to a scene and save the result as a new version (the scene itself is unchanged).
+        `?dry_run=true` returns what the edit would make, its checks and the fields it changes, and writes nothing."""
+        b = SceneEditIn(**body.model_dump(), scene=scene_id)
+        return _scene_edit(b, origin_of(request).get("kind", "api"), dry_run)
+
+    @app.get("/api/scenes/{scene_id}/history")
+    def scene_history(scene_id: str):
+        """The versions leading to a scene (oldest first, ending with it) and the versions made from it."""
+        h = scene_store.history(sched.data_dir(), scene_id)
+        if not h:
+            raise HTTPException(404, "unknown scene")
+        return reply(h)
+
     @app.get("/api/external-runs")
     def external_run_list(limit: int = 100):
         """Runs started outside Plumber (scripts, terminals, other Claudes) that registered themselves."""
@@ -1457,6 +1508,27 @@ def create_app(
                     "its .flux world and runs nothing",
                     diff,
                 )
+            if tool == "edit_scene":
+                b = SceneEditIn(**args)
+                plan = scene_store.plan_edit(sched.data_dir(), b.scene, b.ops, b.name)
+                if any(
+                    x["tool"] == "edit_scene" and (x["args"].get("name") or "") == plan["id"]
+                    for x in proposals.pending()
+                ):
+                    raise HTTPException(400, f"a pending proposal already saves a scene named {plan['id']!r}")
+                diff = [{"key": c["field"], "from": _shown(c["from"]), "to": _shown(c["to"])} for c in plan["changes"]]
+                fair = plan["fair_pair_with_parent"]
+                return (
+                    {**b.model_dump(exclude_none=True), "name": plan["id"]},  # the name is fixed now, not at the click
+                    f"Save {plan['id']}, a new version of scene {b.scene} with {len(diff)} field(s) changed; {b.scene} "
+                    "itself is left as it is and nothing runs. "
+                    + (
+                        "The two are a fair pair for an energy comparison"
+                        if fair["fair"]
+                        else "The two are not a fair pair for an energy comparison: " + "; ".join(fair["why"])
+                    ),
+                    diff,
+                )
             if tool == "relax_scene":
                 b = SceneRelaxIn(**args)
                 backend = b.backend or sched.active_backend
@@ -1511,6 +1583,8 @@ def create_app(
             return {"scene": json.loads(scene_create(SceneIn(**a)).body)["id"]}
         if tool == "relax_scene":
             return {"job_id": json.loads(_create_scene_job(SceneRelaxIn(**a), origin).body)["id"]}
+        if tool == "edit_scene":
+            return {"scene": json.loads(_scene_edit(SceneEditIn(**a), "ask").body)["id"]}
         if tool == "draft_handoff":  # the card's Save: the work order as a file in the Plumber home
             return {"path": handoff.save(str(sched.home), a)}
         return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}

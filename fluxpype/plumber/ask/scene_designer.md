@@ -5,7 +5,7 @@ Source: docs/plumber-scene-designer-scope.md (the full plan, draft 5, 2026-11-13
 ## What exists today (first slice, planar arcade only)
 
 - A planar arcade scene file (`fluxpype/scenes`): rows of positive and negative footpoints across a PIL, a hand-set pairing of which footpoint each line joins, one photosphere plane, an optional B2 lid. It compiles to a `.flux` world. Saved scenes live in `scenes/` in the data folder.
-- You can propose saving one with `create_scene`, check one with `validate_scene` and `preview_scene`, and read saved ones with `list_scenes` and `get_scene`. The 3-D viewer draws the photosphere and lid planes.
+- You can propose saving one with `create_scene`, check one with `validate_scene` and `preview_scene`, read saved ones with `list_scenes`, `get_scene` and `get_scene_history`, and propose a new version of a saved one with `edit_scene`. The 3-D viewer draws the photosphere and lid planes.
 - Relaxations run through Plumber's queue: in Co-design mode you can propose `relax_scene` (one scene, or a fair pair compared, optionally at several lid heights), the person clicks Run, the tasks show on the job page, and you read the outcome with `get_scene_result`. A person or script can still run the headless command (`python -m fluxpype.scenes.relax`), which registers as an external run.
 - Plumber's own tests run this path only against a stand-in for FLUX; the real FLUX runs have been done on Gilly's Mac, not by Plumber's tests.
 - Everything else below is still planned.
@@ -51,7 +51,7 @@ Gilly wants Plumber to design new FLUX scenes from words ("a Cartesian scene wit
 - Recipes and steps registry (global PFSS becomes recipe 1; steps like Relax, Wind, Light, Export are boxes with declared inputs and outputs, cached by a hash of their settings and everything upstream). Needs splitting `magnetogram2wind.pdl` and migrating the tasks table.
 - A scene file (declarative spec) compiled by deterministic builders; a capability file that refuses what FLUX cannot do.
 - A Designer panel: scenes page and switcher, 3-D and top views to place and move structures, inspector knobs generated from schemas, a gallery of existing structures (twisted loop, tubes, carpet, emerging loop, menagerie worlds), a library of the user's own blocks, a pipeline timeline of boxes, a live job-script preview, a Test run button, tooltips and help, a downloads panel.
-- Scene tools for you: `validate_scene`, `preview_scene`, `get_scene_result` and the proposals `create_scene` and `relax_scene` exist (see the guide). Applying edits to a saved scene is not built: a changed scene is a new `create_scene` under a new name. You still only propose; the person's click runs things.
+- Scene tools for you: `validate_scene`, `preview_scene`, `get_scene_result` and the proposals `create_scene`, `edit_scene` and `relax_scene` exist (see the guide). Edits never change a saved scene: `edit_scene` saves a new version whose parent is the scene it came from, so undo is going back to the parent. You still only propose; the person's click runs things.
 - FLUXlight as the light layer: plasma, emission, camera and instrument layers; FITS output with WCS.
 
 ## How to answer about this
