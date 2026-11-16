@@ -42,9 +42,23 @@ class _FakeModule(types.ModuleType):
         return value
 
 
+def _missing_roots():
+    """The FAKE_ROOTS that are not really installed.
+
+    A root that is installed must never be answered by the fake finder, not even
+    for a submodule the real package fails to find: sunpy.version tries
+    ``sunpy._dev.scm_version`` first, and a MagicMock ``version`` there breaks
+    ``import sunpy`` with "not enough values to unpack".
+    """
+    return {r for r in FAKE_ROOTS if importlib.machinery.PathFinder.find_spec(r) is None}
+
+
 class _Finder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def __init__(self):
+        self.roots = _missing_roots()
+
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split(".")[0] in FAKE_ROOTS:
+        if fullname.split(".")[0] in self.roots:
             return importlib.machinery.ModuleSpec(fullname, self, is_package=True)
         return None
 
@@ -63,9 +77,15 @@ def install():
 
 def uninstall():
     """Remove the finder and every fake module (and anything imported on top of them)."""
+    roots = set()
+    for f in sys.meta_path:
+        if isinstance(f, _Finder):
+            roots |= f.roots
     sys.meta_path[:] = [f for f in sys.meta_path if not isinstance(f, _Finder)]
+    # Only drop fake modules: unloading a real astropy or sunpy and importing it
+    # again breaks astropy's logger ("Cannot disable warnings logging").
     for name in list(sys.modules):
-        if name.split(".")[0] in FAKE_ROOTS or name == "fluxpype.pipe_helper":
+        if name.split(".")[0] in roots or name == "fluxpype.pipe_helper":
             del sys.modules[name]
     import fluxpype
 
