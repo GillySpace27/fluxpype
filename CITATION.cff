@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata, and also cite FLUX (see references)."
+title: "FLUXpype"
+version: 0.5.0.dev0
+license: MIT
+repository-code: "https://github.com/GillySpace27/fluxpype"
+abstract: "A Python wrapper, installer and (from 0.5) web app and MCP server for the FLUX (Field Line Universal relaXer) solar magnetic field model. Derived from FLUX (fluxon-mhd)."
+authors:
+  - family-names: Gilly
+    given-names: Chris R
+    email: gilly@nwra.com
+    orcid: "https://orcid.org/0000-0003-0021-9056"
+    affiliation: "NorthWest Research Associates, Boulder, CO, USA"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24182704
+    description: "Concept DOI (all versions)"
+references:
+  - type: software
+    title: "fluxon-mhd (FLUX)"
+    license: GPL-2.0
+    repository-code: "https://github.com/lowderchris/fluxon-mhd"
+    doi: 10.5281/zenodo.7975951
+    authors:
+      - family-names: Lowder
+        given-names: Chris
+      - family-names: Gilly
+        given-names: Chris
+      - family-names: Lamb
+        given-names: Derek
+      - family-names: DeForest
+        given-names: Craig

@@ -11,6 +11,7 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": false,
+            "cwd": "/Users/cgilbert/vscode/fluxons/fluxpype/fluxpype",
             "env": {
                 "PYTEST_ADDOPTS": "--no-cov -n0 --dist no"
             }

@@ -1,0 +1,1867 @@
+"""FastAPI app for Fluxpype Plumber: REST, one WebSocket, token auth, and the prebuilt frontend."""
+
+import asyncio
+import hmac
+import json
+import math
+import os
+import sys
+import time
+import uuid
+from collections import deque
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Union
+from urllib.parse import parse_qs, quote, urlsplit
+
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from pydantic import BaseModel, Field, ValidationError
+
+from . import config_io, external_runs, paths, plotrun
+from ..scenes import store as scene_store
+from .agent_log import AgentLog
+from .backends.fake import SCENARIOS
+from .cache import Cache, CacheError
+from .health import Health
+from .presets import PresetError
+from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
+from .monitor import STAGES, first_match_for_context
+from .notify import Notifier, clean_id
+from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
+from .sysmon import SysMon
+
+COOKIE = "flux_plumber"
+COOKIE_MAX_AGE = 60 * 60 * 24 * 30
+APP_DOMAIN = "plumber.localhost"  # *.localhost always resolves to loopback (RFC 6761)
+PUBLIC_FILES = {"/manifest.webmanifest", "/sw.js", "/login", "/favicon.ico"}
+PUBLIC_PREFIXES = ("/assets/", "/icons/")
+# results product id -> pipeline stage id (monitor.STAGES)
+PRODUCT_STAGE = {"relaxed_world": "relax"}
+
+IMAGE_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+WEB_DIR = Path(__file__).resolve().parent / "web" / "dist"
+
+
+def clean(obj: Any) -> Any:
+    """JSON-safe copy: NaN and infinities become null (browsers reject them)."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: clean(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [clean(v) for v in obj]
+    return obj
+
+
+def tail_file(path: str, size: int, offset: int, limit: int) -> Dict[str, Any]:
+    """Log text from byte `offset` (default: the last `limit` bytes) and the next offset."""
+    limit = min(max(limit, 1024), 2 * 1024 * 1024)
+    start = max(size - limit, 0) if offset < 0 else min(offset, size)
+    with open(path, "rb") as f:
+        f.seek(start)
+        data = f.read(limit)
+    # keep whole lines: drop a partial first line when tailing, never split a UTF-8 sequence
+    if offset < 0 and start > 0 and b"\n" in data:
+        cut = data.index(b"\n") + 1
+        start, data = start + cut, data[cut:]
+    return {
+        "offset": start + len(data),
+        "start": start,
+        "size": size,
+        "text": data.decode("utf-8", "replace"),
+        "file": os.path.basename(path),
+    }
+
+
+def reply(obj: Any, status: int = 200) -> JSONResponse:
+    return JSONResponse(clean(obj), status_code=status)
+
+
+class ExternalRunIn(BaseModel):
+    title: Optional[str] = None
+    status: Optional[str] = None
+    host: Optional[str] = None
+    cwd: Optional[str] = None
+    pid: Optional[int] = None
+    started: Optional[str] = None
+    log: Optional[str] = None
+    report: Optional[str] = None
+    summary: Optional[str] = None
+    progress: Optional[List[Dict[str, Any]]] = None
+
+
+class JobIn(BaseModel):
+    profile: str
+    overrides: Dict[str, str] = Field(default_factory=dict)
+    backend: Optional[str] = None
+    tasks: Optional[List[List[str]]] = None  # [cr, nflux, adapt, method]
+    scenario: Optional[str] = None  # fake backend only
+    speed: Optional[float] = None  # fake backend only
+
+
+class RerunWindIn(BaseModel):
+    settings: Dict[str, str] = Field(default_factory=dict)
+
+
+class PlotRunIn(BaseModel):
+    plots: Union[List[str], Literal["all_possible"]]
+    stage: Optional[str] = None
+    overwrite: bool = False
+    dry_run: bool = False
+    include_legacy: bool = False
+    settings: Dict[str, str] = Field(default_factory=dict)  # plotrun.SETTINGS keys, for plots that take them
+
+
+class ProposalIn(BaseModel):
+    tool: Literal[PROPOSAL_TOOLS]  # type: ignore[valid-type]
+    args: Dict[str, Any] = Field(default_factory=dict)
+    question: str = Field(default="", max_length=64)
+    supersedes: Optional[str] = Field(default=None, max_length=64)  # an earlier pending Ask proposal this replaces
+
+
+class WithdrawIn(BaseModel):
+    question: str = Field(default="", max_length=64)
+    reason: str = Field(default="", max_length=300)
+
+
+class ReadIn(BaseModel):
+    upto: int
+
+
+class AckIn(BaseModel):
+    seqs: List[int] = Field(default_factory=list, max_length=1000)
+    all: bool = False
+    job: Optional[str] = None
+
+
+class QueueIn(BaseModel):
+    paused: Optional[bool] = None
+    max_parallel: Optional[int] = None
+    cpu_budget: Optional[int] = None
+
+
+class BackendIn(BaseModel):
+    name: str
+
+
+class UpdateIn(BaseModel):
+    restart: bool = True
+
+
+class DataDirIn(BaseModel):
+    path: Optional[str] = None
+
+
+class SceneIn(BaseModel):
+    spec: Dict[str, Any]
+
+
+class PresetIn(BaseModel):
+    name: str
+    base: Optional[str] = None
+    values: Dict[str, str] = Field(default_factory=dict)
+
+
+class PresetSaveIn(BaseModel):
+    values: Dict[str, str] = Field(default_factory=dict)
+    remove: List[str] = Field(default_factory=list)
+
+
+class RenameIn(BaseModel):
+    name: str
+
+
+class HiddenIn(BaseModel):
+    hidden: bool
+
+
+class ImportIn(BaseModel):
+    text: str
+
+
+class TrashIn(BaseModel):
+    paths: List[str]
+
+
+class RestoreIn(BaseModel):
+    ids: List[str]
+
+
+class Hub:
+    """Fan-out of server pushes to WebSocket clients (thread-safe publish)."""
+
+    def __init__(self):
+        self.clients: set = set()
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def publish(self, kind: str, data: Any) -> None:
+        if not self.clients or self.loop is None:
+            return
+        message = json.dumps(clean({"type": kind, "data": data}))
+        try:
+            self.loop.call_soon_threadsafe(self._push, message)
+        except RuntimeError:
+            pass
+
+    def _push(self, message: str) -> None:
+        for q in list(self.clients):
+            if q.qsize() < 500:
+                q.put_nowait(message)
+
+
+def login_html(error: str, token_file: str, demo: bool) -> str:
+    """A small sign-in page for a browser that has no (or a stale) token cookie."""
+    from html import escape
+
+    err = f'<p class="err">{escape(error)}</p>' if error else ""
+    title = "Plumber (demo)" if demo else "Plumber"
+    return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Sign in: {title}</title>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#0b0d12">
+<style>
+:root{{color-scheme:dark light;--bg:#0b0d12;--card:#141821;--ink:#e8ebf2;
+--muted:#9aa3b5;--line:#262c3a;--accent:#ff9f43}}
+@media (prefers-color-scheme: light){{:root{{--bg:#f6f7fb;--card:#fff;--ink:#141821;--muted:#5b6475;--line:#dde1ea}}}}
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);
+font:14px/1.5 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;padding:16px}}
+.card{{width:100%;max-width:420px;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:28px}}
+h1{{font-size:18px;margin:0 0 4px}}p{{color:var(--muted);margin:0 0 16px}}
+.err{{color:#ff6b6b}}
+code{{white-space:nowrap;font:12px ui-monospace,Menlo,monospace;background:var(--bg);padding:2px 6px;border-radius:6px}}
+input{{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+background:var(--bg);color:var(--ink);font:13px ui-monospace,Menlo,monospace;margin-bottom:12px}}
+button{{width:100%;padding:10px;border:0;border-radius:10px;background:var(--accent);color:#1b1206;font-weight:600;cursor:pointer}}
+</style></head><body><form class="card" method="post" action="/login">
+<h1>Sign in to {title}</h1>
+<p>This browser has no valid token for this Plumber. Paste the token from
+<code>{escape(token_file)}</code>, or run <code>flux-plumb --open</code> to sign in automatically.</p>{err}
+<input name="token" type="password" placeholder="Token" autocomplete="current-password" autofocus required>
+<button type="submit">Sign in</button></form></body></html>"""
+
+
+def host_of(value: str) -> str:
+    """Hostname part of a Host header or Origin value (no port, brackets kept off IPv6)."""
+    if "://" in value:
+        value = urlsplit(value).netloc
+    if value.startswith("["):
+        return value[1 : value.index("]")] if "]" in value else value
+    return value.rsplit(":", 1)[0] if value.count(":") == 1 else value
+
+
+def create_app(
+    scheduler: Scheduler,
+    token: str,
+    allowed_hosts=("localhost", "127.0.0.1", "::1"),
+    demo: bool = False,
+    tick_interval: float = 0.5,
+    version: str = "dev",
+    run_loop: bool = True,
+    cookie_name: str = COOKIE,
+    token_hint: str = "the URL printed by flux-plumb",
+    token_file: str = "~/.fluxpype/plumber/token",
+    updater=None,
+    allow_restart: bool = True,
+    telemetry_interval: float = 5.0,
+    stall_after: Optional[float] = None,
+) -> FastAPI:
+    hub = Hub()
+    agent: Dict[str, Any] = {"ts": None, "tool": "", "count": 0}  # last MCP-agent request
+    # the MCP server's heartbeat: alive = latest beat, seen = latest sign of any agent ever (kept on disk across restarts)
+    link: Dict[str, Any] = {"alive": None, "seen": None, "saved": 0.0}
+    seen_file = Path(scheduler.home) / "agent_seen.json"
+    try:
+        link["seen"] = float(json.loads(seen_file.read_text())["seen"])
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+
+    agent_log = AgentLog(str(Path(scheduler.home) / "agent_log.jsonl"))  # every agent call, kept across restarts
+    proposals = ProposalStore(str(Path(scheduler.home) / "proposals.json"))  # changes the Ask bar asked for
+
+    def agent_alive() -> None:
+        now = time.time()
+        link["alive"] = link["seen"] = now
+        if now - link["saved"] > 30:  # a few writes a minute at most
+            link["saved"] = now
+            try:
+                seen_file.write_text(json.dumps({"seen": now}))
+            except OSError:
+                pass  # the dashboard just forgets across a restart
+
+    if updater is None:
+        from .updates import Updater
+
+        updater = Updater(str(paths.checkout_root()))
+
+    @asynccontextmanager
+    async def lifespan(app_: FastAPI):
+        hub.loop = asyncio.get_running_loop()
+        task = asyncio.create_task(loop()) if run_loop else None
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+
+    app = FastAPI(title="Fluxpype Plumber", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    allowed = {h.lower() for h in allowed_hosts}
+    sched = scheduler
+    caches: Dict[str, Cache] = {}
+    log_offsets: Dict[str, int] = {}
+    last_state: Dict[str, str] = {}
+    app.state.hub, app.state.scheduler = hub, sched
+    sched.on_change = hub.publish
+    # the event log: runs in the loop whether or not a browser is connected (notify.py)
+    notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
+    app.state.notifier = notifier
+    waits: Dict[str, int] = {}  # concurrent long polls of GET /api/events, per session (or client address)
+
+    def origin_of(request: Request) -> Dict[str, Any]:
+        """Who is asking, as a routing label: built from headers here, never from the body, and never an authority."""
+        h = request.headers
+        client = h.get("x-flux-client")
+        if client == "mcp":
+            o = {"kind": "mcp", "session": clean_id(h.get("x-flux-session")), "call": clean_id(h.get("x-flux-call"))}
+        elif not client:
+            o = {"kind": "web", "tab": clean_id(h.get("x-flux-tab"))}
+        else:
+            o = {}
+        return {k: v for k, v in o.items() if v}
+
+    def authed(cookies, headers) -> bool:
+        given = cookies.get(cookie_name) or headers.get("x-flux-token") or ""
+        return hmac.compare_digest(given.encode(), token.encode())
+
+    def host_allowed(host: str) -> bool:
+        return host in allowed or host == APP_DOMAIN or host.endswith("." + APP_DOMAIN)
+
+    def with_cookie(resp: Response) -> Response:
+        resp.set_cookie(cookie_name, token, httponly=True, samesite="strict", path="/", max_age=COOKIE_MAX_AGE)
+        return resp
+
+    def login_page(error: str = "", status: int = 401) -> HTMLResponse:
+        return HTMLResponse(
+            login_html(error, token_file, demo), status_code=status, headers={"Cache-Control": "no-store"}
+        )
+
+    def origin_ok(headers) -> bool:
+        origin = headers.get("origin")
+        if not origin:
+            return True
+        return host_of(origin).lower() in allowed or host_of(origin) == host_of(headers.get("host", ""))
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        host = host_of(request.headers.get("host", "")).lower()
+        if not host_allowed(host):
+            return Response("Host not allowed", status_code=403)
+        path = request.url.path
+        supplied = request.query_params.get("token")
+        if supplied is not None and not path.startswith("/api/"):
+            if not hmac.compare_digest(supplied.encode(), token.encode()):
+                return login_page("That token is not this Plumber's current token.", 403)
+            return with_cookie(RedirectResponse(path or "/", status_code=303))
+        if path == "/login" and request.method == "POST":
+            if not origin_ok(request.headers):
+                return Response("cross-origin request refused", status_code=403)
+            form = parse_qs((await request.body()).decode("utf-8", "replace"))
+            given = (form.get("token") or [""])[0].strip()
+            if not hmac.compare_digest(given.encode(), token.encode()):
+                return login_page("That token is not this Plumber's current token.", 403)
+            return with_cookie(RedirectResponse("/", status_code=303))
+        if path.startswith("/api/"):
+            if not authed(request.cookies, request.headers):
+                return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
+            if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
+                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+            client = request.headers.get("x-flux-client")
+            # a second lock behind the CLI: the Ask bar's MCP server may only read and store proposals
+            if (
+                client == "ask"
+                and request.method not in ("GET", "HEAD", "OPTIONS")
+                and (request.method, path) != ("POST", "/api/proposals")
+                and not (
+                    request.method == "POST"
+                    and path.startswith("/api/proposals/")
+                    and path.count("/") == 4
+                    and path.endswith("/withdraw")
+                )
+            ):
+                return JSONResponse({"detail": "the Ask bar is read-only; a person clicks a card"}, status_code=403)
+            if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
+                agent_alive()
+            elif client in ("mcp", "ask"):  # an AI agent via the MCP server, or the Ask bar's own copy of it
+                tool = request.headers.get("x-flux-tool", "")[:64]
+                if client == "mcp":  # the Ask bar is not an agent being present, so it does not flash or count
+                    agent_alive()
+                    agent["ts"], agent["count"], agent["tool"] = time.time(), agent["count"] + 1, tool
+                    hub.publish("agent_activity", {"tool": tool, "count": agent["count"]})
+                t0 = time.perf_counter()
+                resp = await call_next(request)
+                h = request.headers  # the MCP server tags each request with its tool call and that call's arguments
+                agent_log.record(
+                    h.get("x-flux-call") or f"{time.time():.6f}",
+                    tool,
+                    h.get("x-flux-args", "")[:400],
+                    request.method,
+                    path,
+                    resp.status_code,
+                    (time.perf_counter() - t0) * 1000,
+                    client,
+                )
+                hub.publish("agent_call", {})
+                return resp
+            return await call_next(request)
+        if path in PUBLIC_FILES or path.startswith(PUBLIC_PREFIXES):
+            return await call_next(request)
+        if not authed(request.cookies, request.headers):
+            return login_page()
+        # a page load by a signed-in browser: slide the cookie's 30-day window forward
+        return with_cookie(await call_next(request))
+
+    # ------------------------------------------------------------------ helpers
+    health = Health(sched, version, updater)
+    preset_cache: Dict[str, Any] = {}
+
+    def cache_for(profile: Optional[str] = None, backend: Optional[str] = None) -> Cache:
+        data_dir = sched.data_dir(profile, backend)
+        if data_dir not in caches:
+            caches[data_dir] = Cache(data_dir)
+        return caches[data_dir]
+
+    def fail(e: Exception, code: int = 400):
+        raise HTTPException(status_code=code, detail=str(e))
+
+    def spark(task_id: str, n: int = 60) -> List[float]:
+        t = sched.store.get_task(task_id)
+        if not t:
+            return []
+        pts = sched.monitor_for(t).relax_points()
+        return [p["stiffness"] for p in pts[-n:] if p.get("stiffness") is not None]
+
+    # ------------------------------------------------------------------ REST
+    @app.get("/api/status")
+    def status():
+        return reply(
+            {
+                "version": version,
+                "commit": updates_head(),
+                "demo": demo,
+                "plumber_home": str(sched.home),
+                "config_path": sched.config_path,
+                "data_dir": sched.data_dir(),
+                "backends": [
+                    {"name": n, **b.capabilities().__dict__, "active": n == sched.active_backend}
+                    for n, b in sched.backends.items()
+                ],
+                "default_backend": sched.default_backend,
+                "active_backend": sched.active_backend,
+                "sandboxed": sched.is_sandboxed(),
+                "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
+                "stages": [{"id": s, "label": l} for s, l in STAGES],
+                "forbidden_keys": sorted(config_io.FORBIDDEN_KEYS),
+                "agent": (
+                    None
+                    if agent["ts"] is None
+                    else {"age_s": time.time() - agent["ts"], "tool": agent["tool"], "count": agent["count"]}
+                ),
+                "agent_link": {
+                    k: None if link[k] is None else time.time() - link[k] for k in ("alive", "seen")
+                },  # ages in s
+            }
+        )
+
+    @app.get("/api/health")
+    def health_(refresh: bool = False):
+        return reply(health.report(refresh))
+
+    @app.put("/api/backend")
+    def set_backend(body: BackendIn):
+        try:
+            state = sched.set_active_backend(body.name)
+        except SchedulerError as e:
+            fail(e)
+        preset_cache.clear()
+        hub.publish("backend_changed", {"active_backend": sched.active_backend})
+        return reply({"active_backend": sched.active_backend, "queue": state})
+
+    def updates_head():
+        from .updates import head
+
+        return head(updater.repo)
+
+    @app.get("/api/update")
+    def update_status(fetch: bool = False):
+        """Updates for the checkout Plumber runs from; fetch=1 asks the remote (cached for 10 minutes)."""
+        from .updates import UpdateError
+
+        try:
+            return reply(updater.status(fetch=fetch, max_age=0 if fetch else 600))
+        except UpdateError as e:
+            fail(e, 500)
+
+    @app.post("/api/update")
+    def update_apply(body: UpdateIn):
+        from .updates import UpdateError, restart_in_place
+
+        try:
+            result = updater.apply()
+        except UpdateError as e:
+            fail(e, 409)
+        restarting = bool(body.restart and allow_restart)
+        if restarting:
+            hub.publish("server_restarting", {"to": result["to"]})
+            restart_in_place()
+        return reply({**result, "restarting": restarting})
+
+    @app.post("/api/restart")
+    def restart():
+        from .updates import restart_in_place
+
+        if not allow_restart:
+            fail(ValueError("restart is disabled here"), 409)
+        hub.publish("server_restarting", {})
+        restart_in_place()
+        return reply({"restarting": True})
+
+    @app.get("/api/data-dir")
+    def data_dir_get():
+        return reply(sched.data_dir_report())
+
+    @app.put("/api/data-dir")
+    def data_dir_put(body: DataDirIn):
+        try:
+            sched.set_data_dir(body.path)
+        except SchedulerError as e:
+            fail(e)
+        preset_cache.clear()
+        health.invalidate()
+        hub.publish("data_dir_changed", {"data_dir": sched.data_dir()})
+        return reply(sched.data_dir_report())
+
+    @app.get("/api/agent")
+    def agent_record():
+        """What an agent can do through the MCP server, and every call it has made."""
+        from . import ask
+
+        return reply({**agent_log.summary(), "ask": ask.usage(str(sched.home))})
+
+    def volumes():
+        return [("Data folder", sched.data_dir()), ("Plumber home", str(sched.home)), ("System", os.sep)]
+
+    def job_groups():
+        """Process-group id -> label for each running task (a task's pid leads its group)."""
+        return {t["pid"]: f"CR{t['cr']} f{t['nflux']}" for t in sched.store.tasks_with_status("running") if t["pid"]}
+
+    from . import ask as ask_mod
+
+    sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
+
+    @app.get("/api/system")
+    def system(procs: bool = False):
+        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes."""
+        return reply(sysmon.snapshot(procs))
+
+    class AskIn(BaseModel):
+        question: str = Field(min_length=1, max_length=2000)
+        page: str = Field(default="", max_length=200)
+        history: List[Dict[str, str]] = Field(default_factory=list, max_length=6)
+
+    @app.get("/api/ask")
+    def ask_status():
+        from . import ask
+
+        return reply(ask.availability())
+
+    @app.post("/api/ask")
+    def ask_post(body: AskIn):
+        """Answer a question about FLUX or Plumber (server-sent events); see ask.py."""
+        from . import ask
+
+        return StreamingResponse(
+            ask.stream(body.question, body.page, body.history, str(sched.home)),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/agent-prompt")
+    def agent_prompt_():
+        from . import agent_prompt
+
+        return reply(agent_prompt.build(home=Path(sched.home), demo=demo))
+
+    def preset_cache_summary(cf, name: str, plan) -> Dict[str, Any]:
+        """How many of the preset's tasks already have each cached product (first 60 tasks), on the active backend."""
+        key = f"{sched.active_backend}|{sched.data_dir_setting()}|{name}|{hash(tuple(plan.tasks[:60]))}"
+        hit = preset_cache.get(key)
+        if hit and time.time() - hit[0] < 20:
+            return hit[1]
+        sample = plan.tasks[:60]
+        counts = {k: 0 for k in ("magnetogram", "footpoints", "pfss", "world", "relaxed_world")}
+        for adapt, cr, nflux, _method in sample:
+            ctx = sched.probe_context_for(name, cr, nflux, adapt, parsed=cf)
+            if not ctx:
+                continue
+            for k, v in first_match_for_context(ctx).items():
+                counts[k] += 1 if v else 0
+        out = {"tasks": len(sample), "of": len(plan.tasks), "counts": counts}
+        preset_cache[key] = (time.time(), out)
+        return out
+
+    @app.get("/api/profiles")
+    def profiles(cache: bool = True):
+        cf = sched.parsed()
+        hidden = set(sched.presets.hidden())
+        builtin = set(sched.presets.builtin_names())
+        stats = sched.store.run_stats()
+        rows = []
+        for name in cf.profiles:
+            eff = cf.effective(name)
+            plan = config_io.expand_tasks(eff)
+            own = cf.sections[name]
+            rows.append(
+                {
+                    "name": name,
+                    "batch_name": config_io.resolve(eff, "batch_name"),
+                    "task_count": len(plan.tasks),
+                    "axes": plan.axes,
+                    "errors": plan.errors,
+                    "warnings": plan.warnings,
+                    "own_keys": len(own),
+                    "own": {k: e.value for k, e in own.items()},
+                    "runs": stats.get(name),
+                    "origin": "builtin" if name in builtin else "user",
+                    "hidden": name in hidden,
+                    "cache": preset_cache_summary(cf, name, plan) if cache and not plan.errors else None,
+                    "is_default_profile": cf.defaults.get("config_name") is not None
+                    and cf.defaults["config_name"].value == name,
+                }
+            )
+        return reply({"profiles": rows, "deleted": list(sched.presets.trashed_sections())})
+
+    def preset_changed():
+        preset_cache.clear()
+        hub.publish("presets_changed", {})
+
+    def preset_call(fn, *a, **kw):
+        try:
+            out = fn(*a, **kw)
+        except PresetError as e:
+            fail(e)
+        preset_changed()
+        return out
+
+    @app.post("/api/profiles")
+    def preset_create(body: PresetIn):
+        name = preset_call(sched.presets.create, body.name, body.base, body.values)
+        return reply({"name": name}, 201)
+
+    @app.patch("/api/profiles/{name}")
+    def preset_save(name: str, body: PresetSaveIn):
+        preset_call(sched.presets.save, name, body.values, body.remove)
+        return reply({"name": name})
+
+    @app.post("/api/profiles/{name}/rename")
+    def preset_rename(name: str, body: RenameIn):
+        return reply({"name": preset_call(sched.presets.rename, name, body.name)})
+
+    @app.post("/api/profiles/{name}/hidden")
+    def preset_hide(name: str, body: HiddenIn):
+        return reply({"hidden": preset_call(sched.presets.set_hidden, name, body.hidden)})
+
+    @app.delete("/api/profiles/{name}")
+    def preset_delete(name: str):
+        preset_call(sched.presets.delete, name)
+        return reply({"deleted": name})
+
+    @app.post("/api/profiles-deleted/{name}/restore")
+    def preset_restore(name: str):
+        return reply({"name": preset_call(sched.presets.restore_deleted, name)})
+
+    @app.get("/api/profiles-export")
+    def preset_export(names: str):
+        wanted = [n for n in names.split(",") if n]
+        try:
+            text = sched.presets.export(wanted)
+        except PresetError as e:
+            fail(e)
+        fname = (wanted[0] if len(wanted) == 1 else "presets") + ".ini"
+        return Response(
+            text,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+
+    @app.post("/api/profiles-import")
+    def preset_import(body: ImportIn):
+        return reply({"added": preset_call(sched.presets.import_text, body.text)}, 201)
+
+    @app.get("/api/profiles/{name}")
+    def profile(name: str):
+        cf = sched.parsed()
+        if name not in cf.sections:
+            raise HTTPException(404, "unknown profile")
+        eff = cf.effective(name)
+        plan = config_io.expand_tasks(eff)
+        base = eff["base_dir"].value if "base_dir" in eff else "auto"
+        shown_base = config_io.auto_base_dir(str(paths.checkout_root())) if base.strip() in ("", "auto") else base
+        entries = []
+        for key, e in eff.items():
+            entries.append(
+                {
+                    "key": key,
+                    "value": e.value,
+                    "resolved": config_io.resolve(eff, key, {"base_dir": shown_base}) if "${" in e.value else None,
+                    "source": "DEFAULT" if e.section == "DEFAULT" else "profile",
+                    "overrides_default": e.overrides_default,
+                    "comment": e.comment,
+                    "editable": key not in config_io.FORBIDDEN_KEYS,
+                }
+            )
+        data_dir = sched.data_dir(name)
+        tasks = []
+        for adapt, cr, nflux, method in plan.tasks[:200]:
+            ctx = sched.probe_context_for(name, cr, nflux, adapt, parsed=cf)
+            tasks.append(
+                {
+                    "cr": cr,
+                    "nflux": nflux,
+                    "adapt": adapt,
+                    "method": method,
+                    "inst": config_io.task_instrument(adapt),
+                    "cache": first_match_for_context(ctx) if ctx else {},
+                }
+            )
+        return reply(
+            {
+                "name": name,
+                "entries": entries,
+                "tasks": tasks,
+                "task_count": len(plan.tasks),
+                "truncated": len(plan.tasks) > 200,
+                "errors": plan.errors,
+                "warnings": plan.warnings,
+                "axes": plan.axes,
+                "data_dir": data_dir,
+                "slots": sched._slots(eff),
+                "origin": sched.presets.origin(name),
+                "hidden": name in set(sched.presets.hidden()),
+                "batch_name": config_io.resolve(eff, "batch_name"),
+                "backend": sched.active_backend,
+                "sandboxed": sched.is_sandboxed(),
+            }
+        )
+
+    def job_extra(body: JobIn, backend: str) -> Dict[str, str]:
+        extra: Dict[str, str] = {}
+        if body.scenario is not None or body.speed is not None:
+            if not sched.is_sandboxed(backend):
+                raise HTTPException(400, "scenario and speed only apply to the fake backend")
+            if body.scenario is not None:
+                if body.scenario not in SCENARIOS:
+                    raise HTTPException(400, f"unknown scenario {body.scenario!r}")
+                extra["scenario"] = body.scenario
+            if body.speed is not None:
+                if not 0.1 <= body.speed <= 1000:
+                    raise HTTPException(400, "speed must be between 0.1 and 1000")
+                extra["speed"] = str(body.speed)
+        return extra
+
+    def _create(body: JobIn, origin: Dict[str, Any]):
+        backend = body.backend or sched.active_backend
+        extra = job_extra(body, backend)
+        try:
+            return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra, origin=origin), 201)
+        except SchedulerError as e:
+            fail(e)
+
+    @app.get("/api/scenes")
+    def scene_list():
+        """Scenes saved in the data folder (`scenes/<id>.scene.json` with its compiled `.flux` world)."""
+        return reply({"scenes": scene_store.list_scenes(sched.data_dir())})
+
+    @app.get("/api/scenes/{scene_id}")
+    def scene_get(scene_id: str):
+        row = scene_store.get(sched.data_dir(), scene_id)
+        if not row:
+            raise HTTPException(404, "unknown scene")
+        return reply(row)
+
+    @app.post("/api/scenes")
+    def scene_create(body: SceneIn):
+        try:
+            return reply(scene_store.save(sched.data_dir(), body.spec), 201)
+        except scene_store.SceneError as e:
+            fail(e)
+
+    @app.get("/api/external-runs")
+    def external_run_list(limit: int = 100):
+        """Runs started outside Plumber (scripts, terminals, other Claudes) that registered themselves."""
+        return reply({"runs": external_runs.list_runs(sched.home, limit)})
+
+    @app.get("/api/external-runs/{run_id}")
+    def external_run(run_id: str, tail: int = 40):
+        run = external_runs.get(sched.home, run_id)
+        if not run:
+            raise HTTPException(404, "unknown external run")
+        return reply({**run, "log_tail": external_runs.log_tail(run, tail)})
+
+    @app.put("/api/external-runs/{run_id}")
+    def external_run_put(run_id: str, body: ExternalRunIn):
+        try:
+            run = external_runs.write(sched.home, run_id, body.model_dump(exclude_none=True))
+        except ValueError as e:
+            fail(e)
+        return reply(run)
+
+    @app.delete("/api/external-runs/{run_id}")
+    def external_run_delete(run_id: str):
+        if not external_runs.delete(sched.home, run_id):
+            raise HTTPException(404, "unknown external run")
+        return reply({"ok": True})
+
+    @app.post("/api/jobs")
+    def create_job(body: JobIn, request: Request):
+        return _create(body, origin_of(request))
+
+    @app.get("/api/jobs")
+    def jobs(limit: int = 100):
+        out = []
+        for j in sched.store.list_jobs(min(max(limit, 1), 500)):
+            out.append(sched.job_view(j["id"]))
+        return reply({"jobs": out})
+
+    @app.get("/api/jobs/{job_id}")
+    def job(job_id: str, states: bool = False):
+        view = sched.job_view(job_id)
+        if not view:
+            raise HTTPException(404, "unknown job")
+        if states:
+            view["states"] = {t["id"]: sched.task_state(t["id"]) for t in view["tasks"]}
+        return reply(view)
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str):
+        if not sched.store.get_job(job_id):
+            raise HTTPException(404, "unknown job")
+        sched.cancel_job(job_id)
+        return reply(sched.job_view(job_id))
+
+    def _retry(job_id: str, by: Optional[str]):
+        try:
+            return reply(sched.retry_job(job_id, by=by))
+        except SchedulerError as e:
+            fail(e, 409)
+
+    @app.post("/api/jobs/{job_id}/retry")
+    def retry_job(job_id: str, request: Request):
+        return _retry(job_id, origin_of(request).get("kind"))
+
+    @app.delete("/api/jobs/{job_id}")
+    def delete_job(job_id: str):
+        try:
+            sched.delete_job(job_id)
+        except SchedulerError as e:
+            fail(e, 409)
+        return reply({"deleted": job_id})
+
+    def job_or_404(job_id: str) -> Dict[str, Any]:
+        job = sched.store.get_job(job_id)
+        if not job:
+            raise HTTPException(404, "unknown job")
+        return job
+
+    def job_effective(job: Dict[str, Any]):
+        try:
+            return config_io.read_file(job["snapshot_path"]).effective(job["profile"])
+        except Exception as e:  # noqa: BLE001
+            fail(ValueError(f"this job's saved settings cannot be read: {e}"), 410)
+
+    def job_data_dir(job_id: str) -> str:
+        eff = job_effective(job_or_404(job_id))
+        return config_io.resolved_path(eff, "data_dir", str(paths.checkout_root()))
+
+    @app.get("/api/jobs/{job_id}/config")
+    def job_config(job_id: str):
+        """The settings this job ran with (its frozen snapshot), marked against the preset as it is now."""
+        job = job_or_404(job_id)
+        eff = job_effective(job)
+        try:
+            now = sched.parsed().effective(job["profile"]) if job["profile"] in sched.parsed().sections else None
+        except Exception:  # noqa: BLE001
+            now = None
+        entries = []
+        pinned = ("data_dir", "base_dir")  # Plumber writes these into every snapshot; a difference is not a user change
+        for key, e in eff.items():
+            current = now[key].value if now is not None and key in now else None
+            entries.append(
+                {
+                    "key": key,
+                    "value": e.value,
+                    "resolved": config_io.resolve(eff, key) if "${" in e.value else None,
+                    "source": "DEFAULT" if e.section == "DEFAULT" else "profile",
+                    "overrides_default": e.overrides_default,
+                    "comment": e.comment,
+                    "editable": key not in config_io.FORBIDDEN_KEYS,
+                    "overridden": key in (job.get("overrides") or {}),
+                    "preset_value": current,
+                    "differs_from_preset": now is not None and current != e.value and key not in pinned,
+                    "set_by_plumber": key in pinned,
+                }
+            )
+        return reply(
+            {
+                "job_id": job_id,
+                "profile": job["profile"],
+                "preset_exists": now is not None,
+                "overrides": job.get("overrides") or {},
+                "data_dir": config_io.resolved_path(eff, "data_dir", str(paths.checkout_root())),
+                "batch_name": config_io.resolve(eff, "batch_name"),
+                "entries": entries,
+            }
+        )
+
+    def results_for(t: Dict[str, Any]) -> Dict[str, Any]:
+        from .results import task_results
+
+        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"), sched.posthoc_outputs(t))
+        runs = sched.list_plot_runs(t["id"])
+        for c in out["catalog"]:  # the newest attempt that mentions each plot
+            last = next(((r, p) for r in runs for p in r["plots"] if p["id"] == c["id"]), None)
+            c["last_run"] = (
+                {"id": last[0]["id"], "status": last[1]["status"], "detail": last[1]["detail"]} if last else None
+            )
+        try:
+            stages = {s["id"]: s["status"] for s in sched.task_state(t["id"]).get("stages", [])}
+        except Exception:  # noqa: BLE001
+            stages = {}
+        for prod in out["products"]:
+            prod["stage_status"] = stages.get(PRODUCT_STAGE.get(prod["id"], prod["id"]))
+        return out
+
+    @app.get("/api/tasks/{task_id}/results")
+    def task_results_view(task_id: str):
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        return reply({"task_id": task_id, "job_id": t["job_id"], **results_for(t)})
+
+    @app.get("/api/jobs/{job_id}/files")
+    def job_files(job_id: str):
+        """Every file the job's tasks read or wrote (expected products plus plots), once each."""
+        job_or_404(job_id)
+        by_path: Dict[str, Dict[str, Any]] = {}
+        missing = []
+        data_dir = None
+        for t in sched.store.tasks_for_job(job_id):
+            r = results_for(t)
+            data_dir = data_dir or r["data_dir"]
+            for prod in r["products"]:
+                if not prod["files"] and prod.get("stage_status") not in ("skipped", "pending", "running"):
+                    missing.append(
+                        {
+                            "task_id": t["id"],
+                            "cr": t["cr"],
+                            "nflux": t["nflux"],
+                            "stage": prod["id"],
+                            "label": prod["label"],
+                        }
+                    )
+                for f in prod["files"]:
+                    by_path.setdefault(f["path"], {**f, "stage": prod["id"], "tasks": []})["tasks"].append(t["id"])
+            for f in r["plots"]:
+                by_path.setdefault(f["path"], {**f, "stage": "plots", "tasks": []})["tasks"].append(t["id"])
+        current = os.path.realpath(sched.data_dir()) if data_dir else None
+        return reply(
+            {
+                "job_id": job_id,
+                "data_dir": data_dir,
+                "is_current_data_dir": bool(data_dir) and os.path.realpath(data_dir) == current,
+                "files": sorted(by_path.values(), key=lambda f: f["path"]),
+                "missing": missing,
+            }
+        )
+
+    @app.get("/api/tasks/{task_id}")
+    def task(task_id: str):
+        try:
+            return reply(sched.task_state(task_id))
+        except SchedulerError as e:
+            fail(e, 404)
+
+    @app.post("/api/tasks/{task_id}/cancel")
+    def cancel_task(task_id: str):
+        try:
+            sched.cancel_task(task_id)
+            return reply(sched.task_state(task_id))
+        except SchedulerError as e:
+            fail(e, 404)
+
+    @app.get("/api/tasks/{task_id}/relax")
+    def task_relax(task_id: str, after: int = 0):
+        try:
+            return reply(sched.relax_series(task_id, max(after, 0)))
+        except SchedulerError as e:
+            fail(e, 404)
+
+    GREP_MAX_LINES = 400
+    GREP_LINE_CHARS = 2000
+
+    def grep_log(path: str, size: int, needle: str, context: int) -> Dict[str, Any]:
+        """Line windows around case-insensitive substring matches, as `N:line` (match) / `N-line` (context)."""
+        wanted, needle = needle, needle.lower()
+        before: deque = deque(maxlen=context)
+        out: List[str] = []
+        matches = 0
+        after_left = 0
+        last_emitted = 0
+        truncated = False
+
+        def emit(n: int, text: str, is_match: bool) -> bool:
+            nonlocal last_emitted
+            if len(out) >= GREP_MAX_LINES:
+                return False
+            if last_emitted and n > last_emitted + 1:
+                out.append("--")
+            out.append(f"{n}{':' if is_match else '-'}{text[:GREP_LINE_CHARS]}")
+            last_emitted = n
+            return True
+
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for n, line in enumerate(f, 1):
+                line = line.rstrip("\r\n")
+                if needle in line.lower():
+                    matches += 1
+                    ok = True
+                    while before and ok:
+                        bn, btext = before.popleft()
+                        if bn > last_emitted:
+                            ok = emit(bn, btext, False)
+                    before.clear()
+                    if ok:
+                        ok = emit(n, line, True)
+                    if not ok:
+                        truncated = True
+                        break
+                    after_left = context
+                elif after_left > 0:
+                    after_left -= 1
+                    if not emit(n, line, False):
+                        truncated = True
+                        break
+                else:
+                    before.append((n, line))
+        lines = [x for x in out if x != "--"]
+        return {
+            "file": os.path.basename(path),
+            "size": size,
+            "grep": wanted,
+            "context": context,
+            "matches": matches,
+            "lines": len(lines),
+            "truncated": truncated,
+            "text": "\n".join(out),
+        }
+
+    def log_file(t) -> Optional[str]:
+        for name in ("run.log", "stdout.log"):
+            p = os.path.join(t["run_dir"], name)
+            if os.path.exists(p):
+                return p
+        return None
+
+    @app.get("/api/tasks/{task_id}/log")
+    def task_log(task_id: str, offset: int = -1, limit: int = 262144, grep: Optional[str] = None, context: int = 3):
+        """Log text from byte `offset` (default: the last `limit` bytes). Returns the next offset.
+
+        With `grep` (a case-insensitive plain substring), returns matching lines with `context` lines around
+        each (0 to 20), numbered like `grep -n`, at most GREP_MAX_LINES lines in all.
+        """
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        path = log_file(t)
+        if path is None:
+            return reply({"offset": 0, "size": 0, "text": "", "file": None})
+        size = os.path.getsize(path)
+        if grep:
+            return reply(grep_log(path, size, grep, min(max(context, 0), 20)))
+        return reply(tail_file(path, size, offset, limit))
+
+    @app.post("/api/tasks/{task_id}/plots")
+    def start_plots(task_id: str, body: PlotRunIn):
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            res = sched.start_plot_run(
+                task_id, body.plots, body.stage, body.overwrite, body.dry_run, body.include_legacy, body.settings
+            )
+        except SchedulerConflict as e:
+            fail(e, 409)
+        except SchedulerError as e:
+            fail(e)
+        if body.dry_run:
+            return reply({"plan": res})
+        return reply(res, 201)
+
+    @app.get("/api/tasks/{task_id}/rerun")
+    def rerun_options(task_id: str):
+        """The settings the wind and FLUXlight regenerate panels offer, with this job's values."""
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            return reply(sched.rerun_options(task_id))
+        except SchedulerError as e:
+            fail(e)
+
+    @app.post("/api/tasks/{task_id}/rerun/wind")
+    def rerun_wind(task_id: str, body: RerunWindIn):
+        """Queue a job that redoes only the wind and wind plots of this task."""
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        try:
+            return reply(sched.rerun_wind(task_id, body.settings), 201)
+        except SchedulerConflict as e:
+            fail(e, 409)
+        except (SchedulerError, plotrun.PlotRunError) as e:
+            fail(e)
+
+    @app.get("/api/tasks/{task_id}/plots")
+    def list_plots(task_id: str):
+        if not sched.store.get_task(task_id):
+            raise HTTPException(404, "unknown task")
+        return reply({"task_id": task_id, "runs": sched.list_plot_runs(task_id)})
+
+    def plot_run_or_404(task_id: str, rid: str) -> Dict[str, Any]:
+        if not RUN_ID_RE.match(rid):
+            raise HTTPException(404, "unknown plot run")
+        try:
+            return sched.plot_run(task_id, rid)
+        except SchedulerError as e:
+            fail(e, 404)
+
+    @app.get("/api/tasks/{task_id}/plots/{rid}")
+    def get_plot_run(task_id: str, rid: str):
+        return reply(plot_run_or_404(task_id, rid))
+
+    @app.get("/api/tasks/{task_id}/plots/{rid}/log")
+    def plot_run_log(task_id: str, rid: str, offset: int = -1, limit: int = 262144):
+        plot_run_or_404(task_id, rid)
+        path = os.path.join(sched.plot_run_dir(task_id, rid), "stdout.log")
+        if not os.path.exists(path):
+            return reply({"offset": 0, "size": 0, "text": "", "file": None})
+        return reply(tail_file(path, os.path.getsize(path), offset, limit))
+
+    @app.post("/api/tasks/{task_id}/plots/{rid}/cancel")
+    def cancel_plot_run(task_id: str, rid: str):
+        plot_run_or_404(task_id, rid)
+        try:
+            return reply(sched.cancel_plot_run(task_id, rid))
+        except SchedulerError as e:
+            fail(e, 404)
+
+    @app.get("/api/queue")
+    def queue():
+        pending = []
+        for t in sched.store.tasks_with_status("pending"):
+            job = sched.store.get_job(t["job_id"])
+            pending.append({**sched.task_row_view(t), "profile": job["profile"]})
+        return reply({**sched.queue_state(), "pending_tasks": pending})
+
+    @app.patch("/api/queue")
+    def patch_queue(body: QueueIn):
+        try:
+            return reply(sched.set_queue(body.paused, body.max_parallel, body.cpu_budget))
+        except SchedulerError as e:
+            fail(e)
+
+    # ------------------------------------------------------------------ proposals (see proposals.py)
+    RETRYABLE = ("failed", "timeout", "cancelled", "crashed")
+
+    def check_proposal(tool: str, args: Dict[str, Any]):
+        """`(normalized args, plain summary, diff rows)` with the checks the real route makes; writes nothing."""
+        diff: List[Dict[str, Any]] = []
+        try:
+            if tool == "submit_job":
+                b = JobIn(**args)
+                backend = b.backend or sched.active_backend
+                extra = job_extra(b, backend)
+                n = sched.create_job(b.profile, b.overrides, backend, b.tasks, extra, dry_run=True)["task_count"]
+                eff = sched.parsed().effective(b.profile)
+                diff = [{"key": k, "from": eff[k].value if k in eff else None, "to": v} for k, v in b.overrides.items()]
+                norm = {
+                    **b.model_dump(exclude_none=True),
+                    "backend": backend,
+                }  # the backend is fixed now, not at the click
+                return (
+                    norm,
+                    f"Queue {n} task(s) from preset {b.profile} on the {backend} backend"
+                    + (", with the overrides below" if diff else ""),
+                    diff,
+                )
+            if tool == "cancel":
+                if set(args) not in ({"job_id"}, {"task_id"}):
+                    raise HTTPException(400, "give exactly one of job_id or task_id")
+                if "job_id" in args:
+                    jid = str(args["job_id"])
+                    if not sched.store.get_job(jid):
+                        raise HTTPException(400, f"unknown job {jid!r}")
+                    live = [t for t in sched.store.tasks_for_job(jid) if t["status"] in ("pending", "running")]
+                    if not live:
+                        raise HTTPException(400, f"job {jid} has nothing pending or running to cancel")
+                    return {"job_id": jid}, f"Cancel job {jid}: stops its {len(live)} pending or running task(s)", diff
+                tid = str(args["task_id"])
+                t = sched.store.get_task(tid)
+                if not t:
+                    raise HTTPException(400, f"unknown task {tid!r}")
+                if t["status"] not in ("pending", "running"):
+                    raise HTTPException(400, f"task {tid} is {t['status']}, not pending or running")
+                return (
+                    {"task_id": tid},
+                    f"Cancel task {tid} (CR{t['cr']}, {t['nflux']} fluxons), which is {t['status']}",
+                    diff,
+                )
+            if tool == "retry_failed":
+                if set(args) != {"job_id"}:
+                    raise HTTPException(400, "give job_id only")
+                jid = str(args["job_id"])
+                if not sched.store.get_job(jid):
+                    raise HTTPException(400, f"unknown job {jid!r}")
+                n = sum(t["status"] in RETRYABLE for t in sched.store.tasks_for_job(jid))
+                if not n:
+                    raise HTTPException(400, f"job {jid} has nothing to retry")
+                return (
+                    {"job_id": jid},
+                    f"Re-queue the {n} failed, crashed, timed out or cancelled task(s) of job {jid}",
+                    diff,
+                )
+            if tool == "set_queue":
+                q = QueueIn(**args)
+                norm = q.model_dump(exclude_none=True)
+                if not norm:
+                    raise HTTPException(400, "give at least one of paused, max_parallel, cpu_budget")
+                sched.check_queue(q.max_parallel, q.cpu_budget)
+                now = sched.queue_state()
+                diff = [{"key": k, "from": str(now[k]), "to": str(v)} for k, v in norm.items()]
+                return norm, "Change the queue settings below (running tasks continue)", diff
+            if tool == "create_preset":
+                p = PresetIn(**args)
+                name, start, values = sched.presets.check(p.name, p.base, p.values)
+                if any(x["tool"] == "create_preset" and x["args"]["name"] == name for x in proposals.pending()):
+                    raise HTTPException(400, f"a pending proposal already saves a preset named {name!r}")
+                diff = [{"key": k, "from": start.get(k), "to": v} for k, v in values.items()]
+                norm = {"name": name, "base": p.base, "values": values}
+                return (
+                    norm,
+                    f"Save a new preset {name}"
+                    + (f", a copy of {p.base}" if p.base else "")
+                    + f" with {len(values)} setting(s) changed; it runs nothing",
+                    diff,
+                )
+            if tool == "create_scene":
+                made = scene_store.prepare(SceneIn(**args).spec)
+                spec, rep = made["spec"], made["report"]
+                if os.path.exists(os.path.join(scene_store.folder(sched.data_dir()), spec.name + ".scene.json")):
+                    raise HTTPException(
+                        400, f"scene {spec.name!r} already exists; propose a new version under a new name"
+                    )
+                if any(
+                    x["tool"] == "create_scene" and x["args"]["spec"]["name"] == spec.name for x in proposals.pending()
+                ):
+                    raise HTTPException(400, f"a pending proposal already saves a scene named {spec.name!r}")
+                diff = [
+                    {"key": k, "from": None, "to": str(v)}
+                    for k, v in (
+                        ("lines", rep["lines"]),
+                        ("vertices", rep["vertices"]),
+                        ("pairing", ",".join(str(i) for i in spec.pairs())),
+                        ("photosphere", rep["photosphere"]),
+                        ("lid", rep["lid"] or "none"),
+                    )
+                ]
+                return (
+                    {"spec": spec.to_dict()},
+                    f"Save scene {spec.name}: a planar arcade of {rep['lines']} lines; it writes the scene file and "
+                    "its .flux world and runs nothing",
+                    diff,
+                )
+        except ValidationError as e:
+            raise HTTPException(400, "; ".join(f"{'.'.join(str(x) for x in d['loc'])}: {d['msg']}" for d in e.errors()))
+        except scene_store.SceneError as e:
+            raise HTTPException(400, str(e))
+        except (SchedulerError, PresetError) as e:
+            raise HTTPException(400, str(e))
+        raise HTTPException(400, f"unknown tool {tool!r}")
+
+    def run_proposal(tool: str, a: Dict[str, Any], origin: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute stored arguments through the normal route; returns the small result the card links to."""
+        if tool == "submit_job":
+            return {"job_id": json.loads(_create(JobIn(**a), origin).body)["id"]}
+        if tool == "cancel":
+            if "job_id" in a:
+                return {"job_id": json.loads(cancel_job(a["job_id"]).body)["id"]}
+            return {"task_id": a["task_id"], "status": json.loads(cancel_task(a["task_id"]).body).get("status")}
+        if tool == "retry_failed":
+            return {"job_id": json.loads(_retry(a["job_id"], "ask").body)["id"]}
+        if tool == "set_queue":
+            return {
+                k: v
+                for k, v in json.loads(patch_queue(QueueIn(**a)).body).items()
+                if k in ("paused", "max_parallel", "cpu_budget")
+            }
+        if tool == "create_scene":
+            return {"scene": json.loads(scene_create(SceneIn(**a)).body)["id"]}
+        return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}
+
+    def decided(request: Request, p: Dict[str, Any], what: str, status: int = 200) -> None:
+        args = json.dumps({"proposal": p["id"], "decision": what})
+        agent_log.record(uuid.uuid4().hex[:12], p["tool"], args, "POST", request.url.path, status, 0, "ask")
+        hub.publish("agent_call", {})
+
+    @app.get("/api/proposals")
+    def proposals_list():
+        return reply({"proposals": proposals.list()})
+
+    @app.post("/api/proposals")
+    def proposal_add(request: Request, body: ProposalIn):
+        """Only the Ask bar's MCP server, during its question: check and store, never run."""
+        from . import ask
+
+        if request.headers.get("x-flux-client") != "ask":
+            raise HTTPException(403, "proposals come from the Ask bar; act through the normal routes")
+        if not body.question or body.question != ask.current_question():
+            raise HTTPException(409, "no Ask question is running with this id")
+        norm, summary, diff = check_proposal(body.tool, body.args)
+        try:
+            p = proposals.add(body.tool, norm, summary, body.question, diff, body.supersedes)
+        except ProposalError as e:
+            fail(e, e.code)
+        if body.supersedes:
+            decided(request, proposals.get(body.supersedes), "superseded")
+        hub.publish("proposals", {})
+        return reply(p, 201)
+
+    @app.post("/api/proposals/{pid}/withdraw")
+    def proposal_withdraw(request: Request, pid: str, body: WithdrawIn):
+        """The Ask bar retires its own pending proposal (the person rejects from the card instead). Binds to a running
+        question like creation does, but the proposal may come from an earlier question: iteration spans turns."""
+        from . import ask
+
+        if request.headers.get("x-flux-client") != "ask":
+            raise HTTPException(403, "only the Ask bar withdraws; a person rejects from the card")
+        if not body.question or body.question != ask.current_question():
+            raise HTTPException(409, "no Ask question is running with this id")
+        try:
+            p = proposals.withdraw(pid, body.question, body.reason)
+        except ProposalError as e:
+            fail(e, e.code)
+        decided(request, p, "withdrawn")
+        hub.publish("proposals", {})
+        return reply(p)
+
+    @app.post("/api/proposals/{pid}/approve")
+    def proposal_approve(request: Request, pid: str):
+        """The person's click. Runs the stored arguments once; nothing in this request's body is read."""
+        if request.headers.get("x-flux-client"):
+            raise HTTPException(403, "only a person can approve a proposal, from the card")
+        try:
+            p = proposals.claim(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        origin = {
+            "kind": "ask",
+            "question": clean_id(p.get("question")),
+            "proposal": clean_id(p.get("id")),
+            "tab": clean_id(request.headers.get("x-flux-tab")),
+        }
+        try:
+            result = run_proposal(p["tool"], p["args"], {k: v for k, v in origin.items() if v})
+            out = proposals.finish(pid, "approved", result=result)
+        except HTTPException as e:
+            proposals.finish(pid, "failed", error=str(e.detail))
+            decided(request, p, "failed", e.status_code)
+            raise
+        except Exception as e:  # noqa: BLE001 - never leave a proposal marked running
+            proposals.finish(pid, "failed", error=f"{type(e).__name__}: {e}")
+            decided(request, p, "failed", 500)
+            raise HTTPException(500, f"the proposal failed: {type(e).__name__}") from None
+        decided(request, p, "approved")
+        hub.publish("proposals", {})
+        return reply(out)
+
+    @app.post("/api/proposals/{pid}/reject")
+    def proposal_reject(request: Request, pid: str):
+        try:
+            p = proposals.reject(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        decided(request, p, "rejected")
+        hub.publish("proposals", {})
+        return reply(p)
+
+    # ------------------------------------------------------------------ events (notify.py)
+    def event_reply(events: List[Dict[str, Any]]) -> Dict[str, Any]:
+        counts = sched.store.event_counts()
+        return {
+            "log_id": notifier.log_id(),
+            "events": events,
+            "last_seq": sched.store.last_seq(),
+            "unread": counts["unread"],
+            "attention": counts["attention"],
+            "read_upto": counts["read_upto"],
+        }
+
+    @app.get("/api/events")
+    async def events_get(
+        request: Request,
+        since: Optional[int] = None,
+        before: Optional[int] = None,
+        limit: int = 100,
+        min_sev: Optional[str] = None,
+        job: Optional[str] = None,
+        session: Optional[str] = None,
+        wait: int = 0,
+    ):
+        limit = min(max(limit, 1), 500)
+        wait = min(max(wait, 0), 25) if since is not None else 0
+        store = sched.store
+        if wait and store.last_seq() <= since:
+            who = clean_id(request.headers.get("x-flux-session")) or (request.client.host if request.client else "?")
+            if waits.get(who, 0) >= 4 or sum(waits.values()) >= 64:
+                busy = {"detail": "too many waiting requests"}
+                return JSONResponse(busy, status_code=429, headers={"Retry-After": "5"})
+            waits[who] = waits.get(who, 0) + 1
+            try:
+                end = time.monotonic() + wait
+                while time.monotonic() < end and store.last_seq() <= since:
+                    await asyncio.sleep(min(1.0, max(end - time.monotonic(), 0.01)))
+            finally:
+                waits[who] -= 1
+                if not waits[who]:
+                    waits.pop(who)
+        rows = store.events(since=since, before=before, limit=limit, min_sev=min_sev, job=job, session=session)
+        return reply(event_reply(rows))
+
+    @app.post("/api/events/read")
+    def events_read(body: ReadIn):
+        sched.store.mark_read(body.upto)
+        hub.publish("events_read", sched.store.event_counts())
+        return reply(event_reply([]))
+
+    @app.post("/api/events/ack")
+    def events_ack(body: AckIn):
+        n = sched.store.ack_events(body.seqs, all_=body.all, job=body.job)
+        hub.publish("events_read", sched.store.event_counts())
+        return reply({**event_reply([]), "acked": n})
+
+    @app.get("/api/overview")
+    def overview():
+        running = []
+        for t in sched.store.tasks_with_status("running"):
+            state = sched.task_state(t["id"])
+            state["spark"] = spark(t["id"])
+            running.append(state)
+        pending = []
+        why = sched.queue_explain()
+        for t in sched.store.tasks_with_status("pending"):
+            job = sched.store.get_job(t["job_id"])
+            row = {**sched.task_row_view(t), "profile": job["profile"], "origin": job["origin"]}
+            pending.append({**row, "wait_reason": why.get(t["id"])})
+        recent = []
+        for t in sched.store.recent_finished(12):
+            job = sched.store.get_job(t["job_id"])
+            state = sched.task_state(t["id"])
+            arts = [a for a in state.get("artifacts", []) if a.get("path")]
+            ok_stages = sum(1 for s in state.get("stages", []) if s["status"] == "ok")
+            recent.append(
+                {
+                    **sched.task_row_view(t),
+                    "profile": job["profile"],
+                    "thumb": arts[-1]["path"] if arts else None,
+                    "stages_ok": ok_stages,
+                    "stages": [
+                        {"id": s["id"], "status": s["status"], "source": s["source"]} for s in state.get("stages", [])
+                    ],
+                    "failure": next(
+                        (s["detail"] for s in state.get("stages", []) if s["status"] == "failed" and s.get("detail")),
+                        None,
+                    ),
+                }
+            )
+        return reply({"queue": sched.queue_state(), "running": running, "pending": pending, "recent": recent})
+
+    # ------------------------------------------------------------------ cache
+    @app.get("/api/cache")
+    def cache_get(rescan: bool = False, profile: Optional[str] = None):
+        c = cache_for(profile)
+        summary = c.summary(rescan)
+        records = c.records()[:20000]
+        return reply(
+            {
+                **summary,
+                "records": records,
+                "truncated": summary["total_count"] > len(records),
+                "presets": preset_scopes(),
+                "sandboxed": sched.is_sandboxed(),
+            }
+        )
+
+    def preset_scopes() -> List[Dict[str, Any]]:
+        """For each runnable preset: the batch, rotations and instruments it reads and writes."""
+        out = []
+        try:
+            cf = sched.parsed()
+        except Exception:  # noqa: BLE001
+            return out
+        hidden = set(sched.presets.hidden())
+        for name in cf.profiles:
+            eff = cf.effective(name)
+            plan = config_io.expand_tasks(eff)
+            if plan.errors:
+                continue
+            out.append(
+                {
+                    "name": name,
+                    "batch": config_io.resolve(eff, "batch_name"),
+                    "crs": sorted({str(t[1]) for t in plan.tasks}),
+                    "insts": sorted({config_io.task_instrument(t[0]) for t in plan.tasks}),
+                    "hidden": name in hidden,
+                }
+            )
+        return out
+
+    @app.post("/api/cache/trash")
+    def cache_trash(body: TrashIn):
+        try:
+            result = cache_for().move_to_trash(body.paths)
+        except CacheError as e:
+            fail(e)
+        hub.publish("cache_changed", {})
+        return reply(result)
+
+    @app.get("/api/cache/trash")
+    def cache_trash_list():
+        c = cache_for()
+        return reply({"items": c.list_trash(), **c.trash_summary()})
+
+    @app.post("/api/cache/trash/restore")
+    def cache_restore(body: RestoreIn):
+        try:
+            restored = cache_for().restore(body.ids)
+        except CacheError as e:
+            fail(e)
+        hub.publish("cache_changed", {})
+        return reply({"restored": restored})
+
+    @app.delete("/api/cache/trash")
+    def cache_empty():
+        result = cache_for().empty_trash()
+        hub.publish("cache_changed", {})
+        return reply(result)
+
+    # ------------------------------------------------------------------ artifacts
+    def cache_file(rel: str) -> str:
+        """Absolute path of a file in the current data folder (confined like the trash: no .., no escaping links)."""
+        from .cache import _confine
+
+        try:
+            full = _confine(cache_for().data_dir, rel)
+        except CacheError as e:
+            fail(e, 403)
+        if not os.path.isfile(full):
+            raise HTTPException(404, "no such file (rescan the cache)")
+        return full
+
+    def render_python() -> str:
+        local = next((b for b in sched.backends.values() if getattr(b, "kind", "") == "local"), None)
+        return getattr(local, "python", None) or sys.executable
+
+    def preview_reply(full: str, rel: str):
+        from . import preview
+
+        try:
+            return reply(preview.describe(full, rel))
+        except OSError as e:
+            fail(e, 500)
+
+    def raw_reply(full: str, download: bool):
+        from . import preview
+
+        mt = preview.media_type(full)
+        inline = not download and mt != "application/octet-stream"
+        headers = {"Cache-Control": "private, max-age=30", "X-Content-Type-Options": "nosniff"}
+        if mt == "image/svg+xml":
+            headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+        return FileResponse(
+            full,
+            media_type=mt,
+            headers=headers,
+            filename=os.path.basename(full),
+            content_disposition_type="inline" if inline else "attachment",
+        )
+
+    def render_reply(full: str, png_url: str):
+        from . import preview
+
+        if preview.kind_of(full) != "fits":
+            fail(ValueError("only FITS files are rendered"), 415)
+        try:
+            out = preview.render_fits(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return reply({"stats": out["stats"], "image": png_url})
+
+    def render_png(full: str):
+        from . import preview
+
+        try:
+            out = preview.render_fits(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return FileResponse(out["png"], media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+    def thumb_png(full: str):
+        from . import preview
+
+        if not full.lower().endswith(preview.THUMB_EXT):
+            fail(ValueError("no thumbnail for this kind of file"), 415)
+        try:
+            png = preview.thumbnail(full, str(sched.home), render_python())
+        except preview.RenderError as e:
+            fail(e, 422)
+        return FileResponse(png, media_type="image/png", headers={"Cache-Control": "private, max-age=300"})
+
+    @app.get("/api/cache/thumb")
+    def cache_thumb(path: str):
+        return thumb_png(cache_file(path))
+
+    @app.get("/api/cache/preview")
+    def cache_preview(path: str):
+        return preview_reply(cache_file(path), path)
+
+    @app.get("/api/cache/file")
+    def cache_raw(path: str, download: bool = False):
+        return raw_reply(cache_file(path), download)
+
+    @app.get("/api/cache/render")
+    def cache_render(path: str):
+        return render_reply(cache_file(path), f"/api/cache/render.png?path={quote(path)}")
+
+    @app.get("/api/cache/render.png")
+    def cache_render_png(path: str):
+        return render_png(cache_file(path))
+
+    def flux_reply(full: str):
+        from . import fluxfile
+
+        try:
+            return JSONResponse(
+                fluxfile.payload(full), headers={"Cache-Control": "private, max-age=30"}
+            )  # finite by construction: skip clean()
+        except OSError as e:
+            fail(e, 500)
+
+    @app.get("/api/cache/flux")
+    def cache_flux(path: str):
+        return flux_reply(cache_file(path))
+
+    def dat_reply(full: str):
+        from . import datfile
+
+        try:
+            return JSONResponse(
+                datfile.payload(full), headers={"Cache-Control": "private, max-age=30"}
+            )  # null for NaN: no clean()
+        except OSError as e:
+            fail(e, 500)
+
+    @app.get("/api/cache/dat")
+    def cache_dat(path: str):
+        return dat_reply(cache_file(path))
+
+    # job-scoped twins: a job's snapshot can pin a data folder other than the current one
+    def job_file(job_id: str, rel: str) -> str:
+        from .cache import _confine
+
+        data_dir = job_data_dir(job_id)
+        try:
+            full = _confine(data_dir, rel)
+        except CacheError as e:
+            fail(e, 403)
+        if not os.path.isfile(full):
+            raise HTTPException(404, "no such file")
+        return full
+
+    @app.get("/api/jobs/{job_id}/data/preview")
+    def job_preview(job_id: str, path: str):
+        return preview_reply(job_file(job_id, path), path)
+
+    @app.get("/api/jobs/{job_id}/data/file")
+    def job_raw(job_id: str, path: str, download: bool = False):
+        return raw_reply(job_file(job_id, path), download)
+
+    @app.get("/api/jobs/{job_id}/data/render")
+    def job_render(job_id: str, path: str):
+        return render_reply(job_file(job_id, path), f"/api/jobs/{quote(job_id)}/data/render.png?path={quote(path)}")
+
+    @app.get("/api/jobs/{job_id}/data/thumb")
+    def job_thumb(job_id: str, path: str):
+        return thumb_png(job_file(job_id, path))
+
+    @app.get("/api/jobs/{job_id}/data/render.png")
+    def job_render_png(job_id: str, path: str):
+        return render_png(job_file(job_id, path))
+
+    @app.get("/api/jobs/{job_id}/data/flux")
+    def job_flux(job_id: str, path: str):
+        return flux_reply(job_file(job_id, path))
+
+    @app.get("/api/jobs/{job_id}/data/dat")
+    def job_dat(job_id: str, path: str):
+        return dat_reply(job_file(job_id, path))
+
+    @app.get("/api/artifacts")
+    def artifact(path: str):
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in IMAGE_TYPES:
+            raise HTTPException(415, "only images are served")
+        real = os.path.realpath(os.path.expanduser(path))
+        roots = [os.path.realpath(d) for d in sched.all_data_dirs()]
+        roots.append(os.path.realpath(str(paths.runs_dir(sched.home))))
+        if not any(real == r or real.startswith(r + os.sep) for r in set(roots)):
+            raise HTTPException(403, "path is outside the data and run directories")
+        if f"{os.sep}{'.flux_trash'}{os.sep}" in real:
+            raise HTTPException(403, "that file is in the trash")
+        if not os.path.isfile(real):
+            raise HTTPException(404, "no such file")
+        return FileResponse(real, media_type=IMAGE_TYPES[ext], headers={"Cache-Control": "private, max-age=30"})
+
+    # ------------------------------------------------------------------ websocket
+    @app.websocket("/api/ws")
+    async def ws(sock: WebSocket):
+        host = host_of(sock.headers.get("host", "")).lower()
+        if not host_allowed(host) or not authed(sock.cookies, sock.headers) or not origin_ok(sock.headers):
+            await sock.close(code=4401)
+            return
+        await sock.accept()
+        q: asyncio.Queue = asyncio.Queue()
+        hub.clients.add(q)
+        sender = None
+        try:
+            await sock.send_text(json.dumps({"type": "hello", "data": {"version": version, "demo": demo}}))
+            sender = asyncio.create_task(_pump(sock, q))
+            while True:
+                await sock.receive_text()  # ignore client messages; detects disconnect
+        except WebSocketDisconnect:
+            pass
+        finally:
+            hub.clients.discard(q)
+            if sender:
+                sender.cancel()
+
+    async def _pump(sock: WebSocket, q: asyncio.Queue):
+        while True:
+            await sock.send_text(await q.get())
+
+    # ------------------------------------------------------------------ background loop
+    def push_states() -> None:
+        for t in sched.store.tasks_with_status("running"):
+            state = sched.task_state(t["id"])
+            # observed_at changes every poll; compare without it
+            key = json.dumps({k: v for k, v in clean(state).items() if k != "observed_at"}, sort_keys=True, default=str)
+            if last_state.get(t["id"]) != key:
+                last_state[t["id"]] = key
+                hub.publish("task_state", state)
+            path = log_file(t)
+            if path:
+                size = os.path.getsize(path)
+                pos = log_offsets.get(t["id"], max(size - 8192, 0))
+                if size > pos:
+                    with open(path, "rb") as f:
+                        f.seek(pos)
+                        data = f.read(65536)
+                    cut = data.rfind(b"\n") + 1
+                    if cut:
+                        log_offsets[t["id"]] = pos + cut
+                        hub.publish(
+                            "log_append",
+                            {
+                                "task_id": t["id"],
+                                "start": pos,
+                                "offset": pos + cut,
+                                "text": data[:cut].decode("utf-8", "replace"),
+                            },
+                        )
+                else:
+                    log_offsets.setdefault(t["id"], pos)
+
+    async def loop():
+        hub.loop = asyncio.get_running_loop()
+        try:
+            await asyncio.to_thread(notifier.start)
+        except Exception as e:  # noqa: BLE001
+            print(f"[plumber] event log start failed: {e!r}")
+        last_telemetry = 0.0
+        while True:
+            try:
+                await asyncio.to_thread(sched.tick)
+                await asyncio.to_thread(notifier.observe)  # every iteration, browser or not
+                if time.monotonic() - last_telemetry >= telemetry_interval:
+                    last_telemetry = time.monotonic()
+                    await asyncio.to_thread(notifier.telemetry)
+                if hub.clients:
+                    await asyncio.to_thread(push_states)
+            except Exception as e:  # noqa: BLE001 - the loop must survive anything
+                print(f"[plumber] tick failed: {e!r}")
+            await asyncio.sleep(tick_interval)
+
+    # ------------------------------------------------------------------ frontend
+    @app.get("/login")
+    def login_get():
+        return login_page(status=200)
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        name = "Plumber (demo)" if demo else "Plumber"
+        body = {
+            "name": f"Fluxpype {name}",
+            "short_name": name,
+            "description": "Queue, watch and inspect fluxpype runs",
+            "id": "/",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#0b0d12",
+            "theme_color": "#0b0d12",
+            "icons": [
+                {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                {"src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            ],
+        }
+        return JSONResponse(body, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/{full_path:path}")
+    def spa(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "not found")
+        if not WEB_DIR.is_dir():
+            return HTMLResponse(
+                "<h1>Fluxpype Plumber</h1><p>The frontend build is missing (fluxpype/plumber/web/dist). "
+                "Run <code>npm install &amp;&amp; npm run build</code> in fluxpype/plumber/web.</p>",
+                status_code=503,
+            )
+        target = (WEB_DIR / full_path).resolve()
+        if full_path and WEB_DIR.resolve() in target.parents and target.is_file():
+            headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "/assets/" in f"/{full_path}" else {}
+            return FileResponse(target, headers=headers)
+        return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+    return app

@@ -316,6 +316,7 @@ def run_plots(args, times=0):
     for rr in np.arange(times+1):
         tried = True
         try:
+            import pdb; pdb.set_trace()
             bmagfull, maxlist = plot_bmag_all(args, rr, maxlist=maxlist)
             bmagdir = os.path.dirname(bmagfull)
             bmagfile= os.path.basename(bmagfull)

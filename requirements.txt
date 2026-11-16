@@ -3,6 +3,8 @@ tqdm
 matplotlib
 astropy
 sunpy
+sunkit-image
+joblib
 bs4
 lxml
 zeep
@@ -12,5 +14,6 @@ opencv-python
 pexpect
 rich
 pfsspy
+sunkit-magex
 PyQt5
 numpy

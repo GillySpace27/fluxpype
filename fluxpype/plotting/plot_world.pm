@@ -56,18 +56,22 @@ sub plot_world {
     my $wide_factor = 2.0;
     my $narr_lim    = $lim  * $narr_factor;
     my $wide_lim    = $lim  * $wide_factor;
+    my $full_lim =  215.;
 
     my $range_inner  = [ -$narr_lim, $narr_lim, -$narr_lim, $narr_lim, -$narr_lim, $narr_lim ];
     my $range_middle = [ -$lim, $lim, -$lim, $lim, -$lim, $lim ];
     my $range_wide   = [ -$wide_lim, $wide_lim, -$wide_lim, $wide_lim, -$wide_lim, $wide_lim ];
+    my $range_full   = [ -$full_lim, $full_lim, -$full_lim, $full_lim, -$full_lim, $full_lim ];
 
     my $narrow_dir = $datdir . "/batches/$batch_name/imgs/world/0_narrow/";
     my $mid_dir    = $datdir . "/batches/$batch_name/imgs/world/1_middle/";
     my $wide_dir   = $datdir . "/batches/$batch_name/imgs/world/2_wide/";
+    my $full_dir   = $datdir . "/batches/$batch_name/imgs/world/3_full/";
 
     mkpath($narrow_dir) or die "Failed to create $narrow_dir: $!\n" unless -d $narrow_dir;
     mkpath($mid_dir)    or die "Failed to create $mid_dir: $!\n"    unless -d $mid_dir;
     mkpath($wide_dir)   or die "Failed to create $wide_dir: $!\n"   unless -d $wide_dir;
+    mkpath($full_dir)   or die "Failed to create $full_dir: $!\n"   unless -d $full_dir;
 
     my $ext = 'png';
     my $renderer = "pngcairo";  # Force pngcairo
@@ -75,12 +79,13 @@ sub plot_world {
     my $world_png_path_narrow = $narrow_dir."cr$CR\_f". $n_fluxons_wanted. "_$which\_narrow.$ext";
     my $world_png_path_middle = $mid_dir   ."cr$CR\_f". $n_fluxons_wanted. "_$which\_middle.$ext";
     my $world_png_path_wide   = $wide_dir  ."cr$CR\_f". $n_fluxons_wanted. "_$which\_wide.$ext";
+    my $world_png_path_full   = $full_dir  ."cr$CR\_f". $n_fluxons_wanted. "_$which\_full.$ext";
 
-    # Simple skip if we've done it already
-    if (-e $world_png_path_narrow) {
-        print " Skipping existing plots!\n";
-        return;
-    }
+    # # Simple skip if we've done it already
+    # if (-e $world_png_path_narrow) {
+    #     print " Skipping existing plots!\n";
+    #     return;
+    # }
 
     # Plot narrow
     my $win_narrow = gpwin($renderer, size=>[9,9], dashed=>0, output=>$world_png_path_narrow);
@@ -93,6 +98,10 @@ sub plot_world {
     # Plot wide
     my $win_wide = gpwin($renderer, size=>[9,9], dashed=>0, output=>$world_png_path_wide);
     $world->render({ window => $win_wide, range => $range_wide, view => [0,0] });
+
+    # Plot full
+    my $win_full = gpwin($renderer, size=>[9,9], dashed=>0, output=>$world_png_path_full);
+    $world->render({ window => $win_full, range => $range_full, view => [0,0] });
 
     print "\t\tDone!\n";
 }
@@ -141,20 +150,20 @@ sub plot_worlds {
         print "\tRendering triple-zoom images for initial & relaxed...\n";
 
         # For "initial"
-        plot_world(
-            $this_world_orig,   # the world data
-            $datdir,
-            $batch_name,
-            $CR,
-            $N_actual,          # 'reduction' param
-            $nwant,             # fluxons
-            0,                  # adapt
-            0,                  # force_make_world
-            $lim,
-            $lim2,
-            undef,              # configs
-            'initial'
-        );
+        # plot_world(
+        #     $this_world_orig,   # the world data
+        #     $datdir,
+        #     $batch_name,
+        #     $CR,
+        #     $N_actual,          # 'reduction' param
+        #     $nwant,             # fluxons
+        #     0,                  # adapt
+        #     0,                  # force_make_world
+        #     $lim,
+        #     $lim2,
+        #     undef,              # configs
+        #     'initial'
+        # );
 
         # For "relaxed"
         plot_world(

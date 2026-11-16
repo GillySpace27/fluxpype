@@ -56,7 +56,6 @@ def plot_full_velocity_profiles(directory=None):
             print(f"No files found in {directory} matching pattern {pattern}")
             continue
 
-        plot_lines = False
         for plot_lines in [True, False]:
 
             if True:
@@ -106,11 +105,13 @@ def plot_full_velocity_profiles(directory=None):
 
                     # Calculate mean and std of velocity as a function of radius
                     mean_velocity = np.nanmean(interpolated_data, axis=0)
+                    med_velocity = np.nanmedian(interpolated_data, axis=0)
                     std_velocity = np.nanstd(interpolated_data, axis=0)
 
-                    # Plot mean and std
-                    ax.errorbar(common_grid, mean_velocity, yerr=std_velocity, fmt='-', color=color, label=method_name, alpha=0.7, lw=4,
-                                zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None)
+                    if mean_velocity is not None and std_velocity is not None:
+                        # Plot mean and std
+                        ax.errorbar(common_grid, med_velocity, yerr=std_velocity, fmt='-', color=color, label=method_name, alpha=0.7, lw=4,
+                                    zorder=-10 if method_name == "wsa" else 100 if method_name == "tempest" else None)
 
             zephyr = load_zephyr()
 
@@ -118,16 +119,18 @@ def plot_full_velocity_profiles(directory=None):
             ztop = np.nanmax(zephyr['uu'].T / 10**5, axis=1)
             zbot = np.nanmin(zephyr['uu'].T / 10**5, axis=1)
             zmean = np.nanmean(zephyr['uu'].T / 10**5, axis=1)
+            zmed = np.nanmedian(zephyr["uu"].T/ 10**5, axis=1)
             zstd = np.nanstd(zephyr['uu'].T / 10**5, axis=1)
 
             # Interpolate Zephyr data on common grid
             zephyr_interp_top = interp1d(zephyr['rx'] - 1, ztop, bounds_error=False, fill_value=np.nan)(common_grid)
             zephyr_interp_bot = interp1d(zephyr['rx'] - 1, zbot, bounds_error=False, fill_value=np.nan)(common_grid)
             zephyr_interp_mean = interp1d(zephyr['rx'] - 1, zmean, bounds_error=False, fill_value=np.nan)(common_grid)
+            zephyr_interp_med = interp1d(zephyr['rx'] - 1, zmed, bounds_error=False, fill_value=np.nan)(common_grid)
             zephyr_interp_std = interp1d(zephyr['rx'] - 1, zstd, bounds_error=False, fill_value=np.nan)(common_grid)
 
             # ax.fill_between(common_grid, zephyr_interp_bot, zephyr_interp_top, color='purple', alpha=0.1)
-            ax.errorbar(common_grid, zephyr_interp_mean, yerr=zephyr_interp_std, fmt='-', color='purple', label='Zephyr_2007/13', alpha=0.7, zorder=-10, lw=5)
+            ax.errorbar(common_grid, zephyr_interp_med, yerr=zephyr_interp_std, fmt='-', color='purple', label='Zephyr_2007/13', alpha=0.7, zorder=-10, lw=5)
 
             # Collect interpolated values for Zephyr
             zephyr_method_name = 'Zephyr_2007_2013'
@@ -150,7 +153,7 @@ def plot_full_velocity_profiles(directory=None):
             ax.set_xlabel("z = r/$R_\\odot$ - 1")
             ax.set_ylabel('Velocity [km/s]')
             ax.set_xscale('log')
-            ax.set_ylim(0, 10**3)
+            ax.set_ylim(-10, 10**3)
             ax.set_xlim(1e-2, 220)
             ax.set_title(f'Full Velocity Profiles Comparison CR {cr_value}')
             ax2.set_title(f'Hists at z={cut_loc}')

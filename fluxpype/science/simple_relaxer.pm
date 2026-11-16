@@ -121,6 +121,7 @@ use Exporter qw(import);
 our @EXPORT_OK = qw(simple_relaxer);
 use PDL::Graphics::Gnuplot 2.006_001;
 use Time::HiRes qw( clock_gettime);
+BEGIN { eval { require fluxpype::events; fluxpype::events->import; 1 } or eval 'sub emit_event {} sub stage_start {} sub stage_end {} sub stage_skipped {} sub stage_detail {} 1'; }  # progress events (no-op unless FLUXPYPE_EVENTS)
 
 sub simple_relaxer {
     if (   defined( $_[1] )
@@ -133,6 +134,9 @@ sub simple_relaxer {
         die
 "Looks like you're using the old calling convention for simple_relaxer.  Please delete the 'interactive' flag from your call.";
     }
+
+    # Flush stdout so progress is visible when run under subprocess (e.g. config_runner)
+    $| = 1;
 
     my $w       = shift;
     my $global  = shift || 0;
@@ -215,6 +219,7 @@ sub simple_relaxer {
                     $w->{mean_angle}
                 );
             };
+            eval { emit_event("relax.step", { step => $step, stiffness => $h->{f_av} / $h->{fs_av} * 100, fmax => $h->{f_ma}, f_av => $h->{f_av}, fs_av => $h->{fs_av}, n_av => $h->{n_av}, vertices => $h->{n} }) } if $ENV{FLUXPYPE_EVENTS};
         }
         eval {
             printf LOG

@@ -17,6 +17,13 @@ use PDL::Options;
 use PDL::IO::Storable;
 use PDL::Graphics::Gnuplot;
 use Chart::Gnuplot;
+use POSIX ();
+
+# Forked workers inherit the parent's world and Gnuplot objects; destroying those copies at exit printed a
+# "Read '...world.flux'" line and a Gnuplot "subproc died" warning per worker. A worker has already handed
+# its result to the parent by the time END runs, so it can leave without global destruction.
+our $FORK_CHILD = 0;
+END { POSIX::_exit($?) if $FORK_CHILD }
 
 # use local::lib;
 # use lib "fluxpype/science";
@@ -151,7 +158,7 @@ sub save_full_velocity_profiles {
 
     close $fh;
     if ($faileds){
-        my $perc = $faileds / scalar(@sorted_results);
+        my $perc = sprintf("%.1f", 100 * $faileds / scalar(@sorted_results));
         warn "There were $faileds failed saves ($perc%)."
     }
     return;
@@ -211,7 +218,7 @@ sub map_fluxon_flow_parallel_master {
 
     print "INFO: $num_open_fluxons open fluxons / $num_total_fluxons total\n";
     print "     -> $num_active_fluxons footpoints total.\n\n";
-    print "     Beginning Calculation...\n\n";
+    print "     Beginning Calculation of $flow_method wind...\n\n";
 
     # If requested, run a precomputation step
     if ($flow_method eq "tempest") {
@@ -225,10 +232,13 @@ sub map_fluxon_flow_parallel_master {
     }
     elsif ($flow_method eq "wsa") {
         # run the python file footpoint_distances.py
-        system("python3 fluxpype/science/footpoint_distances_2.py --cr $CR") == 0
-            or die "footpoint_distances_2.py returned error $?";
+        print("Building footpoint_distances...");
+        system("python3 fluxpype/science/footpoint_distances_wsa.py --cr $CR") == 0
+            or die "footpoint_distances_wsa.py returned error $?";
 
-        my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/distances.csv";
+        my $distance_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/pfss_distances.csv";
+        my $expansion_file = $configs{data_dir} . "/batches/" . $configs{batch_name} . "/data/cr" . $CR . "/floc/pfss_expansions.csv";
+
         open my $fh, '<', $distance_file or die "Could not open '$distance_file': $!";
 
         my @rows;
@@ -241,6 +251,21 @@ sub map_fluxon_flow_parallel_master {
 
         # Combine all rows into a 2D PDL array
         our $distance_array_degrees = cat(@rows);
+
+
+
+        open my $fh, '<', $expansion_file or die "Could not open '$expansion_file': $!";
+
+        my @rows;
+        while (my $line = <$fh>) {
+            chomp $line;
+            my @values = split /, /, $line;  # split on comma+space
+            push @rows, pdl(@values);
+        }
+        close $fh;
+
+        # Combine all rows into a 2D PDL array
+        our $expansion_array = cat(@rows);
     }
     elsif ($flow_method =~ /^(parker|schonfeld|psw|ghosts)$/ ) {
         # No special precomputation needed (assuming these exist).
@@ -296,6 +321,8 @@ sub map_fluxon_flow_parallel_master {
     # Launch parallel tasks
     for my $fluxon_id (0 .. $max_fluxon_id - 1) {
         $fork_manager->start and next;  # child will skip
+        $FORK_CHILD = 1;
+        $SIG{__WARN__} = sub { warn @_ unless $_[0] =~ /^\s*\(in cleanup\) PDL::Graphics::Gnuplot: subproc died/ };
 
         eval {
             my $fluxon = $fluxons[$fluxon_id];
@@ -306,8 +333,9 @@ sub map_fluxon_flow_parallel_master {
             # Dispatch to correct flow subroutine
             if ($flow_method eq 'wsa') {
                 our $distance_array_degrees;  # Must be "our" for lexical scoping if truly global
+                our $expansion_array;  # Must be "our" for lexical scoping if truly global
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
-                    = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $fluxon_id);
+                    = gen_fluxon_wsaflow($fluxon, $distance_array_degrees, $expansion_array, $fluxon_id);
             }
             elsif ($flow_method eq 'parker') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_tflow($fluxon);
@@ -315,10 +343,10 @@ sub map_fluxon_flow_parallel_master {
             elsif ($flow_method eq 'schonfeld') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_schonflow($fluxon);
             }
-            elsif ($flow_method eq 'psw') {
-                # Presumably gen_fluxon_pswflow exists
-                ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
-            }
+            # elsif ($flow_method eq 'psw') {
+            #     # Presumably gen_fluxon_pswflow exists
+            #     ($r_vr_scaled, $r_fr_scaled, $thetas, $phis) = gen_fluxon_pswflow($fluxon);
+            # }
             elsif ($flow_method eq 'tempest') {
                 ($r_vr_scaled, $r_fr_scaled, $thetas, $phis)
                     = gen_fluxon_tempestflow($fluxon, $fluxon_id, $output_file_name);
