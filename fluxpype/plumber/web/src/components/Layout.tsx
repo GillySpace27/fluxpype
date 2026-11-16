@@ -1,7 +1,8 @@
 import { Boxes, Database, Gauge, Layers, ListChecks, Settings, Sun } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { cn } from "../lib/cn";
-import { useStatus } from "../lib/hooks";
+import { useJobs, useStatus } from "../lib/hooks";
+import { RunMini } from "./RunCard";
 import { useLive } from "../lib/live";
 import { FlaskConical } from "lucide-react";
 import { QueuePill } from "./QueuePill";
@@ -35,13 +36,39 @@ function Logo({ compact }: { compact?: boolean }) {
   );
 }
 
+/** The last few runs under the navigation, so a run's page is one click away from anywhere. */
+function RecentRunsNav() {
+  const { data } = useJobs();
+  const { pathname } = useLocation();
+  const jobs = data?.jobs.slice(0, 5) ?? [];
+  if (!jobs.length) return null;
+  const open = pathname.startsWith("/jobs/") ? pathname.split("/")[2] : null;
+  return (
+    <div className="mt-6">
+      <div className="mb-1 flex items-center justify-between px-2.5">
+        <p className="text-[10.5px] font-medium uppercase tracking-[0.14em] text-faint">Recent runs</p>
+        <Link to="/jobs" className="text-[10.5px] text-faint hover:text-ink">
+          All
+        </Link>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {jobs.map((j) => (
+          <RunMini key={j.id} job={j} active={open === j.id} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function Layout() {
   const { data: status } = useStatus();
   const { connected } = useLive();
   const NAV = NAV_PRESETS;
+  const { data: jobs } = useJobs();
+  const active = jobs?.jobs.filter((j) => j.status === "running").length ?? 0;
   return (
     <div className="min-h-screen md:pl-[220px]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[220px] flex-col border-r hair bg-surface/70 px-3 py-5 backdrop-blur md:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[220px] flex-col overflow-y-auto border-r hair bg-surface/70 px-3 py-5 backdrop-blur md:flex">
         <Logo />
         <nav className="mt-8 flex flex-col gap-0.5">
           {NAV.map((n) => (
@@ -60,12 +87,19 @@ export function Layout() {
                 <>
                   <n.icon className={cn("h-4 w-4", isActive ? "text-accent" : "text-faint group-hover:text-muted")} />
                   {n.label}
+                  {n.to === "/jobs" && active > 0 && (
+                    <span className="num ml-auto inline-flex items-center gap-1 rounded-full bg-run/15 px-1.5 text-[10.5px] font-semibold text-run">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-run" />
+                      {active}
+                    </span>
+                  )}
                 </>
               )}
             </NavLink>
           ))}
         </nav>
-        <div className="mt-auto space-y-3">
+        <RecentRunsNav />
+        <div className="mt-auto space-y-3 pt-4">
           <SysMonPanel />
           <div className="space-y-2 px-2 text-[11px] text-faint">
             <div className="flex items-center gap-2">

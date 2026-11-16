@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, ListChecks, PauseCircle, Plus, RotateCw, Trash2 } from "lucide-react";
+import { Ban, ListChecks, PauseCircle, Plus, RotateCw, Search, Trash2, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ActivityList, OriginTag } from "../components/Notifications";
 import { StageStrip, toneOf } from "../components/StageStrip";
+import { Cover, coverUrl } from "../components/Cover";
+import { jobSummary, RunCard } from "../components/RunCard";
+import { cn } from "../lib/cn";
 import { Badge, Card, EmptyState, ErrorNote, PageHeader, SectionTitle, Skeleton, StatusBadge, Tip, useConfirm, useToast } from "../components/ui";
 import { api } from "../lib/api";
 import { stalledTasks } from "../lib/events";
-import { ago, dateTime, duration, instOf } from "../lib/format";
+import { duration, instOf } from "../lib/format";
 import { useJobs, useNow, useOverview } from "../lib/hooks";
 import { useEvents } from "../lib/live";
 import type { Job } from "../lib/types";
@@ -63,20 +66,6 @@ export function JobActions({ job, onDeleted }: { job: Job; onDeleted?: () => voi
   );
 }
 
-function Segments({ job }: { job: Job }) {
-  const total = Math.max(1, job.tasks.length);
-  const seg = (n: number, cls: string) => (n ? <div className={cls} style={{ width: `${(n / total) * 100}%` }} /> : null);
-  const failed = (job.counts.failed || 0) + (job.counts.timeout || 0) + (job.counts.crashed || 0);
-  return (
-    <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-raised">
-      {seg(job.counts.ok || 0, "bg-ok")}
-      {seg(job.counts.running || 0, "bg-run animate-pulse")}
-      {seg(failed, "bg-fail")}
-      {seg(job.counts.cancelled || 0, "bg-skip/60")}
-    </div>
-  );
-}
-
 /** Running and queued tasks, live: stage strip, elapsed time, stall badge; queue order with why each waits. */
 function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
   const { data } = useOverview();
@@ -91,7 +80,9 @@ function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
         {data.running.length > 0 && (
           <Card className="divide-y divide-line/60">
             {data.running.map((t) => (
-              <Link key={t.id} to={`/jobs/${t.job_id}/${t.id}`} className="block px-4 py-3 hover:bg-raised/50">
+              <Link key={t.id} to={`/jobs/${t.job_id}/${t.id}`} className="flex items-center gap-3.5 px-3 py-3 hover:bg-raised/50">
+                <Cover src={coverUrl.task(t.id, t.current_stage)} seed={t.id} className="h-14 w-20 shrink-0 rounded-lg border border-line/70" />
+                <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
                   <span className="flex items-center gap-2 font-medium">
                     CR {t.cr} <span className="font-normal text-muted">· {t.nflux} fluxons · {instOf(t.adapt)} · {t.method} · {t.profile}</span>
@@ -103,6 +94,7 @@ function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
                   </span>
                 </div>
                 <StageStrip className="mt-2" labels={false} items={t.stages.map((s) => ({ id: s.id, label: s.id, tone: toneOf(s.status) }))} />
+                </div>
               </Link>
             ))}
           </Card>
@@ -121,9 +113,10 @@ function LiveBands({ origins }: { origins: Map<string, Job["origin"]> }) {
         {data.pending.length > 0 && (
           <Card className="divide-y divide-line/60">
             {data.pending.map((t, i) => (
-              <Link key={t.id} to={`/jobs/${t.job_id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] hover:bg-raised/50">
-                <span className="flex min-w-0 items-center gap-2">
+              <Link key={t.id} to={`/jobs/${t.job_id}`} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-raised/50">
+                <span className="flex min-w-0 items-center gap-2.5">
                   <span className="num w-5 text-right text-xs text-faint">{i + 1}</span>
+                  <Cover src={coverUrl.task(t.id)} seed={t.id} className="h-8 w-11 shrink-0 rounded-md border border-line/70" />
                   <span className="shrink-0">CR {t.cr}</span>
                   <span className="truncate text-muted">· {t.nflux} fluxons · {t.method} · {t.profile}</span>
                   <OriginTag origin={t.origin} />
@@ -210,6 +203,98 @@ function ExternalRuns() {
   );
 }
 
+type RunFilter = "all" | "running" | "ok" | "failed" | "cancelled";
+const RUN_FILTERS: { key: RunFilter; label: string; test: (j: Job) => boolean }[] = [
+  { key: "all", label: "All", test: () => true },
+  { key: "running", label: "Active", test: (j) => j.status === "running" || j.status === "pending" },
+  { key: "ok", label: "Succeeded", test: (j) => j.status === "ok" },
+  { key: "failed", label: "Failed", test: (j) => ["failed", "partial", "timeout", "crashed"].includes(j.status) },
+  { key: "cancelled", label: "Cancelled", test: (j) => j.status === "cancelled" },
+];
+
+function loadRunFilter(): RunFilter {
+  try {
+    const v = localStorage.getItem("plumber.runFilter") as RunFilter | null;
+    return v && RUN_FILTERS.some((f) => f.key === v) ? v : "all";
+  } catch {
+    return "all";
+  }
+}
+
+/** Every job as a gallery card with its picture, filterable by status and searchable by preset, rotation or id. */
+function RecentRuns({ jobs, now }: { jobs?: Job[]; now: number }) {
+  const [filter, setFilterState] = useState<RunFilter>(loadRunFilter);
+  const [q, setQ] = useState("");
+  const setFilter = (f: RunFilter) => {
+    setFilterState(f);
+    try {
+      localStorage.setItem("plumber.runFilter", f);
+    } catch {
+      /* per-browser convenience only */
+    }
+  };
+  const visible = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const test = RUN_FILTERS.find((f) => f.key === filter)?.test ?? (() => true);
+    return (jobs ?? []).filter((j) => {
+      if (!test(j)) return false;
+      if (!words.length) return true;
+      const hay = `${j.profile} ${j.id} ${jobSummary(j)} ${j.tasks.map((t) => `cr${t.cr} ${t.cr} ${t.nflux} ${t.method}`).join(" ")} ${j.status}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+  }, [jobs, filter, q]);
+  return (
+    <section className="space-y-3">
+      <SectionTitle title="All runs" hint={jobs ? `${jobs.length} in history` : undefined} />
+      {jobs && jobs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-faint" />
+            <input className="input pl-8 pr-8" placeholder="Search preset, CR, fluxons, method" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search runs" />
+            {q && (
+              <button className="absolute right-2 top-2 text-faint hover:text-ink" aria-label="Clear search" onClick={() => setQ("")}>
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Filter runs by status">
+            {RUN_FILTERS.map((f) => {
+              const n = jobs.filter(f.test).length;
+              return (
+                <button
+                  key={f.key}
+                  role="radio"
+                  aria-checked={filter === f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11.5px] transition-colors",
+                    filter === f.key ? "border-accent/60 bg-accent/15 text-ink" : "border-line text-muted hover:border-faint/60 hover:text-ink",
+                  )}
+                >
+                  {f.label} <span className="num text-faint">{n}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {!jobs ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="aspect-[4/3]" />)}</div>
+      ) : jobs.length === 0 ? (
+        <EmptyState icon={<ListChecks className="h-5 w-5" />} title="No jobs yet" body="Start a run from a preset and it will be tracked here." action={<Link to="/presets" className="btn btn-primary">Choose a preset</Link>} />
+      ) : visible.length === 0 ? (
+        <p className="py-8 text-center text-[13px] text-muted">No runs match.</p>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {visible.map((j) => (
+            <RunCard key={j.id} job={j} now={now} actions={<JobActions job={j} />} className="animate-rise" />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function JobsPage() {
   const { data, error, refetch } = useJobs();
   const now = useNow(5000);
@@ -230,41 +315,7 @@ export function JobsPage() {
       <div className="min-w-0 space-y-6">
       <LiveBands origins={origins} />
       <ExternalRuns />
-      <SectionTitle title="Recent" />
-      {!data ? (
-        <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-20" />)}</div>
-      ) : data.jobs.length === 0 ? (
-        <EmptyState icon={<ListChecks className="h-5 w-5" />} title="No jobs yet" body="Start a run from a preset and it will be tracked here." action={<Link to="/presets" className="btn btn-primary">Choose a preset</Link>} />
-      ) : (
-        <div className="space-y-2.5">
-          {data.jobs.map((j) => {
-            const end = j.ended ?? now;
-            return (
-              <Link key={j.id} to={`/jobs/${j.id}`} className="block focus:outline-none">
-                <Card className="p-4 transition-colors hover:border-faint/50">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="flex items-center gap-2.5 text-[14px] font-semibold">
-                        {j.profile}
-                        <StatusBadge status={j.status} />
-                        <OriginTag origin={j.origin} />
-                      </p>
-                      <p className="mt-1 text-xs text-muted">
-                        {j.tasks.length} task{j.tasks.length === 1 ? "" : "s"} · {dateTime(j.created)} ({ago(j.created, now)}) · {j.started ? duration(end - j.started) : "not started"}
-                        {Object.keys(j.overrides).length > 0 && ` · ${Object.keys(j.overrides).length} override${Object.keys(j.overrides).length === 1 ? "" : "s"}`}
-                      </p>
-                    </div>
-                    <JobActions job={j} />
-                  </div>
-                  <div className="mt-3">
-                    <Segments job={j} />
-                  </div>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      <RecentRuns jobs={data?.jobs} now={now} />
       </div>
       <aside className="min-w-0">
         <SectionTitle title="Activity" hint="Live job events" />

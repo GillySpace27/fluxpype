@@ -1,3 +1,4 @@
+import { Cover, coverUrl } from "./Cover";
 import { Link } from "react-router-dom";
 import { artifactUrl } from "../lib/api";
 import { ago } from "../lib/format";
@@ -24,7 +25,7 @@ export function SameRotation({ task }: { task: TaskState }) {
         <div className="mt-2 divide-y divide-line/50">
           {others.map((r) => (
             <Link key={r.id} to={`/jobs/${r.job_id}/${r.id}`} className="flex items-center gap-3 rounded-lg px-1 py-2 hover:bg-raised/60">
-              <div className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-line bg-raised">{r.thumb && <img src={artifactUrl(r.thumb)} alt="" loading="lazy" className="h-full w-full object-cover" />}</div>
+              <Cover src={r.thumb ? artifactUrl(r.thumb) : coverUrl.task(r.id, r.ended ?? r.status)} seed={r.id} className="h-9 w-12 shrink-0 rounded-md border border-line" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px]">
                   {r.profile} <span className="text-muted">· {r.method} · attempt {r.attempt}</span>

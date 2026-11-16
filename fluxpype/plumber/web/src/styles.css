@@ -132,6 +132,48 @@
   }
 }
 
+/* Cover art stand-in (components/Cover.tsx): FLUX colours, red open north, blue open south, green closed. */
+:root,
+[data-theme="dark"] {
+  --fa-bg-rgb: 9 12 22;
+  --fa-bg: #090c16;
+  --fa-glow: #ff9f43;
+  --fa-disk: #11162a;
+  --fa-limb: #3b4466;
+  --fa-r: #f2746b;
+  --fa-b: #6ea8ff;
+  --fa-g: #4fd39a;
+}
+[data-theme="light"] {
+  --fa-bg-rgb: 232 236 246;
+  --fa-bg: #e8ecf6;
+  --fa-glow: #ff9f43;
+  --fa-disk: #f7f8fc;
+  --fa-limb: #9aa6c8;
+  --fa-r: #d9473d;
+  --fa-b: #2f6fd6;
+  --fa-g: #179b67;
+}
+
+/* A list card that lifts a little under the pointer; the picture zooms slowly. */
+.lift {
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s ease, border-color 0.2s ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 0 rgb(255 255 255 / 0.04) inset, 0 18px 40px -18px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(var(--accent) / 0.25);
+}
+.lift:hover .zoom img {
+  transform: scale(1.035);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lift,
+  .lift:hover,
+  .lift:hover .zoom img {
+    transform: none;
+  }
+}
+
 /* log pane: keep long lines on one row, the pane scrolls sideways */
 .logline {
   white-space: pre;
