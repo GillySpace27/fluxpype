@@ -462,6 +462,10 @@ def test_manifest_and_icons_are_public(client):
     body = m.json()
     assert body["display"] == "standalone" and body["short_name"] == "Plumber (demo)"
     assert {i["sizes"] for i in body["icons"]} == {"192x192", "512x512"}
+    # versioned so installed web apps pick up a new icon, and the versioned URL is still served
+    src = body["icons"][0]["src"]
+    assert "?v=" in src and len(src.split("?v=")[1]) == 10
+    assert client.get(src).status_code == 200
 
 
 def test_custom_cookie_name_keeps_instances_apart(make_scheduler):
