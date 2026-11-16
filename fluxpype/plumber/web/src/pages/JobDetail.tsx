@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Ban, Copy, Sparkles } from "lucide-react";
+import { ArrowLeft, Ban, ChevronLeft, ChevronRight, Copy, Sparkles } from "lucide-react";
+import { Cover, coverUrl } from "../components/Cover";
+import { jobCoverVersion, jobHref, jobSummary } from "../components/RunCard";
 import { openAsk } from "../components/AskBar";
 import { useEffect, useMemo } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -17,7 +19,7 @@ import { Banner, Card, EmptyState, ErrorNote, Skeleton, StatusBadge, StatusIcon,
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { dateTime, duration, instOf, int, num } from "../lib/format";
-import { useJob, useNow, useRelax, useTask, useTaskResults } from "../lib/hooks";
+import { useJob, useJobs, useNow, useRelax, useTask, useTaskResults } from "../lib/hooks";
 import type { Job, Stage, TaskRow, TaskState } from "../lib/types";
 import { JobActions } from "./Jobs";
 
@@ -265,6 +267,10 @@ export function JobDetail() {
   const { id, taskId } = useParams();
   const nav = useNavigate();
   const { data: job, error, refetch } = useJob(id);
+  const { data: all } = useJobs();
+  const at = all?.jobs.findIndex((j) => j.id === id) ?? -1;
+  const newer = at > 0 ? all?.jobs[at - 1] : undefined;
+  const older = at >= 0 ? all?.jobs[at + 1] : undefined;
   const rows = job?.tasks ?? [];
   const selected = useMemo(() => {
     if (!rows.length) return undefined;
@@ -283,18 +289,37 @@ export function JobDetail() {
   return (
     <div className="animate-fade-in space-y-5">
       <div>
-        <Link to="/jobs" className="mb-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
-          <ArrowLeft className="h-3.5 w-3.5" /> Jobs
-        </Link>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <Link to="/jobs" className="inline-flex items-center gap-1 text-xs text-muted hover:text-ink">
+            <ArrowLeft className="h-3.5 w-3.5" /> Runs
+          </Link>
+          {(newer || older) && (
+            <div className="flex items-center gap-1 text-xs">
+              {newer ? (
+                <Link to={jobHref(newer)} className="btn btn-ghost btn-sm" title={`Newer: ${newer.profile}`}>
+                  <ChevronLeft className="h-3.5 w-3.5" /> Newer
+                </Link>
+              ) : null}
+              {older ? (
+                <Link to={jobHref(older)} className="btn btn-ghost btn-sm" title={`Older: ${older.profile}`}>
+                  Older <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+              ) : null}
+            </div>
+          )}
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-3 text-[22px]">
-              {job.profile} <StatusBadge status={job.status} />
-            </h1>
-            <p className="mt-1 text-[13px] text-muted">
-              Started {dateTime(job.created)} · backend {job.backend}
-              {job.extra.scenario && ` · scenario ${job.extra.scenario}`}
-            </p>
+          <div className="flex min-w-0 items-center gap-3.5">
+            <Cover src={coverUrl.job(job.id, jobCoverVersion(job))} seed={job.id} className="hidden h-16 w-24 shrink-0 rounded-xl border border-line/70 shadow-card sm:block" />
+            <div className="min-w-0">
+              <h1 className="flex items-center gap-3 text-[22px]">
+                {job.profile} <StatusBadge status={job.status} />
+              </h1>
+              <p className="mt-1 text-[13px] text-muted">
+                {jobSummary(job)} · started {dateTime(job.created)} · backend {job.backend}
+                {job.extra.scenario && ` · scenario ${job.extra.scenario}`}
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link to={`/jobs/new?from=${job.id}`} className="btn btn-sm">
@@ -315,10 +340,11 @@ export function JobDetail() {
               to={`/jobs/${job.id}/${r.id}`}
               replace
               className={cn(
-                "flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                "flex shrink-0 items-center gap-2 rounded-lg border py-1 pl-1 pr-3 text-xs font-medium transition-colors",
                 r.id === selected?.id ? "border-accent/50 bg-raised text-ink" : "border-line text-muted hover:text-ink",
               )}
             >
+              <Cover src={coverUrl.task(r.id, `${r.status}-${r.ended ?? ""}`)} seed={r.id} className="h-7 w-10 rounded-md" />
               <StatusDot status={r.status} />
               {r.adapt === "scene" ? r.cr : `CR ${r.cr} · ${r.nflux}`}
             </Link>

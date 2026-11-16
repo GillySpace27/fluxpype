@@ -7,6 +7,7 @@ import type { TaskState } from "../lib/types";
 import { PipelineChips } from "./PipelineChips";
 import { Sparkline } from "./Sparkline";
 import { Badge, Card, StatusBadge, Tip } from "./ui";
+import { Cover, coverUrl } from "./Cover";
 
 /** Compact live card for one running task. */
 export function TaskCard({ t }: { t: TaskState }) {
@@ -16,8 +17,10 @@ export function TaskCard({ t }: { t: TaskState }) {
   const cur = t.stages.find((s) => s.id === t.current_stage);
   return (
     <Link to={`/jobs/${t.job_id}/${t.id}`} className="block focus:outline-none">
-      <Card className="group p-4 transition-colors hover:border-faint/50">
+      <Card className="lift group p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+          <Cover src={coverUrl.task(t.id, t.current_stage ?? t.status)} seed={t.id} className="zoom h-12 w-16 shrink-0 rounded-lg border border-line/70" />
           <div className="min-w-0">
             <p className="text-[15px] font-semibold tracking-tight">
               CR {t.cr} <span className="font-normal text-muted">· {t.nflux} fluxons</span>
@@ -29,6 +32,7 @@ export function TaskCard({ t }: { t: TaskState }) {
               <span className="text-faint">·</span>
               <span>{t.method}</span>
             </p>
+          </div>
           </div>
           <div className="flex items-center gap-2">
             {t.degraded && (

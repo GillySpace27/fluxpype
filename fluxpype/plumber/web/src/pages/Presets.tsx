@@ -31,6 +31,7 @@ import { cn } from "../lib/cn";
 import { instOf } from "../lib/format";
 import { fuzzyMatch, type Field, type Match } from "../lib/fuzzy";
 import { DataFolderBanner } from "../components/DataFolder";
+import { Cover, coverUrl } from "../components/Cover";
 import { RunForm, changedOverrides, emptyDraft, jobBody, pickedTasks, type RunDraft } from "../components/RunForm";
 import { useProfile, useProfiles, useStatus } from "../lib/hooks";
 import type { Job, PresetCache, ProfileDetail, ProfileSummary } from "../lib/types";
@@ -456,6 +457,8 @@ function PresetView({ name, presets }: { name: string; presets: ProfileSummary[]
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-4">
+        <Cover src={coverUrl.preset(data.name, presetCoverVersion(summary))} seed={data.name} className="hidden h-[72px] w-28 shrink-0 rounded-xl border border-line/70 shadow-card sm:block" />
         <div className="min-w-0">
           <Link to="/presets" className="mb-2 inline-flex items-center gap-1 text-xs text-muted hover:text-ink md:hidden">
             <ArrowLeft className="h-3.5 w-3.5" /> Presets
@@ -468,6 +471,7 @@ function PresetView({ name, presets }: { name: string; presets: ProfileSummary[]
           <p className="mt-1 text-[13px] text-muted">
             {data.task_count} task{data.task_count === 1 ? "" : "s"} · {data.slots} CPU slot{data.slots === 1 ? "" : "s"} each · batch <span className="font-mono text-xs">{data.batch_name || "?"}</span>
           </p>
+        </div>
         </div>
         <div className="flex items-center gap-2">
           {data.origin === "user" && (
@@ -641,11 +645,66 @@ function loadFilters(): Set<FilterKey> {
   }
 }
 
+/** Changes when a preset's picture could have changed: a new run, or more relaxed worlds on disk. */
+const presetCoverVersion = (p?: Pick<ProfileSummary, "runs" | "cache"> | null) => `${p?.runs?.last_at ?? ""}-${p?.cache?.counts.relaxed_world ?? 0}`;
+
+/** With no preset open, the right side shows every preset as a picture card. */
+function PresetGallery({ presets, onNew }: { presets: ProfileSummary[]; onNew: () => void }) {
+  if (!presets.length)
+    return (
+      <EmptyState
+        icon={<Layers className="h-5 w-5" />}
+        title="No presets match"
+        body="Clear the search or filters, or make your own preset."
+        action={
+          <button className="btn btn-primary" onClick={onNew}>
+            <Plus className="h-4 w-4" /> New preset
+          </button>
+        }
+      />
+    );
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-[11px] uppercase tracking-[0.12em] text-faint">Gallery · pick one to see its tasks, cache and settings</p>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {presets.map((p) => {
+          const rot = p.axes.rotations ?? [];
+          return (
+            <Link key={p.name} to={`/presets/${enc(p.name)}`} className={cn("card lift group flex flex-col overflow-hidden focus:outline-none animate-rise", p.hidden && "opacity-60")}>
+              <Cover src={coverUrl.preset(p.name, presetCoverVersion(p))} seed={p.name} className="zoom aspect-[16/9] border-b border-line/60">
+                <div className="absolute left-2 top-2 flex gap-1.5">
+                  {p.origin === "user" ? <Badge tone="accent" className="bg-black/55 backdrop-blur-sm">yours</Badge> : <Badge className="bg-black/55 text-white/80 backdrop-blur-sm">built-in</Badge>}
+                </div>
+                {p.runs && p.runs.ok > 0 && (
+                  <span className="absolute right-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-medium text-white/90 backdrop-blur-sm">ran {p.runs.ok}x</span>
+                )}
+              </Cover>
+              <div className="flex flex-1 flex-col gap-1.5 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[14px] font-semibold tracking-tight">{p.name}</p>
+                  {p.errors.length > 0 ? <Badge tone="fail">can't run</Badge> : <Badge>{p.task_count} task{p.task_count === 1 ? "" : "s"}</Badge>}
+                </div>
+                <p className="truncate text-xs text-muted">
+                  {rot.length ? `CR ${rot.slice(0, 3).join(", ")}${rot.length > 3 ? "..." : ""}` : "no rotations"} · {p.axes.fluxon_count?.join(", ") || "?"} fluxons
+                  {p.axes.adapts?.length ? ` · ${[...new Set(p.axes.adapts.map((a) => instOf(a)))].join(", ")}` : ""}
+                </p>
+                {p.errors.length === 0 && p.cache && <CacheBar cache={p.cache} className="mt-auto pt-1.5" />}
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PresetTile({ p, selected, match }: { p: ProfileSummary; selected: boolean; match?: Match | null }) {
   const rot = p.axes.rotations ?? [];
   return (
     <Link to={`/presets/${enc(p.name)}`} className="block focus:outline-none">
-      <Card className={cn("p-3.5 transition-colors hover:border-faint/50", selected && "border-accent/50 bg-raised/40", p.hidden && "opacity-60")}>
+      <Card className={cn("lift group flex gap-3 p-2.5", selected && "border-accent/50 bg-raised/40", p.hidden && "opacity-60")}>
+        <Cover src={coverUrl.preset(p.name, presetCoverVersion(p))} seed={p.name} className="zoom h-[60px] w-[76px] shrink-0 self-start rounded-lg border border-line/70" />
+        <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <p className="flex min-w-0 items-center gap-1.5 truncate text-[13.5px] font-semibold">
             <span className="truncate">{p.name}</span>
@@ -666,8 +725,9 @@ function PresetTile({ p, selected, match }: { p: ProfileSummary; selected: boole
         {p.errors.length > 0 ? (
           <p className="mt-2 line-clamp-2 text-[11.5px] leading-snug text-fail/90">{p.errors[0]}</p>
         ) : (
-          p.cache && <CacheBar cache={p.cache} className="mt-3 border-t border-line/50 pt-2.5" />
+          p.cache && <CacheBar cache={p.cache} className="mt-2.5 border-t border-line/50 pt-2" />
         )}
+        </div>
       </Card>
     </Link>
   );
@@ -820,16 +880,7 @@ export function PresetsPage() {
           {name ? (
             <PresetView name={name} presets={presets} />
           ) : (
-            <EmptyState
-              icon={<Layers className="h-5 w-5" />}
-              title="Select a preset"
-              body="Choose one on the left to see its tasks, what is already cached, and its settings. Or make your own."
-              action={
-                <button className="btn btn-primary" onClick={() => setCreating(true)}>
-                  <Plus className="h-4 w-4" /> New preset
-                </button>
-              }
-            />
+            data ? <PresetGallery presets={visible} onNew={() => setCreating(true)} /> : <Skeleton className="h-64" />
           )}
         </div>
       </div>
