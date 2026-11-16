@@ -4,18 +4,43 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  release:
-    types: [created]    
   workflow_dispatch:
 
-jobs:
-  validation:
-    uses: microsoft/action-python/.github/workflows/validation.yml@0.7.3
-    with:
-      workdir: '.'
+# Replaces microsoft/action-python@0.7.3, whose pinned Python 3.11.3 no longer
+# exists on the ubuntu-latest runner (every job failed at setup-python). Its
+# publish job pushed an RC to PyPI on every push to main; fluxpype has never
+# reached PyPI, so publishing is left to the manual publish.yml.
 
-  publish:
-    uses: microsoft/action-python/.github/workflows/publish.yml@0.7.3
-    secrets:
-      PYPI_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-      TEST_PYPI_PASSWORD: ${{ secrets.TEST_PYPI_PASSWORD  }}
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[plumber,mcp]" pytest pytest-cov
+      - name: pytest
+        run: python -m pytest -q
+
+  black:
+    # Advisory until the repo-wide reformat (PR #50) lands.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install black
+      - run: |
+          set -o pipefail
+          black --check --diff . | tail -n 50

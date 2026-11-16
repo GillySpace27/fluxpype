@@ -171,7 +171,8 @@ sub make_world_from_pfss {
         ## Define a blank world ###############################
         my @flines = ();
         my $world = ();
-        my $xform = !t_spherical() x t_scale([3.14159/180,3.14159/180,1]);
+        # Python pfss output is (lon, lat, r) in degrees; scale to radians for t_spherical
+        my $xform = !t_spherical() x t_scale([3.14159/180, 3.14159/180, 1]);
 
 
         ## Generate open fieldlines ####################################
@@ -248,7 +249,7 @@ sub make_world_from_pfss {
                 if ($print_debug) {print "Extended open: $open\n";}
             }
 
-            $print_debug = 0;
+            $print_debug = 1;
             if ($extend_up) {
                 if ($print_debug) {print "EXTEND UP\n";}
                 # Deep copy of the last column
@@ -347,8 +348,8 @@ sub make_world_from_pfss {
 
     ## Generate the world  ############################################
         print "\n\tGenerating the Initial World...\n \n";
-        my $fbg = make_world_sphere(@flines, {rmax=>21.5});
-        # my $fbg = make_world_sphere(@flines, {rmax=>215});
+        # my $fbg = make_world_sphere(@flines, {rmax=>21.5});
+        my $fbg = make_world_sphere(@flines, {rmax=>199});
 
         $world = str2world($fbg);
 

@@ -1,0 +1,80 @@
+{
+ "job:new_job": [
+  "job_queued|info|job_queued|j1a2b3c4d|{\"backend\": \"fake\", \"tasks\": 2}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:new_job_already_ok": [
+  "job_queued|info|job_queued|j1a2b3c4d|{\"backend\": \"fake\", \"tasks\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}",
+  "job_ok|success|job_end|j1a2b3c4d|1|{\"cancelled\": 0, \"crashed\": 0, \"failed\": 0, \"ok\": 1, \"timeout\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:ok_to_ok": [],
+ "job:partial_to_pending_retry": [],
+ "job:pending_to_cancelled": [
+  "job_cancelled|info|job_end|j1a2b3c4d|1|{\"cancelled\": 1, \"crashed\": 0, \"failed\": 0, \"ok\": 0, \"timeout\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:pending_to_running": [],
+ "job:retry_ends_ok": [
+  "job_ok|success|job_end|j1a2b3c4d|2|{\"cancelled\": 0, \"crashed\": 0, \"failed\": 0, \"ok\": 2, \"timeout\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:running_to_failed": [
+  "job_failed|error|job_end|j1a2b3c4d|1|{\"cancelled\": 0, \"crashed\": 1, \"failed\": 1, \"ok\": 0, \"timeout\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:running_to_ok": [
+  "job_ok|success|job_end|j1a2b3c4d|1|{\"cancelled\": 0, \"crashed\": 0, \"failed\": 0, \"ok\": 2, \"timeout\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "job:running_to_partial": [
+  "job_partial|error|job_end|j1a2b3c4d|1|{\"cancelled\": 0, \"crashed\": 0, \"failed\": 1, \"ok\": 1, \"timeout\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:bad_origin_dropped": [
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0}|{}"
+ ],
+ "task:failed_to_pending_retry": [],
+ "task:forged_stage_dropped": [
+  "task_failed|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 1, \"reason\": \"exit\"}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:mcp_origin_session": [
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0}|{\"kind\": \"mcp\", \"session\": \"abc123def456\"}"
+ ],
+ "task:never_seen_to_ok": [
+  "task_started|info|task_started|j1a2b3c4d-01|1|{\"attempt\": 1}|{}",
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0}|{}"
+ ],
+ "task:new_pending": [],
+ "task:pending_to_cancelled": [
+  "task_cancelled|info|task_end|j1a2b3c4d-01|1|{\"attempt\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:pending_to_failed_submit": [
+  "task_failed|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"reason\": \"submit\"}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:pending_to_ok_caught_up": [
+  "task_started|info|task_started|j1a2b3c4d-01|1|{\"attempt\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}",
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:pending_to_running": [
+  "task_started|info|task_started|j1a2b3c4d-01|1|{\"attempt\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:retry_to_running": [
+  "task_started|info|task_started|j1a2b3c4d-01|2|{\"attempt\": 2}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_cancelled": [
+  "task_cancelled|info|task_end|j1a2b3c4d-01|1|{\"attempt\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_crashed": [
+  "task_crashed|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_failed_exit": [
+  "task_failed|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 1, \"reason\": \"exit\", \"stage\": \"pfss\"}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_failed_swallowed": [
+  "task_failed|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0, \"reason\": \"stage\", \"stage\": \"pfss\"}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_ok": [
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_ok_launcher_lost": [
+  "task_ok|success|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 0, \"launcher_lost\": 1}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ],
+ "task:running_to_running": [],
+ "task:running_to_timeout": [
+  "task_timeout|error|task_end|j1a2b3c4d-01|1|{\"attempt\": 1, \"exit\": 124}|{\"kind\": \"web\", \"tab\": \"a1b2c3d4e5f6\"}"
+ ]
+}
