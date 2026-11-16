@@ -35,6 +35,7 @@ Dependencies:
 import os
 import os.path as path
 import argparse
+
 # import matplotlib as mpl; mpl.use("qt5agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,10 +44,30 @@ import numpy as np
 from fluxpype.science.pfss_funcs import pixel_to_latlon
 from fluxpype.pipe_helper import configurations, load_fits_magnetogram, load_magnetogram_params, shorten_path, get_ax
 
-def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=None, force=False, reduce_amt=0,
-                nact=0, nwant=None, do_print_top=False, ax=None, verb=True, ext="png",
-                plot_all=True, plot_open=True, do_print=False, vmin=-500, vmax=500, configs=None, legend=False):
-    """ The primary function for plotting the magnetogram with footpoints
+
+def magnet_plot(
+    get_cr=None,
+    datdir=None,
+    _batch=None,
+    open_f=None,
+    closed_f=None,
+    force=False,
+    reduce_amt=0,
+    nact=0,
+    nwant=None,
+    do_print_top=False,
+    ax=None,
+    verb=True,
+    ext="png",
+    plot_all=True,
+    plot_open=True,
+    do_print=False,
+    vmin=-500,
+    vmax=500,
+    configs=None,
+    legend=False,
+):
+    """The primary function for plotting the magnetogram with footpoints
 
     Parameters
     ----------
@@ -100,7 +121,6 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
         print("(py) Plotting Magnetic Field Maps")
         print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-
     if do_print_top:
         print("\tMaking Magnetogram with Footpoints...")
 
@@ -108,9 +128,9 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
         datdir = datdir or configs.get("data_dir", None)
         _batch = _batch or configs.get("batch_name", None)
         get_cr = get_cr or configs.get("cr", None)
-        nwant = nwant   or configs.get("nwant", None)
+        nwant = nwant or configs.get("nwant", None)
         reduce_amt = reduce_amt or configs.get("mag_reduce", None)
-        if configs['adapt']:
+        if configs["adapt"]:
             inst = "adapt"
             reduce_amt = "f" + str(configs.get("adapt_select"))
         else:
@@ -119,19 +139,17 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
         print("No configs given!")
         raise ValueError
 
-
     # Define the directory paths for the files
     floc_path = f"{datdir}/batches/{_batch}/data/cr{get_cr}/floc/"
-    top_dir   = f"{datdir}/batches/{_batch}/imgs/footpoints/"
+    top_dir = f"{datdir}/batches/{_batch}/imgs/footpoints/"
     if not path.exists(top_dir):
         os.makedirs(top_dir)
 
-
     # Define the file names with their complete paths
-    open_file   = open_f     or   f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
-    closed_file = closed_f   or   f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    open_file = open_f or f"{floc_path}floc_open_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
+    closed_file = closed_f or f"{floc_path}floc_closed_cr{get_cr}_r{reduce_amt}_f{nwant}_{inst}.dat"
     magnet_file = f"{datdir}/magnetograms/CR{get_cr}_r{reduce_amt}_{inst}.fits"
-    all_file    = closed_file.replace("closed_", "")
+    all_file = closed_file.replace("closed_", "")
     fname = magnet_file
 
     # Load the data
@@ -154,15 +172,14 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
     rtol = 0.01
     get_r = 1.0
 
-    #Open fields
+    # Open fields
     oflnum_low = oflnum[np.isclose(orad, get_r, rtol)]
-    oflx_low =     oflx[np.isclose(orad, get_r, rtol)]
-    olat_low =     olat[np.isclose(orad, get_r, rtol)]
-    olon_low =     olon[np.isclose(orad, get_r, rtol)]
+    oflx_low = oflx[np.isclose(orad, get_r, rtol)]
+    olat_low = olat[np.isclose(orad, get_r, rtol)]
+    olon_low = olon[np.isclose(orad, get_r, rtol)]
 
     # Closed fields
     cflnum_low = cflnum[np.isclose(crad, get_r, rtol)]
-
 
     # Convert to radians
     ph_olow, th_olow = np.sin(np.deg2rad(olat_low)), np.deg2rad(olon_low)
@@ -171,11 +188,11 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
     _n_open = int(np.max(oflnum_low))
     _n_closed = int(np.max(cflnum_low))
     _n_flux = _n_open + _n_closed
-    _n_outliers = np.abs(_fnum-_n_flux)
+    _n_outliers = np.abs(_fnum - _n_flux)
 
     # Define the file name for the plot
-    pic_name = f'cr{get_cr}_f{nwant}_ou{_n_open}_footpoints_topology.{ext}'
-    fluxon_map_output_path =   path.join(floc_path, pic_name)
+    pic_name = f"cr{get_cr}_f{nwant}_ou{_n_open}_footpoints_topology.{ext}"
+    fluxon_map_output_path = path.join(floc_path, pic_name)
     fluxon_map_output_path_top = path.join(top_dir, pic_name)
 
     # Check if the plot already exists
@@ -194,8 +211,18 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
 
         # ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
         #         extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=5, alpha=0.8)
-        ax0.imshow(magnet, cmap='gray', interpolation=None, origin="lower",
-                extent=(0,2*np.pi,-1,1), aspect='auto', vmin=vmin, vmax=vmax, zorder=-5, alpha=1)
+        ax0.imshow(
+            magnet,
+            cmap="gray",
+            interpolation=None,
+            origin="lower",
+            extent=(0, 2 * np.pi, -1, 1),
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+            zorder=-5,
+            alpha=1,
+        )
         # # Plot all the fluxons
         # Filter positive and negative cases
         positive_indices = [i for i, s in enumerate(f_sgn) if s > 0]
@@ -209,10 +236,10 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
 
         if plot_all:
             # Plot positive cases with labels
-            ax0.scatter(f_lon_positive, f_lat_positive, s=3**2, c='orange', alpha=0.6, label='Positive')
+            ax0.scatter(f_lon_positive, f_lat_positive, s=3**2, c="orange", alpha=0.6, label="Positive")
 
             # Plot negative cases with labels
-            ax0.scatter(f_lon_negative, f_lat_negative, s=3**2, c='teal', alpha=0.6, label='Negative')
+            ax0.scatter(f_lon_negative, f_lat_negative, s=3**2, c="teal", alpha=0.6, label="Negative")
 
         # Filter positive and negative cases for open fluxons
         positive_indices = [i for i, s in enumerate(oflx_low) if s > 0]
@@ -225,22 +252,26 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
         ph_olow_negative = [ph_olow[i] for i in negative_indices]
 
         if plot_open:
-            ax0.scatter(th_olow_positive, ph_olow_positive, s=5**2, c='red', alpha=1.0, label='Positive (Open)', edgecolors='k')
-            ax0.scatter(th_olow_negative, ph_olow_negative, s=5**2, c='blue', alpha=1.0, label='Negative (Open)', edgecolors='k')
+            ax0.scatter(
+                th_olow_positive, ph_olow_positive, s=5**2, c="red", alpha=1.0, label="Positive (Open)", edgecolors="k"
+            )
+            ax0.scatter(
+                th_olow_negative, ph_olow_negative, s=5**2, c="blue", alpha=1.0, label="Negative (Open)", edgecolors="k"
+            )
 
         if legend:
             ax0.legend(fontsize="small", loc="upper left", framealpha=0.75)
 
         if ax is None:
-            shp = magnet.shape #pixels
-            plt.axis('off')
-            sz0=6 #inches
-            ratio = shp[1]/shp[0]
-            sz1=sz0*ratio #inches
-            DPI = shp[1] / sz1 #pixels/inch
+            shp = magnet.shape  # pixels
+            plt.axis("off")
+            sz0 = 6  # inches
+            ratio = shp[1] / shp[0]
+            sz1 = sz0 * ratio  # inches
+            DPI = shp[1] / sz1  # pixels/inch
             fig.set_size_inches((sz1, sz0))
             plt.tight_layout()
-            plt.savefig(fluxon_map_output_path_top, bbox_inches='tight', dpi=4*DPI)
+            plt.savefig(fluxon_map_output_path_top, bbox_inches="tight", dpi=4 * DPI)
             # plt.show()
             plt.close(fig)
     else:
@@ -265,18 +296,16 @@ def magnet_plot(get_cr=None, datdir=None, _batch=None, open_f=None, closed_f=Non
 
 if __name__ == "__main__":
     # Create the argument parser
-    parser = argparse.ArgumentParser(description=
-            'This script plots the expansion factor of the given radial_fr.dat')
-    parser.add_argument('--cr', type=int, default=2205, help='Carrington Rotation')
-    parser.add_argument('--file', type=str, default=None, help='Data File Name')
-    parser.add_argument('--nwant', type=int, default=None, help='Number of Fluxons')
-    parser.add_argument('--open', type=str, default=None)
-    parser.add_argument('--closed', type=str, default=None)
-    parser.add_argument('--adapt', type=str, default=None)
+    parser = argparse.ArgumentParser(description="This script plots the expansion factor of the given radial_fr.dat")
+    parser.add_argument("--cr", type=int, default=2205, help="Carrington Rotation")
+    parser.add_argument("--file", type=str, default=None, help="Data File Name")
+    parser.add_argument("--nwant", type=int, default=None, help="Number of Fluxons")
+    parser.add_argument("--open", type=str, default=None)
+    parser.add_argument("--closed", type=str, default=None)
+    parser.add_argument("--adapt", type=str, default=None)
 
     args = parser.parse_args()
     configs = configurations(debug=False, args=args)
-
 
     # Run the code
     # (hdr, cr, fname, adapt, doplot, reduce) = load_magnetogram_params(args.dat_dir)

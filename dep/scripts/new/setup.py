@@ -5,6 +5,7 @@ import os
 import sys
 import shutil
 
+
 class CustomInstallCommand(install):
     """Customized setuptools install command - installs FLUX directly."""
 

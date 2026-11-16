@@ -3,6 +3,7 @@
 # Import libraries
 import numpy
 
+
 def rdworld(filename):
 
     # Some quick testing on storing this data in a class object
@@ -52,7 +53,7 @@ def rdworld(filename):
     w = world()
 
     # Now actually go about reading the data
-    df = open(filename, 'r')
+    df = open(filename, "r")
 
     # Initialize data storage
     ln_id = []
@@ -77,12 +78,12 @@ def rdworld(filename):
             continue
 
         # Read out flux concentrations
-        if sl[0] == 'NEW':
+        if sl[0] == "NEW":
             w.add_fc(int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5]))
 
         # Read out fluxon data
-        if sl[0] == 'LINE':
-            if int(sl[1])>0:
+        if sl[0] == "LINE":
+            if int(sl[1]) > 0:
                 ln_id.append(int(sl[1]))
                 ln_fc0.append(int(sl[4]))
                 ln_fc1.append(int(sl[5]))
@@ -91,7 +92,7 @@ def rdworld(filename):
                 ln_r1.append([numpy.double(sl[10]), numpy.double(sl[11]), numpy.double(sl[12])])
 
         # Read out vertex points
-        if sl[0] == 'VERTEX':
+        if sl[0] == "VERTEX":
             vx_lid.append(int(sl[1]))
             vx_id.append(int(sl[2]))
             vx_pos.append(int(sl[3]))
@@ -100,13 +101,13 @@ def rdworld(filename):
             vx_z.append(numpy.double(sl[6]))
 
         # Exit on neighbor information
-        if 'VNEIGHBOR' in sl[0]:
+        if "VNEIGHBOR" in sl[0]:
             break
 
     df.close()
 
     # Convert lists into numpy arrays
-    ln_id  = numpy.array(ln_id)
+    ln_id = numpy.array(ln_id)
     ln_fc0 = numpy.array(ln_fc0)
     ln_fc1 = numpy.array(ln_fc1)
     ln_fl = numpy.array(ln_fl)
@@ -125,9 +126,20 @@ def rdworld(filename):
         wl = numpy.where(ln_id == lid)[0]
         wv = numpy.where(vx_lid == lid)[0]
 
-        w.add_fx(lid, ln_fc0[wl][0], ln_fc1[wl][0], ln_fl[wl][0], ln_r0[wl,:][0].tolist(), ln_r1[wl,:][0].tolist(), vx_x[wv].tolist(), vx_y[wv].tolist(), vx_z[wv].tolist())
+        w.add_fx(
+            lid,
+            ln_fc0[wl][0],
+            ln_fc1[wl][0],
+            ln_fl[wl][0],
+            ln_r0[wl, :][0].tolist(),
+            ln_r1[wl, :][0].tolist(),
+            vx_x[wv].tolist(),
+            vx_y[wv].tolist(),
+            vx_z[wv].tolist(),
+        )
 
     return w
+
 
 # A quick comment on reading FLUX output world files:
 

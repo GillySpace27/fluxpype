@@ -22,8 +22,7 @@ import urllib.request
 BASE_URL = "https://gong.nso.edu/adapt/maps/gong"
 
 _NAME = re.compile(
-    r"(adapt4(?P<lon>\d)(?P<src>\d)(?P<da>\d)(?P<res>\d)_\w{6}_"
-    r"(?P<stamp>\d{12})_\w\d{8}\w\d\.fts\.gz)"
+    r"(adapt4(?P<lon>\d)(?P<src>\d)(?P<da>\d)(?P<res>\d)_\w{6}_" r"(?P<stamp>\d{12})_\w\d{8}\w\d\.fts\.gz)"
 )
 
 

@@ -7,6 +7,7 @@ import multiprocessing
 
 configs = configurations(debug=False)
 
+
 def ask_for_cores():
     max_cores = multiprocessing.cpu_count()
     print(f"Your machine has {max_cores} cores available.")
@@ -20,6 +21,7 @@ def ask_for_cores():
     except ValueError:
         print("Please enter a valid number.")
         return ask_for_cores()
+
 
 @timeout_decorator.timeout(600)  # Set a 600-second timeout for each subprocess call
 def run_pdl_script(params):
@@ -38,6 +40,7 @@ def run_pdl_script(params):
     except Exception as e:
         return ("Error", rot, nflux, f"\033[91m[Error {rot}, {nflux}, {adapt}: {e}]\033[0m")
 
+
 def run_parallel(n_cores):
     tasks = []
 
@@ -53,6 +56,7 @@ def run_parallel(n_cores):
         for future in tqdm(as_completed(futures), total=len(tasks), unit="run"):
             result = future.result()
             print(result[3])  # Print the colored and identified result
+
 
 if __name__ == "__main__":
     n_cores = ask_for_cores()

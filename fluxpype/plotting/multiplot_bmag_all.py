@@ -57,7 +57,7 @@ def load_zephyr():
     """
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "zephyr_2007_2013.sav")
+    file_path = os.path.join(script_dir, "zephyr_2007_2013.sav")
 
     # Load the SAV file
     data = readsav(file_path)
@@ -75,7 +75,7 @@ def sunspotplot(ax3, crlist=None):
     """
     # Determine the directory of the *current* script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path  = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
+    file_path = os.path.join(script_dir, "SN_m_tot_V2.0.tsv")
 
     # Load sunspot data (transpose as in your original code)
     carrington = np.loadtxt(file_path).T
@@ -86,13 +86,13 @@ def sunspotplot(ax3, crlist=None):
 
     # Mark the Carrington rotation time for args.cr
     this_date = sunpy.coordinates.sun.carrington_rotation_time(args.cr)
-    ax3.axvline(this_date.decimalyear, ls="--", c='k', zorder=1000000)
+    ax3.axvline(this_date.decimalyear, ls="--", c="k", zorder=1000000)
 
     # If multiple CRs were passed, mark each one
     if crlist:
         for cr in crlist:
             cr_date = sunpy.coordinates.sun.carrington_rotation_time(cr)
-            ax3.axvline(cr_date.decimalyear, ls=":", c='k', zorder=1000000)
+            ax3.axvline(cr_date.decimalyear, ls=":", c="k", zorder=1000000)
 
     # Plot sunspot data
     ax3.plot(date, sunspots, label="Sunspots")
@@ -101,6 +101,7 @@ def sunspotplot(ax3, crlist=None):
     ax3.set_title("Solar Cycle Phase")
     ax3.set_xlim(2005, 2025)
     ax3.set_ylim(0, 200)
+
 
 def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=False):
     """
@@ -115,8 +116,13 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
 
     # Parse the arguments and directories
     batch = args.batch
-    relaxed_filename = args.file or f'{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat'
-    stiff_filename = f'{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_stiff_radial_bmag_all.dat'
+    relaxed_filename = (
+        args.file
+        or f"{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat"
+    )
+    stiff_filename = (
+        f"{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_stiff_radial_bmag_all.dat"
+    )
 
     if do_stiff:
         filename = stiff_filename
@@ -130,7 +136,6 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
         os.makedirs(bmagdir)
     bmagname = os.path.join(bmagdir, imagename)
 
-
     # Using GridSpec for layout
     fig = plt.figure(figsize=(10, 12))  # Adjust the figure size as needed
     gs = gridspec.GridSpec(2, 1, height_ratios=[4, 1])  # Adjust the ratios as per your requirement
@@ -143,7 +148,6 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
     ax2 = ax1.twinx()
     # Make ax2 and ax1 share the same y axis
 
-
     # Sunspot Number plot
     ax3 = plt.subplot(gs[1])
 
@@ -151,70 +155,83 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
     blabel = "Expansion Factor $F_r$"
     tlabel = r"Latitude [Radians]"
 
-    ax1.set_xlabel(r'Height above Photosphere [r/R$_\odot$-1]')
-    ax1.set_ylabel(alabel, color='r')
-    ax1.tick_params(axis='y', labelcolor='r')
-    ax1.set_yscale('log')
-    ax1.set_xscale('log')
+    ax1.set_xlabel(r"Height above Photosphere [r/R$_\odot$-1]")
+    ax1.set_ylabel(alabel, color="r")
+    ax1.tick_params(axis="y", labelcolor="r")
+    ax1.set_yscale("log")
+    ax1.set_xscale("log")
     # ax1.set_ylim(10**(-3), 10**3)
 
     # Create a second y-axis for the expansion data
-    ax2.set_yscale('log')
-    ax2.set_xscale('log')
-    ax2.set_ylim(10**(-4), 10**4)
+    ax2.set_yscale("log")
+    ax2.set_xscale("log")
+    ax2.set_ylim(10 ** (-4), 10**4)
 
-    ax2.set_ylabel(blabel, color='b', )
-    ax2.tick_params(axis='y', labelcolor='b')
+    ax2.set_ylabel(
+        blabel,
+        color="b",
+    )
+    ax2.tick_params(axis="y", labelcolor="b")
 
     # Load the dat file
     arr = np.loadtxt(filename, skiprows=1).T
-    nfluxon = int(arr[0,:].max())
+    nfluxon = int(arr[0, :].max())
 
     sunspotplot(ax3)
 
     # Plot the Curves
     for i in np.arange(0, nfluxon):
-        floc = np.where(arr[0,:] == i)[0]
+        floc = np.where(arr[0, :] == i)[0]
         rr = arr[4, floc]
 
-        expansion = arr[7,floc]
-        field_coord = arr[8,floc]
-        field_value = arr[9,floc]
+        expansion = arr[7, floc]
+        field_coord = arr[8, floc]
+        field_value = arr[9, floc]
 
         # ax1.plot(rr-1, field_coord, c=plt.cm.Reds(i / nfluxon), label="FLUX bmag" if i == nfluxon-1 else "", alpha=0.8)
-        ax1.plot(rr-1, field_value, c=plt.cm.Greens(i / nfluxon), label="FLUX |B|" if i == 3*nfluxon//4 else "", alpha=0.8)
-        ax1.plot(rr-1, expansion, c=plt.cm.Blues(i / nfluxon), label=blabel if i == 3*nfluxon//4 else "", alpha=0.8,  zorder=-2000)
-
-
-
+        ax1.plot(
+            rr - 1,
+            field_value,
+            c=plt.cm.Greens(i / nfluxon),
+            label="FLUX |B|" if i == 3 * nfluxon // 4 else "",
+            alpha=0.8,
+        )
+        ax1.plot(
+            rr - 1,
+            expansion,
+            c=plt.cm.Blues(i / nfluxon),
+            label=blabel if i == 3 * nfluxon // 4 else "",
+            alpha=0.8,
+            zorder=-2000,
+        )
 
     zephyr = load_zephyr()
-    ax1.plot(zephyr['rx']-1, zephyr['br'][0], 'r', label='ZEPHYR |B|', zorder = -1001)
+    ax1.plot(zephyr["rx"] - 1, zephyr["br"][0], "r", label="ZEPHYR |B|", zorder=-1001)
     # ax1.plot(zephyr['rx']-1, zephyr['br'].T, cmap=plt.cm.Reds, zorder = -10)
     # Prepare data for LineCollection
     from matplotlib.collections import LineCollection
-    n_zep = zephyr['br'].shape[0]
-    lines = [np.column_stack([zephyr['rx']-1, zephyr['br'][i]]) for i in range(n_zep)]
-    line_segments = LineCollection(lines, cmap='Reds', array=np.arange(n_zep), alpha=0.8, zorder=-1000)
+
+    n_zep = zephyr["br"].shape[0]
+    lines = [np.column_stack([zephyr["rx"] - 1, zephyr["br"][i]]) for i in range(n_zep)]
+    line_segments = LineCollection(lines, cmap="Reds", array=np.arange(n_zep), alpha=0.8, zorder=-1000)
 
     # Add LineCollection to the plot
     ax1.add_collection(line_segments)
 
-
     ax1.legend()
-    fig.suptitle(F"Carrington Rotation {args.cr}, with {nfluxon} Open Fields")
+    fig.suptitle(f"Carrington Rotation {args.cr}, with {nfluxon} Open Fields")
     # ax0.set_title(F"Field Strength and Origin at r = {r1:.2f} Rs")
-    ax1.set_title(F"Magnetic Field Strength and Expansion Factor")
+    ax1.set_title(f"Magnetic Field Strength and Expansion Factor")
 
     # ax0.set_xlabel('Longitude (Radians)')
     # ax0.set_ylabel('Sine latitude')
 
     # Adjust layout
-    ax1.set_xlim(10**(-2.5), 10**2.5)
-    ax1.set_ylim(10**(-4), 10**4)
+    ax1.set_xlim(10 ** (-2.5), 10**2.5)
+    ax1.set_ylim(10 ** (-4), 10**4)
     ax1.grid(True)
     ax2.grid(True)
-    fig.set_size_inches((7,7))
+    fig.set_size_inches((7, 7))
     plt.tight_layout()
     # print(" " + bmagname)
     plt.savefig(bmagname)
@@ -228,7 +245,8 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
 import cv2
 import os
 
-def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec='XVID', ttype="png"):
+
+def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec="XVID", ttype="png"):
     """
     Create a video from a sequence of images in a folder.
 
@@ -267,12 +285,12 @@ def create_video_from_images(image_folder, video_name, frame_rate=3.0, codec='XV
 
 def run_plots(args, times=0):
     maxlist = None
-    for rr in np.arange(times+1):
+    for rr in np.arange(times + 1):
         tried = True
         try:
             bmagfull, maxlist = multiplot_bmag_all(args, rr, maxlist=maxlist)
             bmagdir = os.path.dirname(bmagfull)
-            bmagfile= os.path.basename(bmagfull)
+            bmagfile = os.path.basename(bmagfull)
             if rr == 0:
                 new_dir = os.path.join(bmagdir, "../..", "bottom")
                 if not os.path.exists(new_dir):
@@ -297,15 +315,16 @@ if __name__ == "__main__":
 
     configs = configurations()
 
-    parser = argparse.ArgumentParser(description=
-                            'This script plots the expansion factor of the given radial_bmag_all.dat')
-    parser.add_argument('--cr',     type=int, default=None,    help='Carrington Rotation')
-    parser.add_argument('--dat_dir',type=str, default=configs["data_dir"],        help='data directory')
-    parser.add_argument('--batch',  type=str, default=configs["batch_name"],      help='select the batch name')
-    parser.add_argument('--nwant',  type=int, default=configs["fluxon_count"][0], help='magnetogram file')
-    parser.add_argument('--show',   type=int, default=0)
-    parser.add_argument('--file',   type=str, default=None)
-    parser.add_argument('--adapt',  type=int, default=0,           help='Use ADAPT magnetograms')
+    parser = argparse.ArgumentParser(
+        description="This script plots the expansion factor of the given radial_bmag_all.dat"
+    )
+    parser.add_argument("--cr", type=int, default=None, help="Carrington Rotation")
+    parser.add_argument("--dat_dir", type=str, default=configs["data_dir"], help="data directory")
+    parser.add_argument("--batch", type=str, default=configs["batch_name"], help="select the batch name")
+    parser.add_argument("--nwant", type=int, default=configs["fluxon_count"][0], help="magnetogram file")
+    parser.add_argument("--show", type=int, default=0)
+    parser.add_argument("--file", type=str, default=None)
+    parser.add_argument("--adapt", type=int, default=0, help="Use ADAPT magnetograms")
     args = parser.parse_args()
 
     if len(configs["rotations"]) > 1:

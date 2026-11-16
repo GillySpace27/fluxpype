@@ -50,6 +50,7 @@ class Fluxon:
     computed cross-sectional areas, and radial distances. Also determines whether the fluxon
     is open, closed, or of another type based on its endpoints.
     """
+
     def __init__(self, fid, start_fc, end_fc, flux, x_coords, y_coords, z_coords):
         """
         Initialize a Fluxon object.
@@ -127,6 +128,7 @@ class Fluxon:
                                                will be interpolated onto the fluxon's internal radius grid (self.radius).
         """
         import numpy as np
+
         if raw_radius is not None:
             # Interpolate the provided area data onto the fluxon's internal radius grid.
             areas = np.interp(self.radius, raw_radius, areas, left=areas[0], right=areas[-1])
@@ -188,6 +190,7 @@ class Fluxon:
 
         fr = (A / A[1]) * ((r[1] ** 2) / (r**2))
         return fr
+
 
 class FluxWorld:
     # Class-level cache so multiple FluxWorld instances for the same file
@@ -357,9 +360,7 @@ class FluxWorld:
                     if np.linalg.norm(radial_vec) < 1e-12 or np.linalg.norm(seg_vec) < 1e-12:
                         angle = 0.0
                     else:
-                        cos_theta = np.dot(radial_vec, seg_vec) / (
-                            np.linalg.norm(radial_vec) * np.linalg.norm(seg_vec)
-                        )
+                        cos_theta = np.dot(radial_vec, seg_vec) / (np.linalg.norm(radial_vec) * np.linalg.norm(seg_vec))
                         cos_theta = np.clip(cos_theta, -1.0, 1.0)
                         angle = np.arccos(cos_theta)
                     all_values_for_coloring.append(angle)
@@ -465,9 +466,7 @@ class FluxWorld:
                 (-90, 0, "-z"),
             ]:
                 ax.view_init(elev=elev, azim=azim)
-                plt.savefig(
-                    os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom_{coord}.png")
-                )
+                plt.savefig(os.path.join(self.out_dir, f"cr{self.cr}_f{self.nflx}_fluxlight_world_zoom_{coord}.png"))
             plt.close(fig)
         else:
             plt.show()
@@ -522,9 +521,7 @@ class FluxWorld:
             }
         return slices
 
-    def plot_density(
-        self, num_points=200, extent=1.5 * u.R_sun, title="Electron Density Visualization", save=False
-    ):
+    def plot_density(self, num_points=200, extent=1.5 * u.R_sun, title="Electron Density Visualization", save=False):
         import matplotlib.pyplot as plt
 
         coords = self.generate_coordinate_grid(num_points_per_axis=20)
@@ -538,9 +535,7 @@ class FluxWorld:
         fig = plt.figure(figsize=(14, 12))
         fig.suptitle(title)
         ax3d = fig.add_subplot(2, 2, 1, projection="3d")
-        sc = ax3d.scatter(
-            coords[:, 0], coords[:, 1], coords[:, 2], c=densities, cmap="viridis", alpha=norm_densities
-        )
+        sc = ax3d.scatter(coords[:, 0], coords[:, 1], coords[:, 2], c=densities, cmap="viridis", alpha=norm_densities)
         ax3d.set_xlabel("X")
         ax3d.set_ylabel("Y")
         ax3d.set_zlabel("Z")
@@ -1084,9 +1079,7 @@ class FluxWorld:
                     x = rows[:, 1] / RS
                     y = rows[:, 2] / RS
                     z = rows[:, 3] / RS
-                    dummy_fluxon = Fluxon(
-                        fid, start_fc=-1, end_fc=-2, flux=np.nan, x_coords=x, y_coords=y, z_coords=z
-                    )
+                    dummy_fluxon = Fluxon(fid, start_fc=-1, end_fc=-2, flux=np.nan, x_coords=x, y_coords=y, z_coords=z)
                     dummy_fluxon.set_areas(areas_by_fluxon[fid], raw_radius=self.radius_by_fluxon[fid])
                     dummy_fluxon.kind = "open"  # Force open so it's included in open-field plots.
                     self.fluxons[fid] = dummy_fluxon
@@ -1291,7 +1284,7 @@ class FluxWorld:
     def plot_fluxon_areas(self, save=True, method="halfplane"):
         fig, axarray = plt.subplots(4, 1, sharex="all", figsize=(8, 10))
 
-        (ax, ax2, ax3, ax4) = axarray.flatten()
+        ax, ax2, ax3, ax4 = axarray.flatten()
 
         for axy in axarray.flatten():
             axy.set_yscale("log")
@@ -1526,9 +1519,7 @@ class FluxWorld:
         plt.tight_layout()
         if save:
             out = os.path.normpath(
-                os.path.join(
-                    self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_open_area_all_methods_{lines=}.png"
-                )
+                os.path.join(self.out_dir, "..", "fr", f"cr{self.cr}_f{self.nflx}_open_area_all_methods_{lines=}.png")
             )
             plt.savefig(out)
             print(f"\nSaved figure to {out} !\n")
@@ -1670,10 +1661,10 @@ def read_flux_world(filename):
 
     if os.path.isdir(filename):
         import re
+
         files = os.listdir(filename)
         largest_file = max(
-            files,
-            key=lambda f: int(re.search(r'_s(\d+)_', f).group(1)) if re.search(r'_s(\d+)_', f) else -1
+            files, key=lambda f: int(re.search(r"_s(\d+)_", f).group(1)) if re.search(r"_s(\d+)_", f) else -1
         )
         filename = os.path.join(filename, largest_file)
 

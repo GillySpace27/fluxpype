@@ -32,15 +32,13 @@ jobs:
         run: python -m pytest -q
 
   black:
-    # Advisory until the repo-wide reformat (PR #50) lands.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install black
+      - run: pip install "black==26.5.1"
       - run: |
           set -o pipefail
           black --check --diff . | tail -n 50

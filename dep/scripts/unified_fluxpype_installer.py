@@ -3,24 +3,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def log(message, level="INFO"):
     print(f"[{level}] {message}")
+
 
 def run_command(command, shell=False, check=True, capture_output=False):
     log(f"Running command: {' '.join(command) if isinstance(command, list) else command}")
     try:
-        result = subprocess.run(
-            command,
-            shell=shell,
-            check=check,
-            text=True,
-            capture_output=capture_output
-        )
+        result = subprocess.run(command, shell=shell, check=check, text=True, capture_output=capture_output)
         if capture_output:
             return result.stdout.strip()
     except subprocess.CalledProcessError as e:
         log(f"Command failed with error: {e}", level="ERROR")
         sys.exit(1)
+
 
 def check_and_install_homebrew():
     if not shutil.which("brew"):
@@ -32,10 +29,12 @@ def check_and_install_homebrew():
     else:
         log("Homebrew already installed.")
 
+
 def install_homebrew_dependencies():
     log("Installing required Homebrew packages...")
     packages = ["gnuplot", "fftw", "qt"]
     run_command(["brew", "install"] + packages)
+
 
 def install_perlbrew():
     if not shutil.which("perlbrew"):
@@ -52,6 +51,7 @@ def install_perlbrew():
     else:
         log("Perlbrew already installed.")
 
+
 def setup_python_virtualenv():
     log("Setting up Python virtual environment...")
     venv_dir = Path.cwd() / "fluxenv_pip"
@@ -61,6 +61,7 @@ def setup_python_virtualenv():
     activate_script = venv_dir / "bin" / "activate"
     run_command(["source", str(activate_script)], shell=True)
 
+
 def install_fluxpype():
     log("Installing FluxPype Python dependencies...")
     requirements_file = Path.cwd() / "requirements-pip.txt"
@@ -69,6 +70,7 @@ def install_fluxpype():
         sys.exit(1)
     run_command(["pip", "install", "-r", str(requirements_file)])
     run_command(["pip", "install", "-e", "."])
+
 
 def main():
     if sys.platform != "darwin":
@@ -87,6 +89,7 @@ def main():
     except Exception as e:
         log(f"An error occurred: {e}", level="ERROR")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

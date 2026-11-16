@@ -76,7 +76,9 @@ def test_the_cli_is_stripped_down_and_its_write_tools_only_propose():
     tools = " ".join(flag(cmd, f) for f in ("--tools", "--allowedTools", "--disallowedTools"))
     assert not any(t in tools for t in ("Bash", "Edit", "Write")) and "--add-dir" in cmd  # the repo, read-only
     allowed = {a.replace("mcp__fluxpype__", "") for a in flag(cmd, "--allowedTools").split(",")}
-    assert allowed == set(ask.READ_TOOLS) | (set(proposals.TOOLS) - set(ask.CODESIGN_ONLY)) | {"withdraw_proposal"}  # writes only propose
+    assert allowed == set(ask.READ_TOOLS) | (set(proposals.TOOLS) - set(ask.CODESIGN_ONLY)) | {
+        "withdraw_proposal"
+    }  # writes only propose
     assert {
         "get_task_image",
         "list_proposals",
@@ -203,7 +205,16 @@ def test_the_guide_the_cards_and_the_server_name_the_same_actions():
         titles
         == listed
         == set(proposals.TOOLS)
-        == {"submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene", "relax_scene", "draft_handoff"}
+        == {
+            "submit_job",
+            "cancel",
+            "retry_failed",
+            "set_queue",
+            "create_preset",
+            "create_scene",
+            "relax_scene",
+            "draft_handoff",
+        }
     )
     assert "flux-action" not in guide + tsx  # the old model-written cards are gone
 
@@ -498,7 +509,9 @@ def test_each_question_is_logged_at_0600_and_the_next_one_sees_it(client, plumbe
     assert stat.S_IMODE(f.stat().st_mode) == 0o600
     rows = [json.loads(x) for x in f.read_text().splitlines()]
     assert [r["question"] for r in rows] == ["first one", "second one"] and rows[0]["page"] == "/jobs"
-    assert rows[0]["answer"].startswith("Hello|") and rows[0]["tools"] == [{"name": "status", "input": '{"verbose": true}'}]
+    assert rows[0]["answer"].startswith("Hello|") and rows[0]["tools"] == [
+        {"name": "status", "input": '{"verbose": true}'}
+    ]
     assert rows[0]["model"] == "claude-sonnet-5-5" and rows[0]["cost"] == 0.01 and rows[0]["error"] is None
     assert [t["q"] for t in ask.earlier_turns(str(plumber_home))] == ["first one", "second one"]
 
@@ -515,4 +528,6 @@ def test_earlier_turns_skip_old_and_failed_questions_and_the_log_rotates(tmp_pat
         ask._log_turn(h, {"ts": 1, "question": "new", "answer": "c"})
     finally:
         ask.TRANSCRIPT_MAX_BYTES = keep
-    assert (tmp_path / (ask.TRANSCRIPT_FILE + ".1")).exists() and len((tmp_path / ask.TRANSCRIPT_FILE).read_text().splitlines()) == 1
+    assert (tmp_path / (ask.TRANSCRIPT_FILE + ".1")).exists() and len(
+        (tmp_path / ask.TRANSCRIPT_FILE).read_text().splitlines()
+    ) == 1

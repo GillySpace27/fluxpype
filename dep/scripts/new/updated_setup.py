@@ -1,11 +1,12 @@
-
 import subprocess
 from setuptools import setup, find_packages
 from setuptools.command.install import install
 import os
 
+
 class CustomInstallCommand(install):
     """Customized setuptools install command - installs FLUX."""
+
     def run(self):
         # Run the standard installation process first
         install.run(self)
@@ -25,6 +26,7 @@ class CustomInstallCommand(install):
             print(f"FLUX installation failed with error: {e}")
             raise
 
+
 setup(
     name="fluxpype",
     version="0.1.2",
@@ -34,6 +36,6 @@ setup(
         # Add Python dependencies here if required
     ],
     cmdclass={
-        'install': CustomInstallCommand,
+        "install": CustomInstallCommand,
     },
 )
