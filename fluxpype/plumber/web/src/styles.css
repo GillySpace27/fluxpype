@@ -159,6 +159,20 @@
 .plum-head-only .plum-part {
   display: none;
 }
+/* Skin tone (Settings, Appearance): lib/plumSkin sets these variables on the root element. */
+.plum-skin {
+  fill: var(--plum-skin, #ffe3d0);
+}
+.plum-blush {
+  fill: var(--plum-blush, #ff9fb0);
+}
+.plum-mouth {
+  stroke: var(--plum-mouth, #b5524a);
+}
+.plum-eye {
+  stroke: var(--plum-eye-rim, transparent);
+  stroke-width: 0.7;
+}
 .plum-part,
 .plum-tail,
 .plum-eyes {

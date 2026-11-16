@@ -5,10 +5,13 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ToastProvider, TooltipProvider } from "./components/ui";
 import { LiveProvider } from "./lib/live";
+import { applyPlumSkin, plumSkin } from "./lib/plumSkin";
 import { ThemeProvider } from "./lib/theme";
 import "./styles.css";
 
 const client = new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 1000 } } });
+
+applyPlumSkin(plumSkin());
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
