@@ -752,7 +752,7 @@ def _process_pfss_results(pols, lon_1d, lat_1d, floc_path, top_dir, do_print_top
     np.savez_compressed(
         ch_out_npz, ch_distance_deg=ch_distance_deg, lon=lon_1d, lat=lat_1d, pols=P.astype(np.int8)
     )
-    # Original (legacy) saves — keep them to avoid breaking existing consumers
+    # Original (legacy) saves - keep them to avoid breaking existing consumers
     ch_out_csv = floc_path + f"pfss_distances.csv"
     np.savetxt(ch_out_csv, ch_distance_deg, delimiter=", ")
     if expfs is not None:

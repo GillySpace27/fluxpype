@@ -63,6 +63,7 @@ def simulate_thomson_scattering(
     # Voronoi smoothing (reduces hard cell boundaries by locally averaging densities)
     voronoi_blur=0.0,
     voronoi_samples=1,
+    observer_lon=None,
 ):
     """
     Simulate Thomson scattering brightness and polarization in the solar corona.
@@ -184,6 +185,16 @@ def simulate_thomson_scattering(
                 np.repeat(Z_grid, rho_row.shape[0], axis=0),
             ], axis=-1)  # (npix, nz, 3)
             coords_flat = coords.reshape(-1, 3)
+            if observer_lon is not None:
+                # FLUX worlds have z along the solar rotation axis, so the default
+                # (LOS along z) is a pole-on view. Instead look along the equator
+                # from Carrington longitude observer_lon: image x -> west (lon+90),
+                # image y -> north, LOS -> toward the observer. Ignores B0.
+                c, s = np.cos(observer_lon), np.sin(observer_lon)
+                e = np.array([-s, c, 0.0]); nhat = np.array([c, s, 0.0]); zhat = np.array([0.0, 0.0, 1.0])
+                cf = coords_flat.to_value(u.R_sun) if hasattr(coords_flat, "unit") else coords_flat
+                cf = cf[:, :1] * e + cf[:, 1:2] * zhat + cf[:, 2:3] * nhat
+                coords_flat = cf * u.R_sun if hasattr(coords_flat, "unit") else cf
             # Pass the precomputed Voronoi reference field + area method so workers
             # don't repeatedly recompute cross-sectional areas / b_ref.
             if method in ("voronoi", "soft_voronoi", "voronoi_soft"):

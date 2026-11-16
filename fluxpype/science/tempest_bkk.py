@@ -128,7 +128,7 @@ def init(file=None):
     Sbase = 9.e4 #erg cm**-2 s**-1 G**-1
     global infile, filename
     # infile="example_input_profile.in"
-    # infile = "~/vscode/fluxons/tempest/example_input_profile.in"
+    # infile = "<base_dir>/science-modules/tempest/example_input_profile.in"
     infile = file or infile
     # print(infile)
     filename= infile.replace("tempest.dat", "tempest_result")

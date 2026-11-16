@@ -13,6 +13,8 @@ from fluxpype.science.thomson_scattering_flux import simulate_thomson_scattering
 from sunkit_image.radial import rhef
 from sunpy.map import Map
 
+from fluxpype.events import emit as emit_event
+
 
 def keynote_figs():
     matplotlib.rcParams["lines.color"] = "white"
@@ -54,8 +56,8 @@ def light_figs():
     matplotlib.rcParams["text.usetex"] = False
 
 
-keynote_figs()
-# light_figs()
+# keynote_figs()
+light_figs()
 
 
 # Load the flux world data
@@ -79,6 +81,7 @@ influence_length = configs.get("influence_length", def_influence_length)
 nz = configs.get("nz", def_nz)
 nxy = configs.get("nxy", configs.get("npix", def_nxy))
 fov = configs.get("fov", def_fov)
+observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
 
 def do_fluxlight(flux_world_file, save=True, force=False):
     results_file = flux_world_file.replace(".flux", ".light")
@@ -113,6 +116,7 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         influence_length=influence_length,
         scale=20,
         method=method,
+        observer_lon=None if observer_lon is None else np.deg2rad(float(observer_lon)),
         # voronoi_blur=0.04,
         # voronoi_samples=9
     )
@@ -191,9 +195,6 @@ def quadplot(results, save=True):
     Y = results["Y"]
     fov = results["fov"]
 
-    # Set the uniform colormap for the polarization angle
-    colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
-    scientific_cmap = load_scientific_colormap(colormap_path)
     brightness_norm = LogNorm(vmin=np.nanmin([B_total, B_polarized]), vmax=np.nanmax([B_total, B_polarized]))
 
     # Set the plot extent (in solar radii)
@@ -231,6 +232,7 @@ def quadplot(results, save=True):
         lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}.png"
         print(lightpath)
         plt.savefig(lightpath)
+        emit_event("artifact", path=str(lightpath), kind="image")
         plt.close(fig)
     else:
         plt.show()
@@ -249,9 +251,6 @@ def triplot(results, fov_crop=None, save=True):
     # if fov is None:
     fov = results["fov"]
 
-    # Set the uniform colormap for the polarization angle
-    colormap_path = "/Users/cgilbert/vscode/fluxons/ScientificColourMaps8/romaO/romaO.txt"
-    scientific_cmap = load_scientific_colormap(colormap_path)
     brightness_norm = LogNorm(vmin=np.nanmin([B_total, B_polarized]), vmax=np.nanmax([B_total, B_polarized]))
 
     # Set the plot extent (in solar radii)
@@ -296,6 +295,7 @@ def triplot(results, fov_crop=None, save=True):
         lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}_{fov_crop}_{results["influence_length"].to_value()}.png"
         print(lightpath)
         plt.savefig(lightpath, dpi=250)
+        emit_event("artifact", path=str(lightpath), kind="image")
         plt.close(fig)
     else:
         plt.show()
@@ -310,14 +310,14 @@ if __name__ == "__main__":
     else:
         the_world_file = def_world_file
 
-    force = "--force" in sys.argv or True
+    force = "--force" in sys.argv
     results = do_fluxlight(the_world_file, force=force)
 
 
-    triplot(results, 100) # * u.R_sun)
-    triplot(results, 50 ) #* u.R_sun)
-    triplot(results, 25 ) #* u.R_sun)
-    triplot(results, 10 ) #* u.R_sun)
+    # Crops (R_sun) that fit inside the computed grid: the old 100/50/25/10 for the default fov, low-corona zooms for small fov.
+    grid_fov = float(np.atleast_1d(getattr(results["fov"], "value", results["fov"]))[0])
+    for crop in [c for c in (100, 50, 25, 10, 3, 2, 1.5) if c <= grid_fov][:4]:
+        triplot(results, crop)
 
     # f_world = read_flux_world(the_world_file)
     # f_world.plot_all()

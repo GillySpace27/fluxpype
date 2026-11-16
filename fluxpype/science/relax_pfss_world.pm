@@ -18,6 +18,7 @@ use simple_relaxer qw(simple_relaxer);
 use pipe_helper qw(shorten_path find_highest_numbered_file check_second_file_presence);
 use Term::ANSIColor;
 use PDL;
+BEGIN { eval { require fluxpype::events; fluxpype::events->import; 1 } or eval 'sub emit_event {} sub stage_start {} sub stage_end {} sub stage_skipped {} sub stage_detail {} 1'; }  # progress events (no-op unless FLUXPYPE_EVENTS)
 
 =head1 SYNOPSIS
 
@@ -153,7 +154,11 @@ sub relax_pfss_world {
         # $this_world_relaxed->forces('f_p_eqa_radial', 'f_curv_hm', 'f_vert', 'b_eqa');
         # $this_world_relaxed->{scale_b_power} = -1;
 
-        $this_world_relaxed->{concurrency} = $configs{concurrency};
+        # Use relax_concurrency if set (e.g. 0 for serial when run under subprocess to avoid
+        # SIGPIPE in forked daughters sharing stdout/stderr). Otherwise use global concurrency.
+        $this_world_relaxed->{concurrency} = defined $configs{relax_concurrency}
+            ? int( $configs{relax_concurrency} )
+            : int( $configs{concurrency} );
 
         my $starttime = clock_gettime();
         my $cycle = 0;
@@ -188,6 +193,7 @@ sub relax_pfss_world {
             }
 
             $broken = ($stiff > 99) ? $broken + 1 : 0;
+            emit_event('relax.cycle', { cycle => $cycle, threshold => $relax_threshold, stiffness => $stiff, cum_time_s => $round_time, steps => $stepnum, nc_curve => $nc_curve, nc_proxi => $nc_proxi, broken => $broken });
             if ($broken >= 2) {
                 open my $fhh, ">>", $timefile or die "Cannot open file: $!";
                 print $fhh "n_want: $n_fluxons_wanted, n_actual: $N_actual, n_out: $flen, Success: 0, steps: $stepnum, stiff: $round_stiff";
@@ -216,6 +222,7 @@ sub relax_pfss_world {
 
     } else {
         print "\n\tSkipped relaxation! Already have relaxed file.\n\n";
+        stage_detail("relax", "reused relaxed world");
 
         # Check if relaxed file actually exists before attempting to read
         if (!-e $file_name_relaxed) {
