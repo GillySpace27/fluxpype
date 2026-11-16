@@ -14,12 +14,22 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-TOOLS = ("submit_job", "cancel", "retry_failed", "set_queue", "create_preset", "create_scene")
+TOOLS = (
+    "submit_job",
+    "cancel",
+    "retry_failed",
+    "set_queue",
+    "create_preset",
+    "create_scene",
+    "relax_scene",
+    "draft_handoff",
+)
 MAX_PENDING = 20
 PER_QUESTION = 6
 WITHDRAW_PER_QUESTION = 6
 EXPIRY_S = 24 * 3600
 ARGS_CAP = 4000  # characters of JSON
+CAPS = {"draft_handoff": 20000}  # a work order is prose: it gets more room than the other proposals
 KEEP = 200  # decided proposals kept, newest, so the next question can read what became of them
 
 
@@ -117,8 +127,9 @@ class ProposalStore:
     ) -> Dict[str, Any]:
         if tool not in TOOLS:
             raise ProposalError(f"unknown tool {tool!r}")
-        if len(json.dumps(args)) > ARGS_CAP:
-            raise ProposalError(f"the arguments are over {ARGS_CAP} characters")
+        cap = CAPS.get(tool, ARGS_CAP)
+        if len(json.dumps(args)) > cap:
+            raise ProposalError(f"the arguments are over {cap} characters")
         with self.lock:
             self._expire()
             pending = [p for p in self.items if p["status"] == "pending"]
@@ -169,6 +180,14 @@ class ProposalStore:
         with self.lock:
             p = self._find(pid)
             p.update(status=status, decided=time.time(), result=result, error=error)
+            self._save()
+            return dict(p)
+
+    def annotate(self, pid: str, **fields: Any) -> Dict[str, Any]:
+        """Add facts to a proposal's result without changing its status (a hand-off card records its launch here)."""
+        with self.lock:
+            p = self._find(pid)
+            p["result"] = {**(p.get("result") or {}), **fields}
             self._save()
             return dict(p)
 

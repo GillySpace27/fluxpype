@@ -112,3 +112,36 @@ def comparable(a: str, b: str) -> List[str]:
     if na != nb:
         why.append("vertices per line differ")
     return why
+
+
+def preview(text: str, max_lines: int = 12) -> Dict:
+    """A short, readable summary of a compiled world: the header, the footpoint rows and each line's chord, height and
+    vertex count (the first `max_lines` lines; a long arcade says how many it left out)."""
+    world = read(text)
+    conc, lines = world["concentrations"], world["lines"]
+    rows = []
+    for fl in sorted(lines)[:max_lines]:
+        pts = line_points(world, fl)
+        a, b = pts[0], pts[-1]
+        rows.append(
+            {
+                "line": fl,
+                "from": [round(v, 4) for v in a],
+                "to": [round(v, 4) for v in b],
+                "flux": lines[fl]["flux"],
+                "chord": round(math.dist(a, b), 4),
+                "top_z": round(max(p[2] for p in pts), 4),
+                "vertices": len(lines[fl]["vertices"]),
+            }
+        )
+    xs = [p[0] for fl in lines for p in line_points(world, fl)]
+    ys = [p[1] for fl in lines for p in line_points(world, fl)]
+    zs = [p[2] for fl in lines for p in line_points(world, fl)]
+    return {
+        "header": world["header"][:10],
+        "concentrations": len(conc),
+        "lines": len(lines),
+        "lines_shown": len(rows),
+        "bbox": {"x": [min(xs), max(xs)], "y": [min(ys), max(ys)], "z": [min(zs), max(zs)]} if xs else None,
+        "rows": rows,
+    }

@@ -18,11 +18,12 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config_io, external_runs, paths, plotrun
+from . import config_io, external_runs, handoff, paths, plotrun, scene_jobs
 from ..scenes import store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
+from .conversations import ConversationError, Conversations
 from .health import Health
 from .presets import PresetError
 from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
@@ -103,6 +104,22 @@ class JobIn(BaseModel):
     backend: Optional[str] = None
     tasks: Optional[List[List[str]]] = None  # [cr, nflux, adapt, method]
     scenario: Optional[str] = None  # fake backend only
+    speed: Optional[float] = None  # fake backend only
+
+
+class SceneRelaxIn(BaseModel):
+    """Relax saved scenes as queue tasks (scene_jobs.py). `run` takes `scene`, `compare` takes `a` and `b`; `lids` makes
+    one task per lid height (each a derived scene)."""
+
+    model_config = {"extra": "forbid"}
+    mode: Literal["run", "compare"]
+    scene: Optional[str] = None
+    a: Optional[str] = None
+    b: Optional[str] = None
+    lids: Optional[List[float]] = None
+    cycles: int = 150
+    steps: int = 100
+    backend: Optional[str] = None
     speed: Optional[float] = None  # fake backend only
 
 
@@ -271,6 +288,7 @@ def create_app(
     allow_restart: bool = True,
     telemetry_interval: float = 5.0,
     stall_after: Optional[float] = None,
+    ask_token: Optional[str] = None,
 ) -> FastAPI:
     hub = Hub()
     agent: Dict[str, Any] = {"ts": None, "tool": "", "count": 0}  # last MCP-agent request
@@ -281,6 +299,11 @@ def create_app(
         link["seen"] = float(json.loads(seen_file.read_text())["seen"])
     except (OSError, ValueError, KeyError, TypeError):
         pass
+
+    from . import ask as ask_mod  # imported here so the routes and the system monitor below share it
+
+    # a turn Plumber runs itself (a job Plum proposed finished) is stored; the panel fetches it on this push
+    waker = ask_mod.Waker(str(scheduler.home), lambda cid: hub.publish("ask_turn", {"conversation": cid}))
 
     agent_log = AgentLog(str(Path(scheduler.home) / "agent_log.jsonl"))  # every agent call, kept across restarts
     proposals = ProposalStore(str(Path(scheduler.home) / "proposals.json"))  # changes the Ask bar asked for
@@ -317,7 +340,13 @@ def create_app(
     log_offsets: Dict[str, int] = {}
     last_state: Dict[str, str] = {}
     app.state.hub, app.state.scheduler = hub, sched
-    sched.on_change = hub.publish
+
+    def on_sched_change(kind: str, payload: Any) -> None:
+        hub.publish(kind, payload)
+        if kind == "job_state" and payload:
+            waker.job_finished(payload)  # a job Plum proposed has ended: wake her conversation (ask.Waker)
+
+    sched.on_change = on_sched_change
     # the event log: runs in the loop whether or not a browser is connected (notify.py)
     notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
     app.state.notifier = notifier
@@ -336,8 +365,23 @@ def create_app(
         return {k: v for k, v in o.items() if v}
 
     def authed(cookies, headers) -> bool:
+        """The person's token (cookie or header): pages, the WebSocket and every write. The Ask token never counts."""
         given = cookies.get(cookie_name) or headers.get("x-flux-token") or ""
         return hmac.compare_digest(given.encode(), token.encode())
+
+    def role_of(cookies, headers) -> Optional[str]:
+        """ "main" for the person's token, "ask" for the Ask bar's own credential (header only), else None. The Ask
+        role comes from the secret, not from X-Flux-Client, which any caller can set to anything."""
+        if authed(cookies, headers):
+            return "main"
+        given = headers.get("x-flux-token") or ""
+        if ask_token and given and hmac.compare_digest(given.encode(), ask_token.encode()):
+            return "ask"
+        return None
+
+    def client_of(request: Request) -> str:
+        """The X-Flux-Client label, forced to "ask" for a request that carries the Ask token."""
+        return "ask" if getattr(request.state, "role", None) == "ask" else request.headers.get("x-flux-client") or ""
 
     def host_allowed(host: str) -> bool:
         return host in allowed or host == APP_DOMAIN or host.endswith("." + APP_DOMAIN)
@@ -377,11 +421,12 @@ def create_app(
                 return login_page("That token is not this Plumber's current token.", 403)
             return with_cookie(RedirectResponse("/", status_code=303))
         if path.startswith("/api/"):
-            if not authed(request.cookies, request.headers):
+            request.state.role = role_of(request.cookies, request.headers)
+            if request.state.role is None:
                 return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
                 return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
-            client = request.headers.get("x-flux-client")
+            client = client_of(request) or None
             # a second lock behind the CLI: the Ask bar's MCP server may only read and store proposals
             if (
                 client == "ask"
@@ -560,8 +605,6 @@ def create_app(
         """Process-group id -> label for each running task (a task's pid leads its group)."""
         return {t["pid"]: f"CR{t['cr']} f{t['nflux']}" for t in sched.store.tasks_with_status("running") if t["pid"]}
 
-    from . import ask as ask_mod
-
     sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
 
     @app.get("/api/system")
@@ -573,23 +616,55 @@ def create_app(
         question: str = Field(min_length=1, max_length=2000)
         page: str = Field(default="", max_length=200)
         history: List[Dict[str, str]] = Field(default_factory=list, max_length=6)
+        conversation: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,40}$")  # made by the panel
+        mode: Literal["explain", "codesign"] = "explain"  # fixed when the conversation starts
+        model: Optional[Literal["sonnet", "opus"]] = None  # the mode's default when omitted
+
+    class AskSettingsIn(BaseModel):
+        wake_on_results: Optional[bool] = None
+        codesign_daily_cap_usd: Optional[float] = None
+        flux_source: Optional[str] = None
 
     @app.get("/api/ask")
     def ask_status():
-        from . import ask
-
-        return reply(ask.availability())
+        return reply(ask_mod.availability(str(sched.home)))
 
     @app.post("/api/ask")
     def ask_post(body: AskIn):
         """Answer a question about FLUX or Plumber (server-sent events); see ask.py."""
-        from . import ask
-
         return StreamingResponse(
-            ask.stream(body.question, body.page, body.history, str(sched.home)),
+            ask_mod.stream(
+                body.question, body.page, body.history, str(sched.home), body.conversation, body.mode, body.model
+            ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
+
+    @app.get("/api/ask/conversations")
+    def ask_conversations():
+        return reply({"conversations": Conversations(str(sched.home)).list()})
+
+    @app.get("/api/ask/conversations/{cid}")
+    def ask_conversation(cid: str):
+        try:
+            rec = Conversations(str(sched.home)).load(cid)
+        except ConversationError as e:
+            fail(e, 404)
+        if not rec:
+            raise HTTPException(404, "unknown conversation")
+        return reply({k: v for k, v in rec.items() if k != "session"})  # the CLI session id is Plumber's own
+
+    @app.get("/api/ask/settings")
+    def ask_settings_get():
+        return reply(ask_mod.settings(str(sched.home)))
+
+    @app.put("/api/ask/settings")
+    def ask_settings_put(body: AskSettingsIn):
+        try:
+            patch = body.model_dump(exclude_unset=True)
+            return reply(ask_mod.save_settings(str(sched.home), patch))
+        except ValueError as e:
+            fail(e)
 
     @app.get("/api/agent-prompt")
     def agent_prompt_():
@@ -781,6 +856,96 @@ def create_app(
             return reply(sched.create_job(body.profile, body.overrides, backend, body.tasks, extra, origin=origin), 201)
         except SchedulerError as e:
             fail(e)
+
+    def _create_scene_job(body: SceneRelaxIn, origin: Dict[str, Any]):
+        backend = body.backend or sched.active_backend
+        if backend not in sched.backends:
+            raise HTTPException(400, f"unknown backend {backend!r}")
+        extra: Dict[str, str] = {}
+        if body.speed is not None:
+            if not sched.is_sandboxed(backend):
+                raise HTTPException(400, "speed only applies to the fake backend")
+            if not 0.1 <= body.speed <= 1000:
+                raise HTTPException(400, "speed must be between 0.1 and 1000")
+            extra["speed"] = str(body.speed)
+        data_dir = sched.data_dir(None, backend)
+        try:
+            planned = scene_jobs.plan(data_dir, body.model_dump(exclude_none=True, exclude={"backend", "speed"}))
+            scene_jobs.save_variants(data_dir, planned["entries"])
+            entries = [
+                {
+                    "label": e["label"],
+                    "lid": e["lid"],
+                    "lines": e["lines"],
+                    "scenes": [{"id": s["id"], "world": scene_jobs.world_path(data_dir, s["id"])} for s in e["scenes"]],
+                }
+                for e in planned["entries"]
+            ]
+            n = planned["args"]
+            return reply(
+                sched.create_scene_job(n["mode"], entries, n["cycles"], n["steps"], backend, origin, extra), 201
+            )
+        except (scene_jobs.SceneJobError, scene_store.SceneError, SchedulerError) as e:
+            fail(e)
+
+    @app.post("/api/scene-jobs")
+    def scene_job_create(request: Request, body: SceneRelaxIn):
+        """Queue a relaxation of saved scenes (and the lid variants a sweep needs); see scene_jobs.py."""
+        return _create_scene_job(body, origin_of(request))
+
+    def scene_task_or_404(task_id: str):
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        if not scene_jobs.is_scene_job(sched.store.get_job(t["job_id"])):
+            raise HTTPException(404, "this is not a scene relaxation task")
+        return t
+
+    @app.get("/api/tasks/{task_id}/scene-result")
+    def scene_task_result(task_id: str, points: int = 30):
+        """A scene task's energy series, the cycle each settled at and, for a compare, D (the energy difference B - A)."""
+        t = scene_task_or_404(task_id)
+        res = scene_jobs.read_series(t["run_dir"])
+        return reply(
+            {
+                "task_id": task_id,
+                "job_id": t["job_id"],
+                "label": t["cr"],
+                "mode": t["method"],
+                "status": t["status"],
+                **(scene_jobs.brief(res, min(max(points, 2), 400)) if res else {"worlds": []}),
+            }
+        )
+
+    @app.get("/api/jobs/{job_id}/scene-results")
+    def scene_job_results(job_id: str):
+        """One row per task of a scene job (a lid sweep reads as a table): lid, status, final and settled numbers."""
+        job = sched.store.get_job(job_id)
+        if not job or not scene_jobs.is_scene_job(job):
+            raise HTTPException(404, "unknown scene job")
+        rows = []
+        for t in sched.store.tasks_for_job(job_id):
+            b = scene_jobs.brief(scene_jobs.read_series(t["run_dir"]) or {}, 2)
+            d = b.get("D") or {}
+            rows.append(
+                {
+                    "task_id": t["id"],
+                    "label": t["cr"],
+                    "mode": t["method"],
+                    "status": t["status"],
+                    "lid": b.get("lid"),
+                    "done": b.get("done", False),
+                    "cycles_done": max((w["cycles_done"] for w in b.get("worlds", [])), default=0),
+                    "worlds": [
+                        {k: w[k] for k in ("scene", "final_e_simple2", "energy_settled_at_cycle")}
+                        for w in b.get("worlds", [])
+                    ],
+                    "D_final": d.get("final"),
+                    "D_settled_at_cycle": d.get("settled_at_cycle"),
+                    "D_at_settle": d.get("value_at_settle"),
+                }
+            )
+        return reply({"job_id": job_id, "status": sched.store.derive_job_status(job_id), "tasks": rows})
 
     @app.get("/api/scenes")
     def scene_list():
@@ -1292,9 +1457,35 @@ def create_app(
                     "its .flux world and runs nothing",
                     diff,
                 )
+            if tool == "relax_scene":
+                b = SceneRelaxIn(**args)
+                backend = b.backend or sched.active_backend
+                if backend not in sched.backends:
+                    raise HTTPException(400, f"unknown backend {backend!r}")
+                if b.speed is not None and not sched.is_sandboxed(backend):
+                    raise HTTPException(400, "speed only applies to the fake backend")
+                planned = scene_jobs.plan(
+                    sched.data_dir(None, backend), b.model_dump(exclude_none=True, exclude={"backend", "speed"})
+                )
+                norm = {**planned["args"], "backend": backend}  # the backend is fixed now, not at the click
+                if b.speed is not None:
+                    norm["speed"] = b.speed
+                return norm, planned["summary"] + f", on the {backend} backend", planned["diff"]
+            if tool == "draft_handoff":
+                w = handoff.validate(args)
+                unknown = [i for i in w["ids"] if not sched.store.get_job(i) and not sched.store.get_task(i)]
+                if unknown:
+                    raise HTTPException(400, "unknown job or task id(s): " + ", ".join(unknown))
+                diff = [{"key": k, "from": None, "to": ", ".join(w[k])} for k in ("ids", "refs", "files") if w[k]]
+                return (
+                    w,
+                    f"Hand-off work order: {w['title']}. It runs nothing; Save writes it to a file, Launch opens Claude "
+                    "Code on a new branch in a separate worktree",
+                    diff,
+                )
         except ValidationError as e:
             raise HTTPException(400, "; ".join(f"{'.'.join(str(x) for x in d['loc'])}: {d['msg']}" for d in e.errors()))
-        except scene_store.SceneError as e:
+        except (scene_store.SceneError, scene_jobs.SceneJobError, handoff.HandoffError) as e:
             raise HTTPException(400, str(e))
         except (SchedulerError, PresetError) as e:
             raise HTTPException(400, str(e))
@@ -1318,6 +1509,10 @@ def create_app(
             }
         if tool == "create_scene":
             return {"scene": json.loads(scene_create(SceneIn(**a)).body)["id"]}
+        if tool == "relax_scene":
+            return {"job_id": json.loads(_create_scene_job(SceneRelaxIn(**a), origin).body)["id"]}
+        if tool == "draft_handoff":  # the card's Save: the work order as a file in the Plumber home
+            return {"path": handoff.save(str(sched.home), a)}
         return {"name": json.loads(preset_create(PresetIn(**a)).body)["name"]}
 
     def decided(request: Request, p: Dict[str, Any], what: str, status: int = 200) -> None:
@@ -1327,17 +1522,23 @@ def create_app(
 
     @app.get("/api/proposals")
     def proposals_list():
-        return reply({"proposals": proposals.list()})
+        rows = proposals.list()
+        for p in rows:
+            if p["tool"] == "draft_handoff":  # rendered here, not stored: the card's Copy prompt button reads it
+                p["prompt"] = handoff.render(p["args"])
+        return reply({"proposals": rows})
 
     @app.post("/api/proposals")
     def proposal_add(request: Request, body: ProposalIn):
         """Only the Ask bar's MCP server, during its question: check and store, never run."""
         from . import ask
 
-        if request.headers.get("x-flux-client") != "ask":
+        if client_of(request) != "ask":
             raise HTTPException(403, "proposals come from the Ask bar; act through the normal routes")
         if not body.question or body.question != ask.current_question():
             raise HTTPException(409, "no Ask question is running with this id")
+        if body.tool in ask.CODESIGN_ONLY and ask.current_mode() != "codesign":
+            raise HTTPException(403, f"{body.tool} is for Co-design mode; this conversation is in Explain mode")
         norm, summary, diff = check_proposal(body.tool, body.args)
         try:
             p = proposals.add(body.tool, norm, summary, body.question, diff, body.supersedes)
@@ -1354,7 +1555,7 @@ def create_app(
         question like creation does, but the proposal may come from an earlier question: iteration spans turns."""
         from . import ask
 
-        if request.headers.get("x-flux-client") != "ask":
+        if client_of(request) != "ask":
             raise HTTPException(403, "only the Ask bar withdraws; a person rejects from the card")
         if not body.question or body.question != ask.current_question():
             raise HTTPException(409, "no Ask question is running with this id")
@@ -1369,7 +1570,7 @@ def create_app(
     @app.post("/api/proposals/{pid}/approve")
     def proposal_approve(request: Request, pid: str):
         """The person's click. Runs the stored arguments once; nothing in this request's body is read."""
-        if request.headers.get("x-flux-client"):
+        if client_of(request):
             raise HTTPException(403, "only a person can approve a proposal, from the card")
         try:
             p = proposals.claim(pid)
@@ -1393,6 +1594,37 @@ def create_app(
             decided(request, p, "failed", 500)
             raise HTTPException(500, f"the proposal failed: {type(e).__name__}") from None
         decided(request, p, "approved")
+        hub.publish("proposals", {})
+        return reply(out)
+
+    @app.post("/api/proposals/{pid}/launch")
+    def proposal_launch(request: Request, pid: str):
+        """The person's click on a hand-off card: a worktree on a new branch off origin/main with a guard hook, the work
+        order in it, and Claude Code opened there (macOS Terminal) or the command to run. Once per card."""
+        if client_of(request):
+            raise HTTPException(403, "only a person can launch a hand-off, from the card")
+        try:
+            p = proposals.get(pid)
+        except ProposalError as e:
+            fail(e, e.code)
+        if p["tool"] != "draft_handoff":
+            raise HTTPException(400, "only a hand-off card can launch Claude Code")
+        if p["status"] not in ("pending", "approved"):
+            raise HTTPException(409, f"this hand-off is {p['status']}")
+        if (p.get("result") or {}).get("launch"):
+            raise HTTPException(
+                409, "this hand-off was already launched; its worktree is " + p["result"]["launch"]["worktree"]
+            )
+        from . import ask
+
+        try:
+            out = handoff.launch(str(sched.home), str(paths.checkout_root()), p["args"], ask.find_cli())
+        except handoff.HandoffError as e:
+            fail(e)
+        except Exception as e:  # noqa: BLE001 - git or the OS failed in a way the card should name, not a 500 page
+            raise HTTPException(500, f"launch failed: {type(e).__name__}: {e}") from None
+        proposals.annotate(pid, launch=out)
+        decided(request, p, "launched")
         hub.publish("proposals", {})
         return reply(out)
 

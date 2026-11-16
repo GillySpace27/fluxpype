@@ -117,6 +117,18 @@
     "scene_id"
    ]
   },
+  "get_scene_result": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "job_id",
+    "points",
+    "task_id"
+   ]
+  },
   "get_task": {
    "annotations": {
     "destructive_hint": false,
@@ -189,6 +201,17 @@
    },
    "args": []
   },
+  "preview_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id",
+    "spec"
+   ]
+  },
   "read_task_log": {
    "annotations": {
     "destructive_hint": false,
@@ -200,6 +223,23 @@
     "grep",
     "tail_lines",
     "task_id"
+   ]
+  },
+  "relax_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "a",
+    "b",
+    "cycles",
+    "lids",
+    "mode",
+    "scene",
+    "steps"
    ]
   },
   "retry_failed": {
@@ -248,6 +288,18 @@
     "scenario",
     "speed",
     "tasks"
+   ]
+  },
+  "validate_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "compare_with",
+    "scene_id",
+    "spec"
    ]
   },
   "wait_for_task": {
@@ -319,6 +371,28 @@
     "supersedes"
    ]
   },
+  "draft_handoff": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "change",
+    "diagnosis",
+    "files",
+    "goal",
+    "happened",
+    "ids",
+    "refs",
+    "scene",
+    "supersedes",
+    "test_command",
+    "test_expected",
+    "title"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -369,6 +443,18 @@
    },
    "args": [
     "scene_id"
+   ]
+  },
+  "get_scene_result": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "job_id",
+    "points",
+    "task_id"
    ]
   },
   "get_task": {
@@ -443,6 +529,17 @@
    },
    "args": []
   },
+  "preview_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id",
+    "spec"
+   ]
+  },
   "read_task_log": {
    "annotations": {
     "destructive_hint": false,
@@ -454,6 +551,24 @@
     "grep",
     "tail_lines",
     "task_id"
+   ]
+  },
+  "relax_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "a",
+    "b",
+    "cycles",
+    "lids",
+    "mode",
+    "scene",
+    "steps",
+    "supersedes"
    ]
   },
   "retry_failed": {
@@ -505,6 +620,18 @@
     "speed",
     "supersedes",
     "tasks"
+   ]
+  },
+  "validate_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "compare_with",
+    "scene_id",
+    "spec"
    ]
   },
   "wait_for_task": {
