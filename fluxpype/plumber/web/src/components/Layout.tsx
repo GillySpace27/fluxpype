@@ -1,4 +1,4 @@
-import { Boxes, Database, Gauge, Layers, ListChecks, Settings, Sun } from "lucide-react";
+import { Boxes, Database, Gauge, Layers, ListChecks, Settings } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "../lib/cn";
 import { useStatus } from "../lib/hooks";
@@ -24,8 +24,9 @@ const NAV_PRESETS = [
 function Logo({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 px-2">
-      <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-accent to-accent/60 text-accent-ink shadow-[0_6px_20px_-6px_rgb(var(--accent)/0.8)]">
-        <Sun className="h-4.5 w-4.5" strokeWidth={2.4} />
+      <div className="h-8 w-8 shrink-0 overflow-hidden rounded-xl shadow-[0_6px_20px_-6px_rgb(var(--accent)/0.6)]">
+        <img src="/icons/plumber-light-small.svg" alt="" className="h-full w-full dark:hidden" />
+        <img src="/icons/plumber-dark-small.svg" alt="" className="hidden h-full w-full dark:block" />
       </div>
       <div className={cn("leading-none", compact && "hidden")}>
         <p className="text-[15px] font-semibold tracking-tight">Fluxpype Plumber</p>
