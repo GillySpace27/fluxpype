@@ -117,6 +117,9 @@ class LocalBackend:
             return []
 
     def command(self, task: TaskSpec) -> List[str]:
+        if task.extra.get("kind") == "scene":  # a scene relaxation (scene_jobs.py), not a pipeline task
+            spec = os.path.join(os.path.dirname(task.snapshot_path), f"scene-{task.task_id}.json")
+            return [self.python, "-m", "fluxpype.plumber.scene_task", spec]
         return [
             self.python,
             "-m",

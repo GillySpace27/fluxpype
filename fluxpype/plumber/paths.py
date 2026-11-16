@@ -25,6 +25,11 @@ def token_path(home: Path = None) -> Path:
     return (home or plumber_home()) / "token"
 
 
+def ask_token_path(home: Path = None) -> Path:
+    """The Ask bar's own token (0600): only its MCP subprocess reads it, and the server treats it as read-only."""
+    return (home or plumber_home()) / "ask_token"
+
+
 def checkout_root() -> Path:
     """The repository checkout that holds the fluxpype package (the runner's cwd)."""
     return Path(__file__).resolve().parent.parent.parent

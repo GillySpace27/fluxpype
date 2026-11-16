@@ -30,6 +30,8 @@ class FakeBackend(LocalBackend):
         return list(REQUIRED_FEATURES)
 
     def command(self, task: TaskSpec) -> List[str]:
+        if task.extra.get("kind") == "scene":  # the same task process, with a stand-in curve in place of FLUX
+            return [*LocalBackend.command(self, task), "--fake", "--speed", str(task.extra.get("speed", "1"))]
         scenario = task.extra.get("scenario", "ok")
         if scenario not in SCENARIOS:
             raise ValueError(f"unknown scenario {scenario!r}")

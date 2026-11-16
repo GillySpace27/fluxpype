@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Play, Save, X } from "lucide-react";
+import { Check, Copy, Play, Rocket, Save, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
@@ -18,6 +18,17 @@ interface Proposal {
   error: string | null;
   reason?: string | null;
   superseded_by?: string | null;
+  /** hand-off cards: the full work order text Plumber rendered (standing constraints included) */
+  prompt?: string;
+}
+
+/** What POST /api/proposals/{id}/launch returns: the worktree, the branch, and the command when no terminal opened. */
+interface Launched {
+  worktree: string;
+  branch: string;
+  command: string;
+  opened: boolean;
+  note?: string;
 }
 
 /** The changes the model may propose. The server stored and checked them; Run executes the stored arguments once. */
@@ -28,6 +39,8 @@ const TITLES: Record<string, { title: string; danger?: boolean }> = {
   set_queue: { title: "Change the queue" },
   create_preset: { title: "Save a preset" },
   create_scene: { title: "Save a scene" },
+  relax_scene: { title: "Relax scenes" },
+  draft_handoff: { title: "Hand-off work order" },
 };
 
 const linkOf = (p: Proposal) =>
@@ -140,6 +153,62 @@ function LiveJob({ id }: { id: string }) {
   return data ? <StatusBadge status={data.status} className="ml-1" /> : null;
 }
 
+/** A hand-off card: the work order as Plumber will give it to Claude Code, with its evidence fenced as untrusted text.
+ * Copy puts it on the clipboard, Save writes it under the Plumber home (Run on the server side), and Launch makes a
+ * guarded worktree and opens Claude Code in it. Launch is a click here only: the Ask token cannot reach it. */
+function HandoffExtras({ p }: { p: Proposal }) {
+  const [copied, setCopied] = useState(false);
+  const [launched, setLaunched] = useState<Launched | null>((p.result?.launch as Launched | undefined) ?? null); // kept on the card across a reload
+  const qc = useQueryClient();
+  const launch = useMutation({
+    mutationFn: () => api.post<Launched>(`/api/proposals/${encodeURIComponent(p.id)}/launch`),
+    onSuccess: (r) => {
+      setLaunched(r);
+      qc.invalidateQueries({ queryKey: ["proposals"] });
+    },
+  });
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(p.prompt ?? "");
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked: the text is on the card to select */
+    }
+  };
+  return (
+    <div className="mt-2">
+      {p.prompt && (
+        <details className="rounded-lg bg-bg/60 px-2.5 py-1.5">
+          <summary className="cursor-pointer text-[11.5px] text-muted">The full prompt (evidence is fenced as untrusted; Plumber adds the standing constraints)</summary>
+          <pre className="mt-1.5 max-h-72 overflow-auto whitespace-pre-wrap font-mono text-[11px]">{p.prompt}</pre>
+        </details>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button className="btn btn-ghost btn-sm" onClick={copy} disabled={!p.prompt}>
+          <Copy className="h-3 w-3" /> {copied ? "Copied" : "Copy prompt"}
+        </button>
+        {p.status === "approved" && !launched && (
+          <button className="btn btn-sm" onClick={() => launch.mutate()} disabled={launch.isPending} title="Makes a worktree on a new branch off origin/main under the Plumber home, with a hook that refuses fluxon-mhd and outside-repo paths, and opens Claude Code there.">
+            <Rocket className="h-3 w-3" /> {launch.isPending ? "Launching..." : "Launch Claude Code"}
+          </button>
+        )}
+        {launch.isError && <span className="text-xs text-fail">{launch.error instanceof Error ? launch.error.message : String(launch.error)}</span>}
+      </div>
+      {launched && (
+        <div className="mt-2 rounded-lg bg-bg/60 px-2.5 py-1.5 text-[11.5px]">
+          <p className="text-ok">{launched.opened ? "Opened Claude Code in a new terminal." : "Worktree ready. Run this in a terminal:"}</p>
+          <p className="mt-1 text-muted">
+            Branch <code className="font-mono">{launched.branch}</code> in <code className="font-mono">{launched.worktree}</code>
+          </p>
+          {!launched.opened && <pre className="mt-1 overflow-x-auto font-mono text-[11px]">{launched.command}</pre>}
+          {launched.note && <p className="mt-1 text-faint">{launched.note}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProposalCard({ p }: { p: Proposal }) {
   const t = TITLES[p.tool] ?? { title: p.tool };
   const qc = useQueryClient();
@@ -165,12 +234,13 @@ function ProposalCard({ p }: { p: Proposal }) {
           </tbody>
         </table>
       )}
-      <pre className="mt-2 overflow-x-auto rounded-lg bg-bg/60 px-2.5 py-1.5 font-mono text-[11px]">{JSON.stringify(p.args, null, 1)}</pre>
+      {p.tool !== "draft_handoff" && <pre className="mt-2 overflow-x-auto rounded-lg bg-bg/60 px-2.5 py-1.5 font-mono text-[11px]">{JSON.stringify(p.args, null, 1)}</pre>}
+      {p.tool === "draft_handoff" && <HandoffExtras p={p} />}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {p.status === "pending" ? (
           <>
             <button className={cn("btn btn-sm", t.danger ? "border-fail/50 text-fail" : "btn-primary")} onClick={() => decide.mutate("approve")} disabled={decide.isPending}>
-              <Play className="h-3 w-3" /> {decide.isPending ? "Working..." : "Run"}
+              <Play className="h-3 w-3" /> {decide.isPending ? "Working..." : p.tool === "draft_handoff" ? "Save" : "Run"}
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => decide.mutate("reject")} disabled={decide.isPending}>
               <X className="h-3 w-3" /> Reject

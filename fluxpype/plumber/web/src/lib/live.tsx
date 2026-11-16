@@ -225,6 +225,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "proposals":
             soon([["proposals"]]);
             break;
+          case "ask_turn": // a Co-design turn Plumber ran itself; the Ask panel fetches it
+            soon([["ask-status"]]);
+            window.dispatchEvent(new CustomEvent("flux:ask-turn", { detail: msg.data }));
+            break;
           case "agent_activity":
             setAgent({ ts: Date.now(), tool: msg.data.tool, count: msg.data.count });
             break;

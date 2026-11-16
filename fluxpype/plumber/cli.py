@@ -115,12 +115,12 @@ def cookie_name_for(home: Path) -> str:
     return "flux_plumber_" + hashlib.sha256(str(Path(home).resolve()).encode()).hexdigest()[:8]
 
 
-def load_or_create_token(home: Path, rotate: bool = False) -> str:
-    """Reuse <home>/token across restarts (so bookmarks and the Dock app stay signed in), unless it is
-    missing, too short, readable by others, or `rotate` is set."""
+def load_or_create_token(home: Path, rotate: bool = False, name: str = "token") -> str:
+    """Reuse <home>/<name> across restarts (so bookmarks and the Dock app stay signed in), unless it is
+    missing, too short, readable by others, or `rotate` is set. `name` "ask_token" is the Ask bar's own credential."""
     import stat
 
-    path = Path(home) / "token"
+    path = Path(home) / name
     if not rotate:
         try:
             st = path.stat()
@@ -323,6 +323,9 @@ def main(argv=None) -> int:
             return 2
 
     token = load_or_create_token(home, rotate=args.rotate_token)
+    ask_token = load_or_create_token(
+        home, rotate=args.rotate_token, name="ask_token"
+    )  # the Ask MCP server's credential
     hosts = ["localhost", "127.0.0.1", "::1"] + ([args.host] if args.host not in ("0.0.0.0", "::") else [])
     loopback = args.host in ("127.0.0.1", "0.0.0.0", "::", "localhost", "::1")
     shown_host = app_host(args.demo) if loopback else args.host
@@ -334,9 +337,11 @@ def main(argv=None) -> int:
         version=_version(),
         cookie_name=cookie_name_for(home),
         token_file=str(paths.token_path(home)),
+        ask_token=ask_token,
     )
 
     write_atomic(paths.token_path(home), token)
+    write_atomic(paths.ask_token_path(home), ask_token)
     started = time.time()
     from .launcher import process_start_token
 
@@ -351,8 +356,6 @@ def main(argv=None) -> int:
         "demo": bool(args.demo),
         "url": f"http://{shown_host}:{args.port}",
     }
-    write_atomic(server_json_path(home), json.dumps(record))
-
     url = f"http://{shown_host}:{args.port}/?token={token}"
     if not args.headless:
         print(
@@ -366,7 +369,18 @@ def main(argv=None) -> int:
             threading.Thread(target=demo.seed, args=(scheduler,), daemon=True).start()
         if not args.no_browser:
             threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+        # Write server.json only once the socket accepts connections: clients (the MCP autostart, --open,
+        # the tests) read it as "Plumber is up", and writing it earlier let them hit a refused connection.
+        server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="warning"))
+
+        def _announce():
+            while not server.started and not server.should_exit:
+                time.sleep(0.02)
+            if server.started:
+                write_atomic(server_json_path(home), json.dumps(record))
+
+        threading.Thread(target=_announce, daemon=True).start()
+        server.run()
     finally:
         try:  # best effort: only remove the record if it is still ours
             current = read_server_json(home)

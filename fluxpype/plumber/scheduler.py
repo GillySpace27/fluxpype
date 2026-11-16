@@ -320,6 +320,82 @@ class Scheduler:
         self.tick()
         return self.job_view(job_id)
 
+    def create_scene_job(
+        self,
+        mode: str,
+        entries: List[Dict[str, Any]],
+        cycles: int,
+        steps: int,
+        backend: str = None,
+        origin: Optional[Dict[str, Any]] = None,
+        extra: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Queue scene relaxations (scene_jobs.py): one task per entry, in a job with a reserved profile.
+
+        Each entry is `{"label", "lid", "scenes": [{"id", "world"}, ...]}` (one scene for `run`, two for `compare`). The
+        task keys are reused as text: cr is the label, nflux the line count, adapt "scene", method the mode. A `run`
+        takes one slot and a `compare` two, so they share the run slots and the CPU budget with every other task."""
+        from . import scene_jobs
+
+        backend = backend or self.active_backend
+        if backend not in self.backends:
+            raise SchedulerError(f"unknown backend {backend!r}")
+        job_id = "j" + uuid.uuid4().hex[:8]
+        job_dir = os.path.join(paths.runs_dir(self.home), job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        defaults = dict(self.parsed().defaults)
+        flux_cfg = {
+            k: config_io.resolve(defaults, k) for k in ("flux_perl_lib", "fl_perl_lib", "base_dir", "fl_prefix")
+        }
+        perl = os.path.expanduser(config_io.resolve(defaults, "flux_perl") or "") or None
+        rows = []
+        for i, e in enumerate(entries, 1):
+            tid = f"{job_id}-{i:02d}"
+            run_dir = os.path.join(job_dir, tid)
+            spec = {
+                "mode": mode,
+                "ids": [s["id"] for s in e["scenes"]],
+                "worlds": [s["world"] for s in e["scenes"]],
+                "lid": e.get("lid"),
+                "cycles": cycles,
+                "steps": steps,
+                "run_dir": run_dir,
+                "perl": perl,
+                "flux_config": flux_cfg,
+            }
+            with open(os.path.join(job_dir, f"scene-{tid}.json"), "w", encoding="utf-8") as f:
+                json.dump(spec, f)
+            rows.append(
+                {
+                    "id": tid,
+                    "idx": i,
+                    "cr": e["label"],
+                    "nflux": str(e.get("lines", "")),
+                    "adapt": "scene",
+                    "method": mode,
+                    "run_dir": run_dir,
+                    "lock_key": "",
+                    "slots": 2 if mode == "compare" else 1,
+                }
+            )
+        snap = os.path.join(job_dir, "scene-job.json")  # where a pipeline job keeps its config snapshot
+        with open(snap, "w", encoding="utf-8") as f:
+            json.dump({"mode": mode, "cycles": cycles, "steps": steps, "entries": [e["label"] for e in entries]}, f)
+        job = {
+            "id": job_id,
+            "profile": scene_jobs.PROFILES[mode],
+            "overrides": {},
+            "backend": backend,
+            "created": time.time(),
+            "snapshot_path": snap,
+            "extra": {"kind": "scene", "timeout_s": scene_jobs.DEFAULT_TIMEOUT_S, **(extra or {})},
+            "origin": origin or {},
+        }
+        self.store.add_job(job, rows)
+        self.on_change("job_state", self.job_view(job_id))
+        self.tick()
+        return self.job_view(job_id)
+
     @staticmethod
     def _slots(eff) -> int:
         def num(key):
@@ -621,6 +697,8 @@ class Scheduler:
         self.on_change("task_state", self.task_state(t["id"]))
 
     def _timeout(self, job) -> int:
+        if (job.get("extra") or {}).get("kind") == "scene":
+            return int((job["extra"].get("timeout_s")) or 6 * 3600)
         try:
             eff = config_io.read_file(job["snapshot_path"]).effective(job["profile"])
             return int(float(config_io.resolve(eff, "task_timeout") or 2000))
@@ -644,6 +722,8 @@ class Scheduler:
     # ------------------------------------------------------------------ state for the UI
     def probe_context(self, t: Dict[str, Any]) -> Optional[ProbeContext]:
         job = self.store.get_job(t["job_id"])
+        if (job.get("extra") or {}).get("kind") == "scene":
+            return None  # no data folder products to look for: a scene task writes only into its run directory
         try:
             eff = config_io.read_file(job["snapshot_path"]).effective(job["profile"])
         except Exception:
@@ -716,6 +796,9 @@ class Scheduler:
             ended=t["ended"],
         )
         job = self.store.get_job(t["job_id"])
+        if (job.get("extra") or {}).get("kind") == "scene":  # the pipeline's other stages do not apply
+            state["stages"] = [s for s in state["stages"] if s["id"] == "relax"]
+            state["scene"] = {"mode": t["method"], "label": t["cr"]}
         state.update(
             {
                 "id": t["id"],

@@ -1,14 +1,23 @@
-# Plumber Scene Designer: what is planned (only the first slice exists)
+# Plumber Scene Designer: what is planned (the first slice exists, with relaxations through the queue)
 
 Source: docs/plumber-scene-designer-scope.md (the full plan, draft 5, 2026-11-13). Read it with Read or Grep for detail and cite it. Everything below is a plan unless it says "exists". When someone asks "can Plumber do X?", say whether X exists today or is only planned. Never offer a planned feature as if it were available.
 
 ## What exists today (first slice, planar arcade only)
 
 - A planar arcade scene file (`fluxpype/scenes`): rows of positive and negative footpoints across a PIL, a hand-set pairing of which footpoint each line joins, one photosphere plane, an optional B2 lid. It compiles to a `.flux` world. Saved scenes live in `scenes/` in the data folder.
-- You can propose saving one with `create_scene`, and read them with `list_scenes` and `get_scene`. The 3-D viewer draws the photosphere and lid planes.
-- A headless relax command (`python -m fluxpype.scenes.relax`) exists on a draft branch, not yet in a release. It is run by a person or a script, not by Plumber's queue.
-- Measured so far (Gilly's Mac): relaxed energy differences between connectivities depend on the lid height, so they are not yet a lid-independent free energy. Say so when asked about results.
+- You can propose saving one with `create_scene`, check one with `validate_scene` and `preview_scene`, and read saved ones with `list_scenes` and `get_scene`. The 3-D viewer draws the photosphere and lid planes.
+- Relaxations run through Plumber's queue: in Co-design mode you can propose `relax_scene` (one scene, or a fair pair compared, optionally at several lid heights), the person clicks Run, the tasks show on the job page, and you read the outcome with `get_scene_result`. A person or script can still run the headless command (`python -m fluxpype.scenes.relax`), which registers as an external run.
+- Plumber's own tests run this path only against a stand-in for FLUX; the real FLUX runs have been done on Gilly's Mac, not by Plumber's tests.
 - Everything else below is still planned.
+
+## Physics caveats on the relaxed energies (known now; say them whenever you quote a number)
+
+1. **Lid dependence.** Relaxed energy differences between connectivities depend on the B2 lid height. Gilly measured D for the K=2 shear still falling at lid 24, so no lid height tried so far gives a lid-independent value. Quote D together with its lid, and propose a lid sweep (`relax_scene` with `lids`) before claiming a difference.
+2. **The planar B2 lid is a mirror wall.** It acts as a boundary that reflects the field, so the world has image fluxels: part of what the energy measures is the interaction of each line with its mirror image, and that grows as the lid comes closer.
+3. **The "potential" world is not a potential field.** It is untwisted semicircular arcs with hand-set connectivity, not a computed potential field. D between two pairings is therefore a pairing energy difference, not a free energy, and must not be called one.
+4. **Unit flux (inferred, untested).** The energy routine (`e_simple`, used as `e_simple2` in the relax driver) may assume unit flux per fluxon. If a scene uses another `flux_per_line`, treat the absolute numbers with suspicion until that is checked.
+5. **Do not quote a planar free energy for the SBIR.** Nothing above supports one. Say what was measured (a pairing energy difference at stated lids), that it is not lid-independent, and what is still needed.
+6. "Settled" in a result means the series stopped moving within the run (see `get_scene_result`), not that the physics is converged; a longer run or a different lid can move it.
 
 ## The goal
 
@@ -42,7 +51,7 @@ Gilly wants Plumber to design new FLUX scenes from words ("a Cartesian scene wit
 - Recipes and steps registry (global PFSS becomes recipe 1; steps like Relax, Wind, Light, Export are boxes with declared inputs and outputs, cached by a hash of their settings and everything upstream). Needs splitting `magnetogram2wind.pdl` and migrating the tasks table.
 - A scene file (declarative spec) compiled by deterministic builders; a capability file that refuses what FLUX cannot do.
 - A Designer panel: scenes page and switcher, 3-D and top views to place and move structures, inspector knobs generated from schemas, a gallery of existing structures (twisted loop, tubes, carpet, emerging loop, menagerie worlds), a library of the user's own blocks, a pipeline timeline of boxes, a live job-script preview, a Test run button, tooltips and help, a downloads panel.
-- Scene tools for you (planned): validate a scene, preview it, propose a complete scene as a card, and later apply edits. You would still only propose; the person's click runs things.
+- Scene tools for you: `validate_scene`, `preview_scene`, `get_scene_result` and the proposals `create_scene` and `relax_scene` exist (see the guide). Applying edits to a saved scene is not built: a changed scene is a new `create_scene` under a new name. You still only propose; the person's click runs things.
 - FLUXlight as the light layer: plasma, emission, camera and instrument layers; FITS output with WCS.
 
 ## How to answer about this

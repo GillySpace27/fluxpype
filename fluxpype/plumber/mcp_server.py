@@ -33,6 +33,7 @@ except ImportError as _e:  # pragma: no cover - exercised only without the extra
     raise SystemExit(2)
 
 from . import notify, paths, proposals
+from ..scenes import checks as scene_checks, store as scene_store
 from .launcher import process_alive
 
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
@@ -199,6 +200,11 @@ def _read_json(path: Path) -> Optional[dict]:
     return data if isinstance(data, dict) else None
 
 
+def token_file_name() -> str:
+    """The Ask bar's MCP copy signs in with its own token file; every other copy with the person's token."""
+    return "ask_token" if os.environ.get("FLUX_MCP_CLIENT") == "ask" else "token"
+
+
 def discover_existing(home: Path) -> Optional[Tuple[str, str]]:
     """`(url, token)` of the live Plumber for `home`, validated against /api/status; None if there is none."""
     info = _read_json(home / "server.json")
@@ -207,7 +213,7 @@ def discover_existing(home: Path) -> Optional[Tuple[str, str]]:
     if not process_alive(info["pid"], info.get("pid_start")):
         return None
     try:
-        token = (home / "token").read_text(encoding="utf-8").strip()
+        token = (home / token_file_name()).read_text(encoding="utf-8").strip()
     except OSError:
         return None
     host = info.get("host") or "127.0.0.1"
@@ -914,6 +920,109 @@ def build_server(
             return await proposal("create_scene", {"spec": spec})
         return dumps((await api("POST", "/api/scenes", body={"spec": spec})).json())
 
+    @tool(
+        "Relax saved scenes with FLUX as queue tasks, so they show on the job page and share the run slots and CPU "
+        "budget. `mode` run: one `scene`. `mode` compare: a fair pair `a` and `b` (same footpoints, photosphere, lid "
+        "and vertex counts; only the connectivity differs), relaxed at once; D is the energy difference B - A. `lids`: "
+        "heights for a lid sweep, one task per height, each on a derived scene `<scene>-lid<height>` (saved for you; "
+        "the lid must clear max_height by 20 percent); omit to use each scene as saved. `cycles` (default 150, at most "
+        "1000) of `steps` (default 100, at most 2000) relaxation steps. Read results with get_scene_result.",
+        write,
+    )
+    async def relax_scene(
+        mode: str,
+        scene: Optional[str] = None,
+        a: Optional[str] = None,
+        b: Optional[str] = None,
+        lids: Optional[List[float]] = None,
+        cycles: int = 150,
+        steps: int = 100,
+    ) -> str:
+        body = {
+            k: v
+            for k, v in dict(mode=mode, scene=scene, a=a, b=b, lids=lids, cycles=cycles, steps=steps).items()
+            if v is not None
+        }
+        if propose:
+            return await proposal("relax_scene", body)
+        return dumps(keep((await api("POST", "/api/scene-jobs", body=body)).json(), "id", "status", "counts", "tasks"))
+
+    async def scene_spec(spec: Optional[Dict[str, Any]], scene_id: Optional[str]) -> Dict[str, Any]:
+        if (spec is None) == (scene_id is None):
+            raise ToolError("give exactly one of spec (an unsaved scene) or scene_id (a saved one)")
+        return spec if spec is not None else (await get(f"/api/scenes/{ident(scene_id or '', 'scene_id')}"))["spec"]
+
+    @tool(
+        "Check a scene without saving or running anything: compile it and run its construction checks (labels, flux "
+        "balance, geometry, closest approach of lines). Give `spec` (as for create_scene) or a saved `scene_id`. "
+        "`compare_with` (a saved scene id) also says whether the two are a fair pair for an energy comparison. These "
+        "are checks on how the world was built, not on the physics.",
+        ro,
+        True,
+    )
+    async def validate_scene(
+        spec: Optional[Dict[str, Any]] = None, scene_id: Optional[str] = None, compare_with: Optional[str] = None
+    ) -> str:
+        sp = await scene_spec(spec, scene_id)
+        try:
+            made = await anyio.to_thread.run_sync(scene_store.prepare, sp)
+        except scene_store.SceneError as e:
+            return dumps({"ok": False, "problem": str(e)})
+        rep = made["report"]
+        out: Dict[str, Any] = {
+            "ok": True,
+            "name": made["spec"].name,
+            "content_hash": made["spec"].content_hash(),
+            "pairing": made["spec"].pairs(),
+            "report": {
+                k: rep[k]
+                for k in ("lines", "vertices", "net_flux", "max_height", "min_line_separation", "photosphere", "lid")
+            },
+            "note": "Connectivity is hand-set and these are construction checks only; nothing here says how the world relaxes.",
+        }
+        if compare_with:
+            other = (await get(f"/api/scenes/{ident(compare_with, 'compare_with')}"))["spec"]
+            try:
+                text_b = (await anyio.to_thread.run_sync(scene_store.prepare, other))["text"]
+            except scene_store.SceneError as e:
+                raise ToolError(f"{compare_with}: {e}")
+            why = scene_checks.comparable(made["text"], text_b)
+            out["fair_pair_with"] = {"scene": compare_with, "fair": not why, "why_not": why}
+        return dumps(out)
+
+    @tool(
+        "The compiled world of a scene in brief, without saving it: header lines (photosphere, lid), the bounding box, "
+        "and for each of the first 12 lines its footpoints, flux, chord length, top height and vertex count. Give "
+        "`spec` or a saved `scene_id`.",
+        ro,
+        True,
+    )
+    async def preview_scene(spec: Optional[Dict[str, Any]] = None, scene_id: Optional[str] = None) -> str:
+        sp = await scene_spec(spec, scene_id)
+        try:
+            made = await anyio.to_thread.run_sync(scene_store.prepare, sp)
+        except scene_store.SceneError as e:
+            raise ToolError(str(e))
+        return dumps({"name": made["spec"].name, "pairing": made["spec"].pairs(), **scene_checks.preview(made["text"])})
+
+    @tool(
+        "The result of a scene relaxation task (`task_id`) or a table of a whole scene job (`job_id`, one row per task: "
+        "a lid sweep reads as lid against D). A task gives each world's final energy (e_simple2), top height, the cycle "
+        "its energy settled at (null: not settled within the run), a thinned series of up to `points` rows and, for a "
+        "compare, D = E(B) - E(A) per cycle with the cycle D settled at. Settled means stopped moving within this run; "
+        "it does not mean physically converged. Works while the task is still running (done false).",
+        ro,
+        True,
+    )
+    async def get_scene_result(task_id: Optional[str] = None, job_id: Optional[str] = None, points: int = 30) -> str:
+        if (task_id is None) == (job_id is None):
+            raise ToolError("give exactly one of task_id or job_id")
+        if job_id:
+            return dumps(await get(f"/api/jobs/{ident(job_id, 'job_id')}/scene-results"))
+        return dumps(
+            await get(f"/api/tasks/{ident(task_id or '', 'task_id')}/scene-result", points=clamp(points, 2, 200))
+        )
+
     @tool("Saved scenes, newest first: id, hash, world file, line count, lid height, notes.", ro, True)
     async def list_scenes() -> str:
         return dumps(await get("/api/scenes"))
@@ -981,6 +1090,48 @@ def build_server(
             body = {"question": os.environ.get("FLUX_ASK_QUESTION", ""), "reason": (reason or "")[:300]}
             p = (await api("POST", f"/api/proposals/{ident(proposal_id, 'proposal_id')}/withdraw", body=body)).json()
             return dumps({"proposal_id": p["id"], "status": p["status"]})
+
+    if propose:
+
+        @tool(
+            "Draft a hand-off work order for a coding agent when something is broken or missing in fluxpype itself "
+            "(never in fluxon-mhd, the FLUX core). Fields: `title` (one line), `goal` (what the person was trying to "
+            "do), `happened` (the evidence: job and task ids go in `ids`, the log lines or output that show it, the "
+            "scene in `scene`; copy log text verbatim, it is shown fenced as untrusted data), `diagnosis` (your reading, "
+            "with file:line in `refs`, for example fluxpype/plumber/monitor.py:84), `change` (the change you propose), "
+            "`files` (the files likely touched), `test_command` and `test_expected` (a command and the result that "
+            "proves it fixed). Plumber appends the standing constraints itself. The card lets the person copy the "
+            "prompt, save it, or launch Claude Code on a new branch in a separate worktree; nothing runs until they "
+            "click.",
+            write,
+        )
+        async def draft_handoff(
+            title: str,
+            goal: str,
+            happened: str,
+            diagnosis: str,
+            change: str,
+            test_command: str,
+            test_expected: str,
+            ids: Optional[List[str]] = None,
+            scene: Optional[str] = None,
+            refs: Optional[List[str]] = None,
+            files: Optional[List[str]] = None,
+        ) -> str:
+            body = dict(
+                title=title,
+                goal=goal,
+                happened=happened,
+                diagnosis=diagnosis,
+                change=change,
+                test_command=test_command,
+                test_expected=test_expected,
+                ids=ids,
+                scene=scene,
+                refs=refs,
+                files=files,
+            )
+            return await proposal("draft_handoff", {k: v for k, v in body.items() if v is not None})
 
     @tool(
         "What is in the data cache: totals by kind, and a page of files filtered by kind, rotation (cr) or "
