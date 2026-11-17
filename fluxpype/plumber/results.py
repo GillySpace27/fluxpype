@@ -27,7 +27,7 @@ PRODUCTS = [
     ("wind", "Wind", "wind", 40),
     ("fluxlight", "FLUXlight", "fluxlight", 40),
 ]
-PLOT_EXT = (".png", ".jpg", ".jpeg", ".pdf", ".svg")
+PLOT_EXT = (".png", ".jpg", ".jpeg", ".gif", ".pdf", ".svg")
 _NFLUX = re.compile(r"_f(\d+)(?:_|\.|$)")
 SLACK_S = 5.0  # file clocks and the task's start time are compared with this much tolerance
 
@@ -37,6 +37,8 @@ def plot_stage(path: str) -> Optional[str]:
     p = "/" + path.replace("\\", "/")
     if "fluxlight" in os.path.basename(p):
         return "fluxlight"
+    if "/imgs/relax/" in p:
+        return "relax"
     if "/imgs/footpoints/" in p:
         return "fieldmap"
     if "/imgs/world/" in p:

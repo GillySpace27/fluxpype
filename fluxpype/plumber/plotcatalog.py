@@ -222,6 +222,26 @@ PLOTS: List[Dict[str, Any]] = [
         call=f"{_PDL}:476 (fluxlight.py:321-324)",
         gate="Only when the light setting is on.",
     ),
+    _p(
+        "relax_movie",
+        "relax",
+        "Relaxation movie",
+        "imgs/relax/cr{cr}_f{nflux}_*/cr{cr}_f{nflux}_*_relax_movie.*",
+        "fluxpype/plotting/relax_movie.py",
+        "The relaxation frames stitched into a looping GIF (and an MP4 when ffmpeg is installed), from the initial PFSS world to the relaxed one.",
+        call="fluxpype/science/relax_pfss_world.pm (make_relax_movie)",
+        gate="Only when relax_movie_n is above 0 and the relaxation runs; a reused relaxed world makes none.",
+    ),
+    _p(
+        "relax_frames",
+        "relax",
+        "Relaxation movie frames",
+        "imgs/relax/cr{cr}_f{nflux}_*/cr{cr}_f{nflux}_*_relax_s*.png",
+        "fluxpype/science/simple_relaxer.pm (movie frames)",
+        "Gnuplot renders of the world every relax_movie_n relaxation steps, within inner_fov of Sun centre. The step number is in the name.",
+        call="fluxpype/science/relax_pfss_world.pm (simple_relaxer movie_n)",
+        gate="Only when relax_movie_n is above 0 and the relaxation runs; a reused relaxed world makes none.",
+    ),
     # ---- defined in the code but not made by the current pipeline
     _p(
         "world_initial",
@@ -254,17 +274,6 @@ PLOTS: List[Dict[str, Any]] = [
         "A blank and an annotated magnetogram with the footpoint roots.",
         call="none (plot_fluxon_locations at pfss_funcs.py:411 is never called)",
         gate="Never called.",
-        legacy=True,
-    ),
-    _p(
-        "relax_movie",
-        "relax",
-        "Relaxation movie frames",
-        "data/cr{cr}/world/flux-movie-*.png",
-        "fluxpype/science/simple_relaxer.pm:251",
-        "Gnuplot frames every 200 relaxation steps.",
-        call="fluxpype/science/relax_pfss_world.pm:169",
-        gate="Switched off: the display count passed in is 0.",
         legacy=True,
     ),
     _p(
@@ -498,6 +507,11 @@ _HOC: Dict[str, Dict[str, Any]] = {
         command_ref=f"{_PDL}:360,476",
         overwrite_risk=_NAME_RISK.replace("figure or its input name", "figure name"),
     ),
+    "relax_movie": dict(
+        command=["{python}", "{plotting}/relax_movie.py", "{in_frame}"],
+        needs={"frame": "batches/{batch}/imgs/relax/cr{cr}_f{nflux}_{inst}/cr{cr}_f{nflux}_{inst}_relax_s*.png"},
+        command_ref="fluxpype/science/relax_pfss_world.pm (make_relax_movie)",
+    ),
     "fr_expansion": dict(
         command=["{python}", "{plotting}/plot_fr.py", "--file", "{in_fr}", *_C],
         needs={"fr": f"{_W}/cr{{cr}}_f{{nflux}}_radial_fr.dat"},
@@ -523,7 +537,8 @@ _NOT_HOC: Dict[str, Any] = {
     "bmag_all_scatter": "Same file name and folder as bmag_all_profiles, so it would replace the live plot; also writes an .avi.",
     "windmap": "Four variants, none verified: hard-coded 'sequential' batch; PDL form uses --resave_from_dat which exits before plotting.",
     **{i: _NO_CALLER for i in ("magnetogram_raw", "footpoints_locations", "light_quad")},
-    **{i: _INSIDE for i in ("relax_movie", "wsa_bkk_debug", "tempest_mag")},
+    "relax_frames": "Drawn by Gnuplot inside the Perl relaxation loop (simple_relaxer.pm) from the in-memory world; no standalone command.",
+    **{i: _INSIDE for i in ("wsa_bkk_debug", "tempest_mag")},
     **{
         i: "Not verified: never called; writes outside the data folder."
         for i in ("footpoint_distance_variants", "fss_theta_speed")

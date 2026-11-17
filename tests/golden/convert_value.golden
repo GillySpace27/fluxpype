@@ -62,6 +62,7 @@
  "215.0": "float\t215.0",
  "22  # Number of concurrent processes to run": "int\t22",
  "24  # Number of concurrent processes to run": "int\t24",
+ "25  # Relaxation movie: a Gnuplot frame every N relaxation steps, stitched into a GIF in imgs/relax/ (0 = off)": "int\t25",
  "3.0  # FLUXlight image half-width (R_sun); low corona, as in the SBIR proposal": "float\t3.0",
  "3.0.1": "str\t'3.0.1'",
  "30  # Number of concurrent processes to run": "int\t30",
