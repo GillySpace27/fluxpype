@@ -163,7 +163,11 @@ def _trace(pos: tuple, neg: tuple, flux: float, lid: Optional[float], n_vertices
     ys = [s[1] for s in sources]
     span = max(max(xs) - min(xs), max(ys) - min(ys))
     near = min(math.dist(a, b) for a in pos for b in neg)
-    scale = near if len(sources) == 2 else min(near, min(math.dist(pos[i], pos[j]) for i in range(len(pos)) for j in range(i)))
+    scale = (
+        near
+        if len(sources) == 2
+        else min(near, min(math.dist(pos[i], pos[j]) for i in range(len(pos)) for j in range(i)))
+    )
     reach = 30.0 * max(span, near)
     raw = [_trace_one(p, sources, lid, i, scale, reach) for i, p in enumerate(pos)]
     # which negative footpoint each line came down nearest to; if that is not one to one, the cheapest matching
