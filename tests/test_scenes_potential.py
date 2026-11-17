@@ -90,3 +90,19 @@ def test_the_trace_is_keyed_on_the_lid():
     low = PlanarArcadeSpec(n_lines=3, seed="potential", lid_height=2.5).validate().potential()
     high = PlanarArcadeSpec(n_lines=3, seed="potential", lid_height=20).validate().potential()
     assert low["top_z"] < high["top_z"] and not math.isclose(low["top_z"], high["top_z"], rel_tol=1e-4)
+
+
+def test_a_lid_variant_of_a_potential_scene_is_retraced_under_the_new_lid(tmp_path):
+    from fluxpype.plumber import scene_jobs
+    from fluxpype.scenes import store
+
+    dd = str(tmp_path)
+    store.save(dd, PlanarArcadeSpec(name="ref", n_lines=3, seed="potential", lid_height=20).to_dict())
+    name, spec, exists = scene_jobs._variant(dd, "ref", 2.5)
+    assert name == "ref-lid2p5" and not exists and spec["seed"] == "potential"
+    low = PlanarArcadeSpec.from_dict(spec).potential()["top_z"]
+    assert low < PlanarArcadeSpec(n_lines=3, seed="potential", lid_height=20).potential()["top_z"]
+    # the lid is a mirror wall for the traced field too, so a low lid flattens the seed under it
+    store.save(dd, PlanarArcadeSpec(name="tall", n_lines=9, seed="potential", shear_offset=1.5, lid_height=8).to_dict())
+    _name, squashed, _ = scene_jobs._variant(dd, "tall", 1.9)
+    assert PlanarArcadeSpec.from_dict(squashed).potential()["top_z"] < 1.9
