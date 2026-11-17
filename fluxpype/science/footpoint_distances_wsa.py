@@ -518,7 +518,7 @@ def precalc_wind_speed(fss, theta_b):
     # Compute speed
     # Inputs: fss, theta_b
     speed = v0 + (vm / (1 + fss) ** c1) * (1 - c2 * np.exp(-((theta_b / c3) ** c4))) ** c5
-    speed[fss == 0] = np.NAN
+    speed[fss == 0] = np.nan
     return speed
 
 
