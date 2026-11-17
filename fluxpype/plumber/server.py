@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import config_io, external_runs, handoff, paths, plotrun, scene_jobs
+from . import config_io, covers, external_runs, handoff, paths, plotrun, scene_jobs
 from ..scenes import store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
@@ -2032,6 +2032,65 @@ def create_app(
     @app.get("/api/jobs/{job_id}/data/dat")
     def job_dat(job_id: str, path: str):
         return dat_reply(job_file(job_id, path))
+
+    # ------------------------------------------------------------------ covers (list thumbnails)
+    def cover_reply(found):
+        """The picture a list shows for a run, preset or scene (see covers.py); 404 when there is none yet."""
+        from . import preview
+
+        if not found:
+            raise HTTPException(404, "no picture yet")
+        path, kind = found
+        try:
+            if kind == "flux":
+                path = preview.thumbnail(path, str(sched.home), render_python())
+            elif kind == "fits":
+                path = preview.render_fits(path, str(sched.home), render_python())["png"]
+        except Exception as e:  # noqa: BLE001 - a missing renderer means no picture, never an error page
+            raise HTTPException(404, f"no picture: {e}")
+        mt = IMAGE_TYPES.get(os.path.splitext(path)[1].lower(), "image/png")
+        return FileResponse(path, media_type=mt, headers={"Cache-Control": "private, max-age=60"})
+
+    def first_cover(candidates):
+        """The first image among candidate covers, else the first drawable one (a world or a magnetogram)."""
+        fallback = None
+        for found in candidates:
+            if found and found[1] == "image":
+                return found
+            fallback = fallback or found
+        return fallback
+
+    def task_cover(t: Dict[str, Any]):
+        job = sched.store.get_job(t["job_id"])
+        if scene_jobs.is_scene_job(job):
+            return covers.for_scene_task(t.get("run_dir"), t["cr"], sched.data_dir())
+        return covers.find(sched.probe_context(t))
+
+    @app.get("/api/covers/task/{task_id}")
+    def cover_task(task_id: str):
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        return cover_reply(task_cover(t))
+
+    @app.get("/api/covers/job/{job_id}")
+    def cover_job(job_id: str):
+        job_or_404(job_id)
+        tasks = covers.task_order(sched.store.tasks_for_job(job_id))[:24]
+        return cover_reply(first_cover(task_cover(t) for t in tasks))
+
+    @app.get("/api/covers/preset/{name}")
+    def cover_preset(name: str):
+        cf = sched.parsed()
+        if name not in cf.profiles:
+            raise HTTPException(404, "unknown preset")
+        plan = config_io.expand_tasks(cf.effective(name))
+        ctxs = (sched.probe_context_for(name, cr, nflux, adapt, parsed=cf) for adapt, cr, nflux, _m in plan.tasks[:24])
+        return cover_reply(first_cover(covers.find(c) for c in ctxs))
+
+    @app.get("/api/covers/scene/{scene_id}")
+    def cover_scene(scene_id: str):
+        return cover_reply(covers.for_scene_task(None, scene_id, sched.data_dir()))
 
     @app.get("/api/artifacts")
     def artifact(path: str):

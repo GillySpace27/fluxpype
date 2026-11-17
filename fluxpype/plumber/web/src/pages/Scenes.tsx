@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, Play } from "lucide-react";
+import { Boxes, ChevronDown, Play } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from "../components/ui";
+import { Cover, coverUrl } from "../components/Cover";
+import { cn } from "../lib/cn";
 import { api } from "../lib/api";
 import { ago } from "../lib/format";
 
@@ -94,8 +96,29 @@ function RelaxForm({ s, others }: { s: SceneRow; others: SceneRow[] }) {
 function SceneCard({ s, open, onToggle, others }: { s: SceneRow; open: boolean; onToggle: () => void; others: SceneRow[] }) {
   const doc = useQuery({ queryKey: ["scene", s.id], queryFn: () => api.get<SceneDoc>(`/api/scenes/${encodeURIComponent(s.id)}`), enabled: open });
   const spec = doc.data?.spec ?? {};
+  if (!open)
+    return (
+      <button onClick={onToggle} aria-expanded={false} className="card lift group flex flex-col overflow-hidden text-left focus:outline-none animate-rise">
+        <Cover src={coverUrl.scene(s.id, s.modified)} seed={s.id} fit="contain" className="zoom aspect-[16/9] w-full border-b border-line/60">
+          <div className="absolute left-2 top-2 flex gap-1.5">
+            <Badge className="bg-black/55 text-white/85 backdrop-blur-sm">planar arcade</Badge>
+          </div>
+        </Cover>
+        <div className="flex w-full flex-1 flex-col gap-1 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-[14px] font-semibold tracking-tight">{s.id}</p>
+            <span className="font-mono text-[10.5px] text-faint">{s.hash.slice(0, 8)}</span>
+          </div>
+          <p className="text-xs text-muted">
+            {s.lines} lines · {s.lid_height != null ? `lid at z = ${s.lid_height}` : "no lid"} · saved {ago(s.modified)}
+          </p>
+          {s.notes && <p className="line-clamp-2 text-[12.5px] text-ink/85">{s.notes}</p>}
+          <Badge tone="info" className="mt-auto self-start">connectivity hand-set</Badge>
+        </div>
+      </button>
+    );
   return (
-    <Card className="p-4">
+    <Card className={cn("col-span-full p-4 animate-fade-in")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-2.5 text-[14px] font-semibold">
           {s.id}
@@ -103,14 +126,14 @@ function SceneCard({ s, open, onToggle, others }: { s: SceneRow; open: boolean; 
           <Badge tone="info">connectivity hand-set</Badge>
         </p>
         <button className="btn btn-sm" onClick={onToggle}>
-          {open ? "Hide" : "Open"}
+          <ChevronDown className="h-3.5 w-3.5 rotate-180" /> Close
         </button>
       </div>
       <p className="mt-1 text-xs text-muted">
         {s.lines} lines · {s.lid_height != null ? `lid at z = ${s.lid_height}` : "no lid"} · saved {ago(s.modified)} · hash {s.hash}
       </p>
       {s.notes && <p className="mt-2 text-[13px]">{s.notes}</p>}
-      {open && (
+      {(
         <div className="mt-3 space-y-3">
           <div className="h-[420px] overflow-hidden rounded-lg border border-line">
             <Suspense fallback={<Skeleton className="h-full" />}>
@@ -143,7 +166,7 @@ export function ScenesPage() {
       ) : data.scenes.length === 0 ? (
         <EmptyState icon={<Boxes className="h-5 w-5" />} title="No scenes yet" body="Ask Plum for a planar arcade over a polarity inversion line, and run the card she proposes." />
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.scenes.map((s) => (
             <SceneCard key={s.id} s={s} open={open === s.id} onToggle={() => setOpen(open === s.id ? null : s.id)} others={data.scenes.filter((o) => o.id !== s.id)} />
           ))}

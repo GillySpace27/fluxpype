@@ -521,3 +521,36 @@ def test_external_run_serves_the_end_of_its_log(client, tmp_path):
     client.put("/api/external-runs/a", headers=H, json={"log": str(log)})
     tail = client.get("/api/external-runs/a?tail=3", headers=H).json()["log_tail"]
     assert tail == "line 97\nline 98\nline 99"
+
+
+# ------------------------------------------------------------------ covers (list thumbnails)
+def test_covers_for_job_task_and_preset(client):
+    job = client.post("/api/jobs", json={"profile": "t_one", "backend": "fake", "speed": 300}, headers=H).json()
+    assert wait_job(client, job["id"])["status"] == "ok"
+    task_id = client.get(f"/api/jobs/{job['id']}", headers=H).json()["tasks"][0]["id"]
+    for url in (f"/api/covers/job/{job['id']}", f"/api/covers/task/{task_id}", "/api/covers/preset/t_one"):
+        r = client.get(url, headers=H)
+        assert r.status_code == 200, url
+        assert r.content[:4] == b"\x89PNG", url
+    assert client.get("/api/covers/job/nope", headers=H).status_code == 404
+    assert client.get("/api/covers/preset/nope", headers=H).status_code == 404
+    assert client.get("/api/covers/scene/nope", headers=H).status_code == 404
+    assert client.get(f"/api/covers/job/{job['id']}").status_code in (401, 403)  # behind the token like the rest
+
+
+def test_cover_prefers_fluxlight_over_other_plots(tmp_path):
+    from fluxpype.plumber import covers
+    from fluxpype.plumber.monitor import ProbeContext
+
+    d = tmp_path / "data"
+    world = d / "batches" / "b" / "imgs" / "world" / "cr2150_f500_hmi_world.png"
+    light = d / "batches" / "b" / "data" / "cr2150" / "light" / "cr2150_fluxlight_x.png"
+    for p in (world, light):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"\x89PNG")
+    ctx = ProbeContext(
+        data_dir=str(d), batch="b", cr="2150", nflux="500", adapt="0", inst="hmi", reduce="4", adapt_select="2"
+    )
+    assert covers._find(ctx) == (str(light), "image")
+    light.unlink()
+    assert covers._find(ctx) == (str(world), "image")

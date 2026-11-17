@@ -1,12 +1,14 @@
-import { Activity, ArrowRight, CheckCircle2, Clock, Layers, Rocket } from "lucide-react";
+import { Activity, ArrowRight, CheckCircle2, Clock, Rocket } from "lucide-react";
 import { Link } from "react-router-dom";
 import { StageStrip, toneOf } from "../components/StageStrip";
 import { ActivityList, AttentionPanel } from "../components/Notifications";
 import { TaskCard } from "../components/TaskCard";
 import { Card, EmptyState, ErrorNote, PageHeader, SectionTitle, Skeleton, StatusBadge } from "../components/ui";
-import { artifactUrl } from "../lib/api";
-import { ago, dateTime, instOf } from "../lib/format";
-import { useNow, useOverview } from "../lib/hooks";
+import { ago, dateTime, duration, instOf } from "../lib/format";
+import { cn } from "../lib/cn";
+import { Cover, coverUrl } from "../components/Cover";
+import { jobCoverVersion, jobHref, jobSummary, Segments } from "../components/RunCard";
+import { useJobs, useNow, useOverview } from "../lib/hooks";
 import type { RecentTask } from "../lib/types";
 
 /** Why a queued task waits (Scheduler.queue_explain). */
@@ -29,26 +31,58 @@ function Stat({ label, value, sub, icon }: { label: string; value: React.ReactNo
   );
 }
 
-function RecentRow({ t, now }: { t: RecentTask; now: number }) {
+function RecentTile({ t, now }: { t: RecentTask; now: number }) {
+  const scene = t.adapt === "scene";
   return (
-    <Link to={`/jobs/${t.job_id}/${t.id}`} className="flex items-center gap-3.5 rounded-xl px-2 py-2.5 transition-colors hover:bg-raised/60 focus:outline-none">
-      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-line bg-raised">
-        {t.thumb ? <img src={artifactUrl(t.thumb)} alt="" loading="lazy" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center text-faint"><Layers className="h-4 w-4" /></div>}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium">
-          CR {t.cr} <span className="font-normal text-muted">· {t.nflux} fluxons · {instOf(t.adapt)} · {t.method}</span>
+    <Link to={`/jobs/${t.job_id}/${t.id}`} className="card lift group flex flex-col overflow-hidden focus:outline-none animate-rise">
+      <Cover src={coverUrl.task(t.id, t.ended ?? t.status)} seed={t.id} className="zoom aspect-[16/10] border-b border-line/60">
+        <div className="absolute left-2 top-2">
+          <StatusBadge status={t.status} className="bg-black/55 backdrop-blur-sm" />
+        </div>
+      </Cover>
+      <div className="flex flex-1 flex-col gap-1.5 p-3">
+        <p className="truncate text-[13px] font-semibold">
+          {scene ? t.cr : `CR ${t.cr}`} {!scene && <span className="font-normal text-muted">· {t.nflux} fluxons</span>}
         </p>
-        <p className="mt-0.5 truncate text-xs text-muted">{t.failure ? t.failure : `${t.stages_ok}/10 stages · ${t.profile}`}</p>
-      </div>
-      <div className="hidden w-[190px] sm:block">
-        <StageStrip items={t.stages.map((s) => ({ id: s.id, label: s.id, tone: toneOf(s.status) }))} labels={false} className="!gap-0.5" />
-      </div>
-      <div className="w-[88px] text-right">
-        <StatusBadge status={t.status} />
-        <p className="mt-1 text-[11px] text-faint">{ago(t.ended ?? t.created, now)}</p>
+        <p className={cn("truncate text-[11.5px]", t.failure ? "text-fail" : "text-muted")}>{t.failure ? t.failure : `${scene ? "scene" : instOf(t.adapt)} · ${t.method} · ${t.profile}`}</p>
+        <div className="mt-auto flex items-center gap-2 pt-1">
+          <StageStrip items={t.stages.map((s) => ({ id: s.id, label: s.id, tone: toneOf(s.status) }))} labels={false} className="!gap-0.5 flex-1" />
+          <span className="num shrink-0 text-[10.5px] text-faint">{ago(t.ended ?? t.created, now)}</span>
+        </div>
       </div>
     </Link>
+  );
+}
+
+/** The newest run as a large card at the top: the quickest way back to its page. */
+function LatestRun({ now }: { now: number }) {
+  const { data } = useJobs();
+  const job = data?.jobs[0];
+  if (!job) return null;
+  const href = jobHref(job);
+  const end = job.ended ?? now;
+  const bad = ["failed", "partial", "timeout", "crashed"].includes(job.status);
+  return (
+    <section>
+      <SectionTitle title="Latest run" right={<Link to="/jobs" className="text-xs text-muted hover:text-ink">All runs</Link>} />
+      <Link to={href} className="card lift group grid overflow-hidden focus:outline-none md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <Cover src={coverUrl.job(job.id, jobCoverVersion(job))} seed={job.id} className="zoom aspect-[16/9] md:aspect-auto md:min-h-[210px]" />
+        <div className="flex flex-col gap-3 p-5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="truncate text-[19px]">{job.profile}</h2>
+            <StatusBadge status={job.status} />
+          </div>
+          <p className="text-[13px] text-muted">{jobSummary(job)}</p>
+          <p className="num text-xs text-muted">
+            Started {dateTime(job.created)} ({ago(job.created, now)}) · {job.started ? duration(end - job.started) : "not started"} · {job.tasks.length} task{job.tasks.length === 1 ? "" : "s"}
+          </p>
+          <Segments job={job} />
+          <span className={cn("btn mt-auto self-start", bad ? "btn-danger" : "btn-primary")}>
+            {bad ? "See what failed" : job.status === "running" ? "Watch it run" : "Open run"} <ArrowRight className="h-4 w-4" />
+          </span>
+        </div>
+      </Link>
+    </section>
   );
 }
 
@@ -86,6 +120,8 @@ export function Overview() {
 
       <AttentionPanel />
 
+      {running.length === 0 && <LatestRun now={now} />}
+
       <section>
         <SectionTitle title="Running now" />
         {running.length === 0 ? (
@@ -109,9 +145,12 @@ export function Overview() {
           <SectionTitle title="Up next" hint={`${pending.length} waiting for a free slot`} />
           <Card className="divide-y divide-line/60">
             {pending.slice(0, 6).map((t) => (
-              <Link key={t.id} to={`/jobs/${t.job_id}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] hover:bg-raised/50">
-                <span>
+              <Link key={t.id} to={`/jobs/${t.job_id}`} className="flex items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-raised/50">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <Cover src={coverUrl.task(t.id)} seed={t.id} className="h-8 w-11 shrink-0 rounded-md border border-line/70" />
+                  <span className="truncate">
                   CR {t.cr} <span className="text-muted">· {t.nflux} fluxons · {instOf(t.adapt)} · {t.method}</span>
+                  </span>
                 </span>
                 <span className="num text-xs text-faint">
                   {waitLabel(t.wait_reason)} · {t.slots} slot{t.slots === 1 ? "" : "s"}
@@ -124,13 +163,13 @@ export function Overview() {
       )}
 
       <section>
-        <SectionTitle title="Recently finished" right={<Link to="/jobs" className="text-xs text-muted hover:text-ink">All jobs</Link>} />
+        <SectionTitle title="Recently finished" right={<Link to="/jobs" className="text-xs text-muted hover:text-ink">All runs</Link>} />
         {recent.length === 0 ? (
           <EmptyState title="No finished tasks yet" body="Completed runs appear here with a thumbnail of the last plot they produced." />
         ) : (
-          <Card className="p-1.5">
-            {recent.slice(0, 8).map((t) => <RecentRow key={t.id} t={t} now={now} />)}
-          </Card>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {recent.slice(0, 8).map((t) => <RecentTile key={t.id} t={t} now={now} />)}
+          </div>
         )}
       </section>
       <section>
