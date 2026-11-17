@@ -2,7 +2,7 @@
 
 A backend starts one task (one ``flux-config-run --only ...`` process), reports
 its state, can cancel it, and can read files the task wrote. SSH and Slurm
-backends fit this shape (see docs/gui/SCOPE.md 4.5) but are not part of v1.
+backends (remote.py) implement the same shape (see docs/gui/SCOPE.md 4.5).
 """
 
 from dataclasses import dataclass, field
@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Protocol
 
 @dataclass
 class BackendCaps:
-    kind: str  # "local", "fake", later "ssh" / "slurm"
+    kind: str  # "local", "fake", "ssh", "slurm"
     slots: int  # CPU slots the backend offers
     shared_fs: bool = True  # events and artifacts readable without a transfer
     description: str = ""

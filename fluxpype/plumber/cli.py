@@ -288,6 +288,12 @@ def main(argv=None) -> int:
                 return 2
         # every Plumber can also simulate runs: pick "Simulated" as the backend in the UI (sandboxed data)
         backends = {"local": LocalBackend(python=job_python), "fake": FakeBackend()}
+        from .backends.remote import load_clusters
+
+        try:  # SSH and Slurm targets, one table each in <home>/clusters.toml
+            backends.update(load_clusters(home / "clusters.toml"))
+        except Exception as e:  # a bad clusters file must not stop local work
+            print(f"clusters.toml ignored: {e}", file=sys.stderr)
 
     if args.port is None:
         args.port = DEMO_PORT if args.demo else REAL_PORT
