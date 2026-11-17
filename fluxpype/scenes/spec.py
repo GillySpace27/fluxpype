@@ -50,7 +50,7 @@ class PlanarArcadeSpec:
     photosphere_z: float = -0.001  # the same plane for every variant that is to be compared
     lid_height: Optional[float] = None  # a B2 plane at this z, normal pointing down; None means no lid
     # "arc": semicircles between hand-paired footpoints. "potential": field lines of the footpoints' own
-    # current-free field, traced (scenes/potential.py); the pairing is then derived, so `pairing` must be None.
+    # current-free field, traced (scenes/potential_trace.py); the pairing is then derived, so `pairing` must be None.
     seed: str = "arc"
     notes: str = ""
     schema: int = field(default=SCHEMA)
@@ -84,7 +84,7 @@ class PlanarArcadeSpec:
 
     def potential(self) -> Dict[str, Any]:
         """The traced potential seed (pairing, lines, and how many lines had to be moved or did not land)."""
-        from .potential import trace
+        from .potential_trace import trace
 
         return trace(self)
 

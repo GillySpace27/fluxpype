@@ -6,7 +6,7 @@ import math
 import pytest
 
 from fluxpype.scenes import PlanarArcadeSpec, compile_flux, summarize
-from fluxpype.scenes import potential
+from fluxpype.scenes import potential_trace as potential
 from fluxpype.scenes.checks import comparable
 from fluxpype.scenes.ops import OpError, apply_ops
 

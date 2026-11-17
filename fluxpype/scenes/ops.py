@@ -8,7 +8,7 @@ An operation is a small JSON object, so the same edit can come from a form field
     {"op": "shear_footpoints", "offset": 0.5}              slide the negative row along the PIL by `offset` and keep
                                                            each line on the footpoints it has now (the stressed state)
     {"op": "potential"}                                    swap the lines for the traced potential field of the
-                                                           footpoints as they are (the reference state; see potential.py)
+                                                           footpoints as they are (the reference state; see potential_trace.py)
 
 A stressed scene and the potential version of it have the same footpoints, photosphere and lid, so they are a fair
 pair for `relax compare`: the difference is energy above the computed potential seed's relaxed state, at that lid.
