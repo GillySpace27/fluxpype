@@ -64,8 +64,23 @@ def write_mp4(frames: List[str], out: str, fps: float) -> str:
             except OSError:
                 shutil.copy(p, dst)
         tmp = out + ".part.mp4"
-        cmd = [ffmpeg, "-y", "-loglevel", "error", "-framerate", str(fps), "-i", os.path.join(td, "f%05d.png"),
-               "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-c:v", "libx264", "-pix_fmt", "yuv420p", tmp]
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-framerate",
+            str(fps),
+            "-i",
+            os.path.join(td, "f%05d.png"),
+            "-vf",
+            "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            tmp,
+        ]
         subprocess.run(cmd, check=True)
     os.replace(tmp, out)
     return out
