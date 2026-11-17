@@ -10,7 +10,7 @@ export type FileMode = "list" | "icons";
 type Surface = "cache" | "runFiles" | "stage" | "results";
 
 const DEFAULT_MODE: Record<Surface, FileMode> = { cache: "list", runFiles: "list", stage: "icons", results: "icons" };
-const IMG = /\.(png|jpe?g|svg)$/i;
+const IMG = /\.(png|jpe?g|gif|svg)$/i;
 const FITS = /\.(fits?|fts)(\.gz)?$/i;
 const FLUXY = /\.(flux|dat|npy)$/i; // drawn by the server as each viewer first shows them
 

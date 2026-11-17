@@ -55,7 +55,16 @@ The following options are useful in the options hash:
 =item movie_n
 
 Specifies that a relaxation movie is to be made by capturing 3-D
-renders every <n> time steps.
+renders every <n> time steps.  Frames are written to files with the
+PNG gnuplot terminal and do not need an on-screen display, so they are
+made even when disp_n is 0.  A frame that fails to render is reported
+once and frames stop; the relaxation itself carries on.
+
+=item movie_opt
+
+Hash ref fed to Flux::World::render() for movie frames (for example
+C<< { range => [-2.5,2.5,-2.5,2.5,-2.5,2.5] } >>).  Falls back to
+render_opt.
 
 =item movie_f
 
@@ -160,6 +169,8 @@ sub simple_relaxer {
     #      unless(ref $w) ;
 
     my ( $display_term, $png_term ) = gnuplot_terms();
+    warn "\tNo png or pngcairo gnuplot terminal, so no relaxation movie frames.\n"
+      if ( $movie_n && !$png_term );
 
     PDL::Graphics::Gnuplot::options( terminal => $display_term );
     $w->render_lines() unless ( $disp_n == 0 );
@@ -243,15 +254,25 @@ sub simple_relaxer {
         unless ( $disp_n == 0 || $step % $disp_n ) {
             $w->render_lines( $opt->{render_opt} || { label => 0 } )
               ;    #{hull=>1,neighbors=>1,nscale=>1});
-            if ($movie_n)
-            { #DAL: this doesn't agree with the description of movie_n in the POD.
-                my $fname = sprintf( $movie_f, $step );
-                $w->render_lines(
-                    $opt->{movie_opt} // $opt->{render_opt},
-                    my $gpw = gpwin( $png_term, output => $fname, wait => 20)
-                );
+        }
+
+        # Movie frames go straight to PNG files, so they no longer depend on the on-screen display (disp_n).
+        if ( $movie_n && $png_term && !( $step % $movie_n ) ) {
+            my $fname = sprintf( $movie_f, $step );
+            my $ok = eval {
+                my %ro = %{ $opt->{movie_opt} // $opt->{render_opt} // {} };
+                my $gpw = gpwin( $png_term, size => [ 9, 9 ], dashed => 0, output => $fname, wait => 60 );
+                $ro{window} = $gpw;
+                $w->render( \%ro );
                 $gpw->close;
-                print "wrote $fname...\n";
+                1;
+            };
+            if ($ok) {
+                print "\twrote movie frame $fname\n";
+                eval { emit_event( "relax.frame", { step => $step, path => $fname } ) } if $ENV{FLUXPYPE_EVENTS};
+            } else {
+                warn "\tMovie frame at step $step failed, so no more frames this relaxation: $@\n";
+                $movie_n = 0;
             }
         }
 

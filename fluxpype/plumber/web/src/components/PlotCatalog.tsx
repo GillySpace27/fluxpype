@@ -6,7 +6,7 @@ import { fileUrl } from "./FileViewer";
 import { OriginTag } from "./ResultsPane";
 import { Badge, SectionTitle } from "./ui";
 
-const IMG = /\.(png|jpe?g|svg)$/i;
+const IMG = /\.(png|jpe?g|gif|svg)$/i;
 
 /** One defined plot: its newest file as a thumbnail, or a labelled placeholder when nothing has been rendered. */
 interface Gen {

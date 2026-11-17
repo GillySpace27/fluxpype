@@ -17,7 +17,7 @@ from fluxpype.plumber.results import task_results
 
 HOC = {
     "fieldmap_topology bmag_scatter bmag_all_profiles wind_profiles_lines wind_profiles_filled light_triplot "
-    "fr_expansion bmag_fill world3d world_density world_fluxon_id area_by_method open_area_all_methods"
+    "fr_expansion bmag_fill world3d world_density world_fluxon_id area_by_method open_area_all_methods relax_movie"
 }
 HOC = set(next(iter(HOC)).split())
 
@@ -60,6 +60,21 @@ def test_registry_invariants():
     for e in PLOTS:  # entries of one group are the same command
         if e["group"]:
             assert {tuple(x["command"]) for x in PLOTS if x["group"] == e["group"]} == {tuple(e["command"])}
+
+
+def test_relax_movie_from_frames(tmp_path):
+    """The relaxation movie is live (not legacy), reads its frames by inst, and its frames are listed under relax."""
+    ctx = make_ctx(tmp_path)
+    e = entry("relax_movie")
+    assert not e["legacy"] and not entry("relax_frames")["legacy"]
+    assert plotrun.resolve_needs(e, ctx)[1]  # no frames yet: missing
+    f = tmp_path / "batches/B/imgs/relax/cr2150_f1000_hmi/cr2150_f1000_hmi_relax_s00025.png"
+    touch(str(f))
+    found, missing = plotrun.resolve_needs(e, ctx)
+    assert not missing and found["frame"] == str(f)
+    from fluxpype.plumber.results import plot_stage
+
+    assert plot_stage("batches/B/imgs/relax/cr2150_f1000_hmi/cr2150_f1000_hmi_relax_movie.gif") == "relax"
 
 
 def test_bmag_scatter_argv(tmp_path):

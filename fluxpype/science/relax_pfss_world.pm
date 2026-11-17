@@ -12,6 +12,7 @@ our @EXPORT_OK = qw(relax_pfss_world);
 use File::Basename;
 use File::Path qw(mkpath);
 use File::Spec;
+use Cwd qw(abs_path);
 use Flux::World qw(read_world);
 use Time::HiRes qw(clock_gettime);
 use simple_relaxer qw(simple_relaxer);
@@ -129,7 +130,6 @@ sub relax_pfss_world {
     } else {
         print "\tNo relaxed file found, so we will relax the world (fairly slow).\n\n";
         my ($basename, $dirname) = fileparse($full_world_path);
-        $movie_f = $dirname . "flux-movie-%5.5d.png";
         $basename =~ s/(\.\w+)?$//;  # Remove file extension
         $file_name_relaxed = "${dirname}${basename}_relaxed";
         print "Relaxing to $file_name_relaxed.flux";
@@ -137,6 +137,20 @@ sub relax_pfss_world {
     }
 
     my $do_the_relax = ($do_relax || not $second_file_present);
+
+    # Relaxation movie: a Gnuplot frame every relax_movie_n steps (0 = off), then an animated GIF of them.
+    # Frames go to imgs/relax/<world name>/, which is cleared first so a shorter rerun leaves no stale frames.
+    my $movie_n = int($configs{relax_movie_n} // 0);
+    my $movie_dir;
+    if ($do_the_relax && $movie_n > 0) {
+        my $tag = basename($full_world_path);
+        $tag =~ s/\.flux$//;
+        $movie_dir = File::Spec->catdir($datdir, "batches", $batch_name, "imgs", "relax", $tag);
+        mkpath($movie_dir) unless -d $movie_dir;
+        unlink glob(File::Spec->catfile($movie_dir, "${tag}_relax_*"));
+        $movie_f = File::Spec->catfile($movie_dir, "${tag}_relax_s%05d.png");
+        print "\tRelaxation movie: a frame every $movie_n steps in " . shorten_path($movie_dir) . "\n";
+    }
 
     if ($do_the_relax) {
         my ($nc_curve, $nc_proxi, $broken, $stiff, $flen, $stepnum, $round_stiff) = (0, 0, 0, 100, 0, 0, 100);
@@ -166,7 +180,14 @@ sub relax_pfss_world {
 
             print "\n\tRelaxing PFSS model for $do_steps steps to $relax_threshold stiffness...\n\n";
 
-            simple_relaxer($this_world_relaxed, 0, $do_steps, { disp_n => 0, movie_n => 200, print_n => int($do_steps/5), movie_f => $movie_f });
+            my $fov = $configs{inner_fov} || 2.5;
+            simple_relaxer($this_world_relaxed, 0, $do_steps, {
+                disp_n    => 0,
+                movie_n   => ($movie_dir ? $movie_n : 0),
+                movie_f   => $movie_f,
+                movie_opt => { range => [ -$fov, $fov, -$fov, $fov, -$fov, $fov ] },
+                print_n   => int($do_steps/5),
+            });
             $relax_threshold *= 1.1;
 
             my $h = $this_world_relaxed->fw_stats;
@@ -203,6 +224,7 @@ sub relax_pfss_world {
             $cycle += 1;
         }
         print "\tRelaxation Complete in $stepnum Steps \n";
+        make_relax_movie($movie_dir) if $movie_dir;
 
         open my $fhh, ">>", $timefile or die "Cannot open file: $!";
         print $fhh "n_want: $n_fluxons_wanted, n_actual: $N_actual, n_out: $flen, Success: 1, steps: $stepnum, stiff: $round_stiff";
@@ -247,6 +269,32 @@ sub relax_pfss_world {
         print "\t\t\t```````````````````````````````\n\n";
 
         return $this_world_orig, $this_world_relaxed, $stepnum;
+    }
+}
+
+=head2 make_relax_movie
+
+    make_relax_movie($movie_dir);
+
+Stitches the relaxation frames in C<$movie_dir> into an animated GIF (plus an MP4 when ffmpeg is on the PATH)
+with fluxpype/plotting/relax_movie.py. A failure is reported and does not stop the pipeline.
+
+=cut
+
+sub make_relax_movie {
+    my ($movie_dir) = @_;
+    my @frames = glob(File::Spec->catfile($movie_dir, "*_relax_s*.png"));
+    unless (@frames) {
+        print "\tNo relaxation movie frames were written, so no movie.\n";
+        stage_detail("relax", "no movie frames");
+        return;
+    }
+    my $script = File::Spec->catfile(dirname(dirname(abs_path(__FILE__))), "plotting", "relax_movie.py");
+    print "\tStitching " . scalar(@frames) . " frames into a relaxation movie...\n";
+    if (system("python3", $script, $movie_dir) == 0) {
+        stage_detail("relax", scalar(@frames) . " movie frames");
+    } else {
+        warn "\trelax_movie.py failed (status $?); the frames are still in $movie_dir\n";
     }
 }
 
