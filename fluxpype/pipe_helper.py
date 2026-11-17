@@ -1908,24 +1908,24 @@ def rdworld(filename):
         # Read out flux concentrations
         if sl[0] == "NEW":
             w.add_fc(
-                numpy.int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5])
+                int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5])
             )
 
         # Read out fluxon data
         if sl[0] == "LINE":
-            if numpy.int(sl[1]) > 0:
-                ln_id.append(numpy.int(sl[1]))
-                ln_fc0.append(numpy.int(sl[4]))
-                ln_fc1.append(numpy.int(sl[5]))
+            if int(sl[1]) > 0:
+                ln_id.append(int(sl[1]))
+                ln_fc0.append(int(sl[4]))
+                ln_fc1.append(int(sl[5]))
                 ln_fl.append(numpy.double(sl[6]))
                 ln_r0.append([numpy.double(sl[7]), numpy.double(sl[8]), numpy.double(sl[9])])
                 ln_r1.append([numpy.double(sl[10]), numpy.double(sl[11]), numpy.double(sl[12])])
 
         # Read out vertex points
         if sl[0] == "VERTEX":
-            vx_lid.append(numpy.int(sl[1]))
-            vx_id.append(numpy.int(sl[2]))
-            vx_pos.append(numpy.int(sl[3]))
+            vx_lid.append(int(sl[1]))
+            vx_id.append(int(sl[2]))
+            vx_pos.append(int(sl[3]))
             vx_x.append(numpy.double(sl[4]))
             vx_y.append(numpy.double(sl[5]))
             vx_z.append(numpy.double(sl[6]))
