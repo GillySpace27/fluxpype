@@ -1020,7 +1020,7 @@ def plot_tempest(file, ax=None):
     # ax.plot(zx-1, u_miranda.T, 'g')
     # ax.plot(zx-1, u_miranda[0].T, 'g', label='$u_{sw}~$Miranda')
     ax.plot(zx, u_prospero.T, "m:")
-    ax.plot(zx, np.NAN * np.ones_like(u_prospero[0].T), "m:", label="$u_{sw}~$Prospero")
+    ax.plot(zx, np.nan * np.ones_like(u_prospero[0].T), "m:", label="$u_{sw}~$Prospero")
     # ax.plot(zx, rho.T*_floor(10, EPS) ** 5, label='rho x $10^5$')
     # print(zTR)
     Rsun = 6.955e10
@@ -1166,7 +1166,7 @@ def reinterpolate_velocity(tempest_file, original_data_file):
             reinterpolated_velocity = interpolator(original_radius)
 
             if np.any(reinterpolated_velocity <= 10**-2) or np.any(reinterpolated_velocity > 2500):
-                reinterpolated_velocity = np.ones_like(reinterpolated_velocity) * np.NAN
+                reinterpolated_velocity = np.ones_like(reinterpolated_velocity) * np.nan
                 print(f"Invalid values for velocity detected and excluded on {fnum = }")
                 continue
 
