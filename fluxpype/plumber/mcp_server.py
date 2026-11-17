@@ -910,9 +910,12 @@ def build_server(
         "Save a new planar-arcade scene and compile its .flux world; it runs nothing. `spec` has: name (new, starts "
         "with a letter), n_lines, separation, spacing, shear_offset, pairing (a list saying which negative footpoint "
         "each positive one joins; omit for perpendicular arcs), flux_per_line, height_ratio, max_height, "
-        "vertices_per_line, photosphere_z (negative), lid_height (a B2 plane above max_height x 1.2, or omit) and "
-        "notes. Connectivity is hand-set, so say so when you describe the result. A scene is never overwritten: a "
-        "new version needs a new name.",
+        "vertices_per_line, photosphere_z (negative), lid_height (a B2 plane above max_height x 1.2, or omit), seed "
+        "and notes. seed arc (the default) draws semicircles on a hand-set pairing, so say the connectivity is "
+        "hand-set. seed potential traces the current-free field of the footpoints as point sources (lid images "
+        "included) and derives the pairing, so leave pairing out; the report's potential_seed says how many lines "
+        "were moved to a free footpoint or did not land, and a moved line is not a field line. A scene is never "
+        "overwritten: a new version needs a new name.",
         write,
     )
     async def create_scene(spec: Dict[str, Any]) -> str:
@@ -925,7 +928,12 @@ def build_server(
         'is a list (at most 20) of operations, applied in order: {"op": "set", "field": F, "value": V} changes one spec '
         "field (the fields create_scene takes, except name; null clears lid_height or pairing), and "
         '{"op": "shear", "k": K} pairs each positive footpoint with the negative one K steps along (K = 0 makes the '
-        "arcs perpendicular again). The new version is named `name`, or the next free <root>-vN. The reply lists the "
+        "arcs perpendicular again), "
+        '{"op": "shear_footpoints", "offset": D} slides the negative row D along the PIL and keeps each line on its '
+        'own footpoints (the stressed state), and {"op": "potential"} swaps the lines for the traced potential field '
+        "of the footpoints as they are (the reference state). A stressed version and the potential version made "
+        "from it are a fair pair; their relaxed energy difference is still lid-dependent and is not a free energy "
+        "to quote. The new version is named `name`, or the next free <root>-vN. The reply lists the "
         "fields that changed and whether the new version and its parent are a fair pair for an energy comparison "
         "(only connectivity differs); say so when they are not. get_scene_history shows the version tree.",
         write,
