@@ -232,7 +232,7 @@ class SSHBackend:
         cmd = (
             f"cd {_q(rdir)} && touch cancelled && "
             "p=$(sed -n 's/.*\"pid\": *\\([0-9][0-9]*\\).*/\\1/p' pid 2>/dev/null); "
-            f'[ -n "$p" ] && kill -{sig} -- "-$p" 2>/dev/null; true'
+            f'[ -n "$p" ] && kill -s {sig} -- "-$p" 2>/dev/null; true'  # "-s SIG --" is the form dash accepts
         )
         try:
             self.transport.run(cmd, timeout=45)
@@ -426,7 +426,9 @@ class SlurmBackend(SSHBackend):
         lines = s.get("squeue", "").split()
         state = next((x for x in lines if not x.startswith("rc=")), "")
         pid = _json(s.get("pid", "")) or {}
-        base = dict(pid=pid.get("pid"), pid_start=pid.get("pid_start"), started=pid.get("started"), cancelled=st.cancelled)
+        base = dict(
+            pid=pid.get("pid"), pid_start=pid.get("pid_start"), started=pid.get("started"), cancelled=st.cancelled
+        )
         if state in ("PENDING", "CONFIGURING", "REQUEUED", "RESIZING", "SUSPENDED"):
             return TaskStatus(state="queued", **base)
         if state in ("RUNNING", "COMPLETING", "STAGE_OUT"):

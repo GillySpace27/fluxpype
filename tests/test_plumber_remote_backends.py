@@ -164,11 +164,11 @@ def fake_slurm(tmp_path):
     sbatch = bindir / "sbatch"
     sbatch.write_text(
         f'#!/bin/sh\n[ "$1" = --parsable ] || exit 2\necho PENDING > {state}\n'
-        f'if [ -e {held} ]; then echo 4242; exit 0; fi\n'
+        f"if [ -e {held} ]; then echo 4242; exit 0; fi\n"
         f'( echo RUNNING > {state}; sh "$2" > slurm.out 2>&1; : > {state} ) > /dev/null 2>&1 &\necho "4242;cluster"\n'
     )
     squeue = bindir / "squeue"
-    squeue.write_text(f'#!/bin/sh\n[ -e {tmp_path}/squeue_down ] && exit 1\ncat {state}\n')
+    squeue.write_text(f"#!/bin/sh\n[ -e {tmp_path}/squeue_down ] && exit 1\ncat {state}\n")
     scancel = bindir / "scancel"
     scancel.write_text(f'#!/bin/sh\necho "$@" > {tmp_path}/scancelled\n: > {state}\n')
     for f in (sbatch, squeue, scancel):
@@ -178,13 +178,25 @@ def fake_slurm(tmp_path):
 
 def test_slurm_script_has_the_resource_lines(tmp_path):
     cfg = config(
-        tmp_path, kind="slurm", partition="short", account="p960", cpus_per_task=4, mem="8G",
-        sbatch_extra=["--constraint=avx2"], setup=["module load python"],
+        tmp_path,
+        kind="slurm",
+        partition="short",
+        account="p960",
+        cpus_per_task=4,
+        mem="8G",
+        sbatch_extra=["--constraint=avx2"],
+        setup=["module load python"],
     )
     text = SlurmBackend(cfg, transport=Recording()).sbatch_script(spec(tmp_path), "/scratch/r")
     for line in (
-        "#SBATCH --partition=short", "#SBATCH --account=p960", "#SBATCH --cpus-per-task=4", "#SBATCH --mem=8G",
-        "#SBATCH --constraint=avx2", "#SBATCH --time=7", "module load python", "cd /scratch/r",
+        "#SBATCH --partition=short",
+        "#SBATCH --account=p960",
+        "#SBATCH --cpus-per-task=4",
+        "#SBATCH --mem=8G",
+        "#SBATCH --constraint=avx2",
+        "#SBATCH --time=7",
+        "module load python",
+        "cd /scratch/r",
     ):
         assert line in text
     assert text.index("#SBATCH --time") < text.index("module load python")  # directives before any command
