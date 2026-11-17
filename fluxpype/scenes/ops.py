@@ -5,6 +5,13 @@ An operation is a small JSON object, so the same edit can come from a form field
     {"op": "set", "field": "lid_height", "value": 8}      change one spec field
     {"op": "shear", "k": 2}                                pair each positive footpoint with the one k steps along
                                                            (k = 0 puts the arcs straight across again)
+    {"op": "shear_footpoints", "offset": 0.5}              slide the negative row along the PIL by `offset` and keep
+                                                           each line on the footpoints it has now (the stressed state)
+    {"op": "potential"}                                    swap the lines for the traced potential field of the
+                                                           footpoints as they are (the reference state; see potential.py)
+
+A stressed scene and the potential version of it have the same footpoints, photosphere and lid, so they are a fair
+pair for `relax compare`: the difference is energy above the computed potential seed's relaxed state, at that lid.
 
 `apply_ops` is a pure function on a spec dict. It never writes anything; `store.edit` saves the result as a new
 version. Every edit comes back with the list of fields it changed, so a reader can see exactly what an edit did.
@@ -29,6 +36,7 @@ EDITABLE = (
     "vertices_per_line",
     "photosphere_z",
     "lid_height",
+    "seed",
     "notes",
 )
 
@@ -59,8 +67,25 @@ def _one(spec: Dict[str, Any], op: Any) -> None:
         if not isinstance(n, int) or not 0 <= k < n:
             raise OpError(f"shear k must be from 0 to n_lines - 1 ({n} lines here)")
         spec["pairing"] = None if k == 0 else shift_pairing(n, k)
+        spec["seed"] = "arc"
+    elif kind == "shear_footpoints":
+        # the physical shear: slide the negative row along the PIL and keep every line on its own footpoints
+        off = op.get("offset")
+        if isinstance(off, bool) or not isinstance(off, (int, float)):
+            raise OpError('"shear_footpoints" needs a number "offset" (distance along the PIL, model units)')
+        try:
+            before = PlanarArcadeSpec.from_dict(dict(spec))
+        except (ValueError, TypeError) as e:
+            raise OpError(str(e))
+        spec["pairing"] = before.pairs()  # freeze the connectivity it has now, traced or hand-set
+        spec["seed"] = "arc"
+        spec["shear_offset"] = float(off)
+    elif kind == "potential":
+        # the reference state for the footpoints as they are: traced potential lines, derived pairing
+        spec["pairing"] = None
+        spec["seed"] = "potential"
     else:
-        raise OpError(f"unknown operation {kind!r}; use set or shear")
+        raise OpError(f"unknown operation {kind!r}; use set, shear, shear_footpoints or potential")
 
 
 def apply_ops(spec: Dict[str, Any], ops: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
