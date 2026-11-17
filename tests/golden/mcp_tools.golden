@@ -52,6 +52,20 @@
     "spec"
    ]
   },
+  "edit_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "label",
+    "name",
+    "ops",
+    "scene"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -108,6 +122,16 @@
    ]
   },
   "get_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id"
+   ]
+  },
+  "get_scene_history": {
    "annotations": {
     "destructive_hint": false,
     "open_world_hint": false,
@@ -393,6 +417,21 @@
     "title"
    ]
   },
+  "edit_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "idempotent_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": false
+   },
+   "args": [
+    "label",
+    "name",
+    "ops",
+    "scene",
+    "supersedes"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -436,6 +475,16 @@
    ]
   },
   "get_scene": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "scene_id"
+   ]
+  },
+  "get_scene_history": {
    "annotations": {
     "destructive_hint": false,
     "open_world_hint": false,

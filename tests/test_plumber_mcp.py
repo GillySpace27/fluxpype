@@ -430,7 +430,7 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 27 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 29 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
     for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
@@ -803,6 +803,54 @@ def test_the_ask_bar_proposes_a_scene_and_a_person_saves_it(rig, monkeypatch):
     assert [s["id"] for s in rig.ok("list_scenes")["scenes"]] == ["ask_arc"]
     err, msg = asker.call("create_scene", spec={"name": "ask_arc"})
     assert err and "already exists" in msg
+
+
+def test_edit_scene_saves_a_new_version_and_history_reads_the_tree(rig):
+    rig.ok("create_scene", spec={"name": "arc", "n_lines": 5})
+    out = rig.ok("edit_scene", scene="arc", ops=[{"op": "shear", "k": 2}], label="shear two")
+    assert out["id"] == "arc-v2" and out["parent"] == "arc" and out["fair_pair_with_parent"]["fair"] is True
+    assert [c["field"] for c in out["changes"]] == ["pairing"]
+    assert rig.ok("get_scene", scene_id="arc")["spec"]["pairing"] is None  # the parent is unchanged
+    lid = rig.ok("edit_scene", scene="arc-v2", ops=[{"op": "set", "field": "lid_height", "value": 6}])
+    assert lid["id"] == "arc-v3" and lid["fair_pair_with_parent"]["fair"] is False
+    h = rig.ok("get_scene_history", scene_id="arc-v3")
+    assert [v["id"] for v in h["versions"]] == ["arc", "arc-v2", "arc-v3"]
+    assert h["versions"][1]["label"] == "shear two" and h["versions"][1]["author"] == "mcp"
+    err, msg = rig.call("edit_scene", scene="arc", ops=[{"op": "shear", "k": 0}])
+    assert err and "change nothing" in msg
+    err, msg = rig.call("edit_scene", scene="arc", ops=[{"op": "set", "field": "name", "value": "x"}])
+    assert err and "cannot set" in msg
+    assert rig.call("get_scene_history", scene_id="nope")[0]
+    # the web route: a dry run writes nothing; the person's edit is labelled as theirs
+    dry = rig.tc.post("/api/scenes/arc/edit?dry_run=true", json={"ops": [{"op": "shear", "k": 1}]}, headers=H)
+    assert dry.status_code == 200 and dry.json()["dry_run"] and dry.json()["id"] == "arc-v4"
+    assert "arc-v4" not in [s["id"] for s in rig.ok("list_scenes")["scenes"]]
+    web = rig.tc.post("/api/scenes/arc/edit", json={"ops": [{"op": "shear", "k": 1}]}, headers=H)
+    assert web.status_code == 201, web.text
+    assert rig.ok("get_scene_history", scene_id="arc-v4")["versions"][-1]["author"] == "web"
+    assert rig.tc.post("/api/scenes/arc/edit", json={"ops": "shear"}, headers=H).status_code == 422
+
+
+def test_the_ask_bar_proposes_a_scene_edit_and_a_person_saves_it(rig, monkeypatch):
+    from fluxpype.plumber import ask
+
+    rig.ok("create_scene", spec={"name": "arc", "n_lines": 4})
+    monkeypatch.setattr(ask, "_question", "q8")
+    monkeypatch.setenv("FLUX_ASK_QUESTION", "q8")
+    monkeypatch.setenv("FLUX_MCP_CLIENT", "ask")
+    asker = Rig(rig.tc, rig.sched)
+    asker.server = build_server(asker.client, propose=True)
+    out = asker.ok("edit_scene", scene="arc", ops=[{"op": "set", "field": "lid_height", "value": 5}])
+    assert out["status"] == "pending" and "Nothing has changed" in out["next"]
+    assert [s["id"] for s in rig.ok("list_scenes")["scenes"]] == ["arc"]
+    p = [x for x in rig.tc.get("/api/proposals", headers=H).json()["proposals"] if x["id"] == out["proposal_id"]][0]
+    assert p["args"]["name"] == "arc-v2" and "not a fair pair" in p["summary"]
+    assert {"key": "lid_height", "from": None, "to": "5"} in p["diff"]
+    err, msg = asker.call("edit_scene", scene="arc", ops=[{"op": "shear", "k": 1}], name="arc-v2")
+    assert err and "pending proposal already saves" in msg
+    approved = rig.tc.post(f"/api/proposals/{out['proposal_id']}/approve", headers=H)
+    assert approved.status_code == 200, approved.text
+    assert rig.ok("get_scene_history", scene_id="arc-v2")["versions"][-1]["author"] == "ask"
 
 
 def test_scene_tools_validate_preview_relax_and_read_results(rig):

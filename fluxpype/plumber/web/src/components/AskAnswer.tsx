@@ -39,6 +39,7 @@ const TITLES: Record<string, { title: string; danger?: boolean }> = {
   set_queue: { title: "Change the queue" },
   create_preset: { title: "Save a preset" },
   create_scene: { title: "Save a scene" },
+  edit_scene: { title: "Save a new scene version" },
   relax_scene: { title: "Relax scenes" },
   draft_handoff: { title: "Hand-off work order" },
 };

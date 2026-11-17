@@ -21,6 +21,7 @@ TOOLS = (
     "set_queue",
     "create_preset",
     "create_scene",
+    "edit_scene",
     "relax_scene",
     "draft_handoff",
 )
