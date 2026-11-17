@@ -1907,9 +1907,7 @@ def rdworld(filename):
 
         # Read out flux concentrations
         if sl[0] == "NEW":
-            w.add_fc(
-                int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5])
-            )
+            w.add_fc(int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5]))
 
         # Read out fluxon data
         if sl[0] == "LINE":
