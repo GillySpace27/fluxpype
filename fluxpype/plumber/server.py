@@ -50,6 +50,19 @@ IMAGE_TYPES = {
 WEB_DIR = Path(__file__).resolve().parent / "web" / "dist"
 
 
+def icon_version() -> str:
+    """Short hash of the app icons, so the manifest's icon URLs change whenever the icons do."""
+    import hashlib
+
+    h = hashlib.sha256()
+    for name in ("icon-192.png", "icon-512.png", "maskable-512.png"):
+        try:
+            h.update((WEB_DIR / "icons" / name).read_bytes())
+        except OSError:
+            pass
+    return h.hexdigest()[:10]
+
+
 def clean(obj: Any) -> Any:
     """JSON-safe copy: NaN and infinities become null (browsers reject them)."""
     if isinstance(obj, float):
@@ -2121,6 +2134,7 @@ def create_app(
     @app.get("/manifest.webmanifest")
     def manifest():
         name = "Plumber (demo)" if demo else "Plumber"
+        ver = icon_version()
         body = {
             "name": f"Fluxpype {name}",
             "short_name": name,
@@ -2131,10 +2145,17 @@ def create_app(
             "display": "standalone",
             "background_color": "#0b0d12",
             "theme_color": "#0b0d12",
+            # ?v=<content hash>: installed web apps (Chrome, Edge) keep the icons they were installed with and
+            # only re-fetch when an icon URL changes, so a new icon must come with a new URL
             "icons": [
-                {"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
-                {"src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+                {"src": f"/icons/icon-192.png?v={ver}", "sizes": "192x192", "type": "image/png"},
+                {"src": f"/icons/icon-512.png?v={ver}", "sizes": "512x512", "type": "image/png"},
+                {
+                    "src": f"/icons/maskable-512.png?v={ver}",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "maskable",
+                },
             ],
         }
         return JSONResponse(body, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
