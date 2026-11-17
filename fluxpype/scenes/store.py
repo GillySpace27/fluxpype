@@ -51,6 +51,9 @@ def prepare(spec_dict: Dict[str, Any]) -> Dict[str, Any]:
     report = summarize(text)
     if report["problems"]:
         raise SceneError("the compiled world fails its construction checks: " + "; ".join(report["problems"]))
+    if spec.seed == "potential":
+        seed = spec.potential()
+        report["potential_seed"] = {k: seed[k] for k in ("pairing", "moved", "not_landed", "top_z")}
     return {"spec": spec, "text": text, "report": report}
 
 

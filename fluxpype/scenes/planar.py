@@ -34,13 +34,22 @@ def compile_flux(spec: PlanarArcadeSpec) -> str:
     n = spec.vertices_per_line
     out = [
         f"# scene {spec.name}  hash {spec.content_hash()}  (written by fluxpype.scenes, schema {spec.schema})",
-        "# connectivity is hand-set: pairing = " + ",".join(str(k) for k in pair),
+        ("# connectivity is hand-set: pairing = " if spec.seed == "arc" else "# connectivity is traced: pairing = ")
+        + ",".join(str(k) for k in pair),
         "FRAME 0",
         "GLOBAL FORCES f_pressure_equi f_curvature f_vertex",
         f"GLOBAL PHOTOSPHERE 0 0 {spec.photosphere_z:g} 0 0 1",
     ]
     if spec.lid_height is not None:
         out.append(f"GLOBAL B2 PLANE 0 0 {spec.lid_height:g} 0 0 -1")
+    seed = None
+    if spec.seed == "potential":
+        seed = spec.potential()
+        out.insert(
+            2,
+            "# seed: potential field of the point sources, one traced line per positive footpoint"
+            f" ({seed['moved']} moved to a free footpoint, {seed['not_landed']} did not land)",
+        )
     out.append("")
     label = 2  # running label for concentrations (own namespace) and fluxon + vertices (shared counter)
     conc = 2
@@ -52,7 +61,8 @@ def compile_flux(spec: PlanarArcadeSpec) -> str:
         out.append(f"NEW {c0} {p[0]:.6g} {p[1]:.6g} 0 {flux}")
         out.append(f"NEW {c1} {q[0]:.6g} {q[1]:.6g} 0 -{flux}")
         out.append(f"LINE {label} {c0} {c1} {flux}")
-        for i, (x, y, z) in enumerate(_arc(p, q, n, arc_height(spec, p, q)), start=1):
+        inner = seed["lines"][j] if seed else _arc(p, q, n, arc_height(spec, p, q))
+        for i, (x, y, z) in enumerate(inner, start=1):
             out.append(f"VERTEX {label} {label + i} {i} {x:.6g} {y:.6g} {z:.6g}")
         label += n + 1
         out.append("")

@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 SCHEMA = 1
 MAX_LINES = 200
+SEEDS = ("arc", "potential")
 
 
 def shift_pairing(n: int, k: int) -> List[int]:
@@ -48,6 +49,9 @@ class PlanarArcadeSpec:
     vertices_per_line: int = 19
     photosphere_z: float = -0.001  # the same plane for every variant that is to be compared
     lid_height: Optional[float] = None  # a B2 plane at this z, normal pointing down; None means no lid
+    # "arc": semicircles between hand-paired footpoints. "potential": field lines of the footpoints' own
+    # current-free field, traced (scenes/potential_trace.py); the pairing is then derived, so `pairing` must be None.
+    seed: str = "arc"
     notes: str = ""
     schema: int = field(default=SCHEMA)
 
@@ -63,14 +67,30 @@ class PlanarArcadeSpec:
             raise ValueError("vertices_per_line must be at least 3")
         if not self.photosphere_z < 0:
             raise ValueError("photosphere_z must be below the footpoints (negative)")
+        if self.seed not in SEEDS:
+            raise ValueError("seed must be one of: " + ", ".join(SEEDS))
+        if self.seed == "potential" and self.pairing is not None:
+            raise ValueError("a potential seed derives its own pairing; clear pairing (null) or use seed arc")
         pair = self.pairs()
         if sorted(pair) != list(range(self.n_lines)):
             raise ValueError("pairing must be a permutation of 0..n_lines-1")
         if self.lid_height is not None and self.lid_height <= self.max_height * 1.2:
             raise ValueError("lid_height must clear max_height by at least 20 percent")
+        if self.seed == "potential" and self.lid_height is not None:
+            top = self.potential()["top_z"]
+            if top >= self.lid_height:
+                raise ValueError(f"the potential seed rises to z = {top:.3g}, above the lid at {self.lid_height:g}")
         return self
 
+    def potential(self) -> Dict[str, Any]:
+        """The traced potential seed (pairing, lines, and how many lines had to be moved or did not land)."""
+        from .potential_trace import trace
+
+        return trace(self)
+
     def pairs(self) -> List[int]:
+        if self.seed == "potential":
+            return list(self.potential()["pairing"])
         return list(range(self.n_lines)) if self.pairing is None else list(self.pairing)
 
     def footpoints(self) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
@@ -96,4 +116,6 @@ class PlanarArcadeSpec:
         d = self.to_dict()
         d.pop("name"), d.pop("notes")
         d["pairing"] = self.pairs()
+        if self.seed == "arc":
+            d.pop("seed")  # scenes saved before seeds existed keep their hash
         return hashlib.sha256(json.dumps(d, sort_keys=True).encode()).hexdigest()[:12]
