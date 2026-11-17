@@ -129,6 +129,7 @@ use warnings;
 use Exporter qw(import);
 our @EXPORT_OK = qw(simple_relaxer);
 use PDL::Graphics::Gnuplot 2.006_001;
+use Flux;    # defines Flux::Fluxon::polyline, which $w->render needs for movie frames
 use Time::HiRes qw( clock_gettime);
 BEGIN { eval { require fluxpype::events; fluxpype::events->import; 1 } or eval 'sub emit_event {} sub stage_start {} sub stage_end {} sub stage_skipped {} sub stage_detail {} 1'; }  # progress events (no-op unless FLUXPYPE_EVENTS)
 
