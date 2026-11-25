@@ -1,6 +1,6 @@
 import * as RDialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, CornerDownLeft, Database, Gauge, Layers, ListChecks, Loader2, MessageSquarePlus, Moon, Pause, Play, Plus, Search, Settings, Sparkles, Sun } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, CornerDownLeft, Database, Gauge, Layers, ListChecks, Loader2, MessageSquarePlus, Moon, Pause, Play, Plus, Search, Settings, Sparkles, Sun } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
@@ -8,6 +8,7 @@ import { cn } from "../lib/cn";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { useCache, useJobs, useProfiles, useQueue } from "../lib/hooks";
 import { useTheme } from "../lib/theme";
+import { WELCOME, WELCOME_QUESTIONS } from "../lib/welcome";
 import { AskAnswer } from "./AskAnswer";
 import { Plum } from "./Plum";
 import { PlumActor } from "./PlumActor";
@@ -188,15 +189,32 @@ export function openAsk(question?: string) {
   window.dispatchEvent(new CustomEvent("flux:ask"));
 }
 
-// Shown when the box is empty; each one is asked as written. They lean on the read tools that exist today.
-const EXAMPLES = [
-  "Why did my most recent failed job fail?",
-  "What do the settings in the light preset do?",
-  "Which preset should I use for a CR2160 ADAPT run?",
-  "Compare my two most recent jobs: which settings differ?",
-  "What is in the cache, and which rotations does it cover?",
-];
-const exampleItems: Item[] = EXAMPLES.map((q, i) => ({ id: `ex-${i}`, group: "Try asking", title: q, icon: Sparkles, run: () => ask(q) }));
+// Shown when the box is empty, under Plum's guide; each one is asked as written. They come from ask/welcome.md.
+const exampleItems: Item[] = WELCOME_QUESTIONS.map((q, i) => ({ id: `ex-${i}`, group: "Try asking", title: q, icon: Sparkles, run: () => ask(q) }));
+
+// Whether the guide is folded away, kept per browser. It shows by default on every new chat.
+let guideHidden = stored("flux:ask-guide") === "hidden";
+const toggleGuide = () => {
+  guideHidden = !guideHidden;
+  keep("flux:ask-guide", guideHidden ? "hidden" : null);
+  subs.forEach((s) => s());
+};
+
+/** Plum's opening guide: static text, so reading it costs nothing. */
+function Welcome() {
+  const hidden = useSyncExternalStore((s) => (subs.add(s), () => subs.delete(s)), () => guideHidden);
+  const Chevron = hidden ? ChevronRight : ChevronDown;
+  return (
+    <div className="border-b hair px-5 pb-3 pt-3">
+      <button className="flex items-center gap-2 text-xs font-medium text-muted hover:text-ink" onClick={toggleGuide} aria-expanded={!hidden}>
+        <Plum pose="head" className="h-6 w-8" />
+        How can I use Plum?
+        <Chevron className="h-3.5 w-3.5" />
+      </button>
+      {!hidden && <AskAnswer text={WELCOME} />}
+    </div>
+  );
+}
 
 /** What the box can do without a model: go places, flip switches, jump to a job or preset. */
 function useItems(close: () => void): Item[] {
@@ -320,7 +338,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     setSel(q.trim() && (/\?\s*$/.test(q) || !hits.length) ? hits.length : 0);
   }, [q, hits.length]);
   useEffect(() => {
-    body.current?.scrollTo({ top: body.current.scrollHeight });
+    if (turns.length) body.current?.scrollTo({ top: body.current.scrollHeight }); // the opening guide stays at the top
   }, [turns]);
 
   const submit = (question: string) => {
@@ -446,6 +464,8 @@ function Palette({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             ) : (
+              <>
+              {!q.trim() && <Welcome />}
               <ul role="listbox" className="p-1.5">
                 {rows.map((r, i) => {
                   const head = r === null ? "Ask" : r.group !== lastGroup ? r.group : "";
@@ -469,6 +489,7 @@ function Palette({ onClose }: { onClose: () => void }) {
                 })}
                 {!rows.length && <li className="px-4 py-6 text-center text-xs text-muted">Type to search, or ask a question.</li>}
               </ul>
+              </>
             )}
           </div>
         </RDialog.Content>

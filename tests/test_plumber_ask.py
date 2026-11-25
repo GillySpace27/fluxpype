@@ -532,3 +532,27 @@ def test_earlier_turns_skip_old_and_failed_questions_and_the_log_rotates(tmp_pat
     assert (tmp_path / (ask.TRANSCRIPT_FILE + ".1")).exists() and len(
         (tmp_path / ask.TRANSCRIPT_FILE).read_text().splitlines()
     ) == 1
+
+
+def _welcome():
+    return re.sub(r"<!--.*?-->", "", (ask.DOCS / "welcome.md").read_text(encoding="utf-8"), flags=re.S)
+
+
+def test_the_opening_guide_is_plain_has_questions_and_reaches_plum():
+    text = _welcome()
+    assert "—" not in text  # no em dashes in anything the person reads
+    questions = re.findall(r"^- (.+)$", text.split("## Try asking", 1)[1], re.M)
+    assert len(questions) >= 3
+    prompt = ask.system_prompt()
+    assert "Try asking" in prompt and all(q in prompt for q in questions)
+    assert "<!--" not in ask.welcome_section()
+
+
+def test_the_built_app_carries_the_current_opening_guide():
+    # the web app bundles ask/welcome.md at build time: a stale dist would show an old guide
+    dist = Path(ask.__file__).parent / "web" / "dist" / "assets"
+    bundle = "".join(p.read_text(encoding="utf-8") for p in dist.glob("index-*.js"))
+    questions = re.findall(r"^- (.+)$", _welcome().split("## Try asking", 1)[1], re.M)
+    first = _welcome().strip().splitlines()[0]
+    for s in [first, *questions]:
+        assert json.dumps(s)[1:-1] in bundle or s in bundle, f"web/dist is stale: rebuild it ({s!r} missing)"

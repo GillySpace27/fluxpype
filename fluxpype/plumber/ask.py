@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -193,8 +194,19 @@ def repo_root() -> Optional[Path]:
     return root if (root / "fluxpype" / "plumber").is_dir() else None
 
 
+def welcome_section() -> str:
+    """ask/welcome.md, the guide the panel shows before the first question (the web app bundles the same file), so Plum
+    answers "how can I use you?" the way the panel already put it. Its HTML comment is for editors, not for Plum."""
+    text = re.sub(r"<!--.*?-->", "", (DOCS / "welcome.md").read_text(encoding="utf-8"), flags=re.S).strip()
+    return (
+        "## What the person sees before asking\n\nThe Ask panel opens with this text, written in your voice, and the "
+        "questions under Try asking are buttons. Keep your answers consistent with it.\n\n" + text
+    )
+
+
 def system_prompt(mode: str = "explain", flux_src: Optional[Path] = None) -> str:
     parts = [(DOCS / n).read_text(encoding="utf-8") for n in ("plumber_guide.md", "scene_designer.md")]
+    parts.append(welcome_section())
     root = repo_root()
     if root:
         parts.append(
