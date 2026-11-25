@@ -30,6 +30,14 @@ jobs:
           pip install -e ".[plumber,mcp]" pytest pytest-cov
       - name: pytest
         run: python -m pytest -q
+      # One upload per run, from the newest job. It never fails the build: until
+      # the CODECOV_TOKEN secret exists the upload is skipped with a warning.
+      - if: matrix.python-version == '3.12'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.xml
+          fail_ci_if_error: false
 
   black:
     runs-on: ubuntu-latest
