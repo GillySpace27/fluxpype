@@ -12,6 +12,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
   },
   server: {
+    // the Ask panel's opening guide is imported from ../ask/welcome.md, outside this folder
+    fs: { allow: [".."] },
     proxy: {
       "/api": { target: "http://127.0.0.1:8765", ws: true, changeOrigin: false },
     },
