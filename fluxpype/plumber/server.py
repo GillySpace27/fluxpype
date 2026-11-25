@@ -2246,7 +2246,14 @@ def create_app(
             )
         target = (WEB_DIR / full_path).resolve()
         if full_path and WEB_DIR.resolve() in target.parents and target.is_file():
-            headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "/assets/" in f"/{full_path}" else {}
+            if "/assets/" in f"/{full_path}":
+                headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+            elif "/icons/" in f"/{full_path}":
+                # Icon URLs are stable (favicon, touch icon, sidebar mark), so make the browser revalidate
+                # them; otherwise a heuristically cached copy can outlive a new icon set.
+                headers = {"Cache-Control": "no-cache"}
+            else:
+                headers = {}
             return FileResponse(target, headers=headers)
         return FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 

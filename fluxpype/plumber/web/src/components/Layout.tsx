@@ -26,8 +26,8 @@ function Logo({ compact }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 px-2">
       <div className="h-8 w-8 shrink-0 overflow-hidden rounded-xl shadow-[0_6px_20px_-6px_rgb(var(--accent)/0.6)]">
-        <img src="/icons/plumber-light-small.svg" alt="" className="h-full w-full dark:hidden" />
-        <img src="/icons/plumber-dark-small.svg" alt="" className="hidden h-full w-full dark:block" />
+        {/* The dark mark is the app's identity in both themes (dock, favicon, sidebar). */}
+        <img src="/icons/plumber-dark-small.svg" alt="" className="h-full w-full" />
       </div>
       <div className={cn("leading-none", compact && "hidden")}>
         <p className="text-[15px] font-semibold tracking-tight">Fluxpype Plumber</p>
