@@ -466,6 +466,9 @@ def test_manifest_and_icons_are_public(client):
     src = body["icons"][0]["src"]
     assert "?v=" in src and len(src.split("?v=")[1]) == 10
     assert client.get(src).status_code == 200
+    # stable icon URLs (favicon, touch icon, sidebar mark) are revalidated, so a new icon set shows up
+    touch = client.get("/icons/apple-touch-icon.png")
+    assert touch.status_code == 200 and touch.headers["cache-control"] == "no-cache"
 
 
 def test_custom_cookie_name_keeps_instances_apart(make_scheduler):
