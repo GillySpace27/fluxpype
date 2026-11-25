@@ -1,6 +1,9 @@
 # FLUXpype
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24182704.svg)](https://doi.org/10.5281/zenodo.24182704)
+[![CI](https://github.com/GillySpace27/fluxpype/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/GillySpace27/fluxpype/actions/workflows/CI.yml)
+[![Latest release](https://img.shields.io/github/v/release/GillySpace27/fluxpype?style=flat)](https://github.com/GillySpace27/fluxpype/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Preamble
 This package acts as a wrapper around the Field Line Universal relaXer (FLUX), a solar magnetic field model. This means that it requires the FLUX perl/C software located on Github.
