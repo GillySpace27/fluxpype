@@ -113,7 +113,9 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         flux_world=flux_world,
         lower_bound=1.05,
         upper_bound=100.0,
-        parallel=True,
+        # The fluxel density is vectorized over each image row; joblib then only adds the cost of pickling the
+        # world to every worker (measured: 40 s with joblib vs 22 s serial before vectorizing, audit A2-02/A5-09).
+        parallel=(method != "fluxel"),
         influence_length=influence_length,
         scale=20,
         method=method,
@@ -146,36 +148,12 @@ def densplot(results, ax):
     extent_val = [-fov_val, fov_val, -fov_val, fov_val]
 
     nx, ny = cd.shape
-    fov_rsun = fov.to_value()
-    pixscale_rsun = (2 * fov_rsun) / nx
-
-    from sunpy.coordinates import sun
-    from astropy import constants as const
     from astropy import units as u
 
-    angular_radius = sun.angular_radius().to(u.arcsec)
-    rsun_arcsec = angular_radius.value
-    pixscale_arcsec = pixscale_rsun * rsun_arcsec
+    from fluxpype.science.observer_wcs import observer_header
 
-    meta = {
-        "cdelt1": pixscale_arcsec,
-        "cdelt2": pixscale_arcsec,
-        "cunit1": "arcsec",
-        "cunit2": "arcsec",
-        "crpix1": nx / 2,
-        "crpix2": ny / 2,
-        "crval1": 0.0,
-        "crval2": 0.0,
-        "ctype1": "HPLN-TAN",
-        "ctype2": "HPLT-TAN",
-        "rsun_ref": rsun_arcsec,
-        "dsun_obs": const.au.to_value(u.m),
-        "hgln_obs": 0.0,
-        "hglt_obs": 0.0,
-        "obsrvtry": "Earth",
-        "naxis1": nx,
-        "naxis2": ny,
-    }
+    # Header from one helper (correct pixel scale and centre, dated, RSUN_REF in metres; audit A2-04).
+    meta = observer_header(nx, fov.to_value(), configs.get("observation_date"))
 
     density_map = Map(cd, meta)
     filtered_density = rhef(density_map, application_radius=1.05 * u.R_sun, upsilon="none")
@@ -230,10 +208,10 @@ def quadplot(results, save=True):
         ax.set_xlabel("Solar Radii")
         ax.set_ylabel("Solar Radii")
 
-    plt.suptitle(f"Forward Modeling of FLUX World CR {results["world"].cr}")
+    plt.suptitle(f"Forward Modeling of FLUX World CR {results['world'].cr}")
     plt.tight_layout()
     if save:
-        lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}.png"
+        lightpath = f"{results['light_path']}/cr{results['world'].cr}_fluxlight_light_{method}_{results['nz']}.png"
         print(lightpath)
         plt.savefig(lightpath)
         emit_event("artifact", path=str(lightpath), kind="image")
@@ -293,10 +271,10 @@ def triplot(results, fov_crop=None, save=True):
         ax.set_xlim([-fov_crop, fov_crop])
         ax.set_ylim([-fov_crop, fov_crop])
 
-    plt.suptitle(f"Forward Modeling of FLUX CR {results["world"].cr}, R={results["influence_length"]}")
+    plt.suptitle(f"Forward Modeling of FLUX CR {results['world'].cr}, R={results['influence_length']}")
     plt.tight_layout()
     if save:
-        lightpath = f"{results["light_path"]}/cr{results["world"].cr}_fluxlight_light_{method}_{results["nz"]}_{fov_crop}_{results["influence_length"].to_value()}.png"
+        lightpath = f"{results['light_path']}/cr{results['world'].cr}_fluxlight_light_{method}_{results['nz']}_{fov_crop}_{results['influence_length'].to_value()}.png"
         print(lightpath)
         plt.savefig(lightpath, dpi=250)
         emit_event("artifact", path=str(lightpath), kind="image")
