@@ -12,6 +12,7 @@ our @EXPORT_OK = qw(relax_pfss_world);
 use File::Basename;
 use File::Path qw(mkpath);
 use File::Spec;
+use File::Temp ();
 use Cwd qw(abs_path);
 use Flux::World qw(read_world);
 use Time::HiRes qw(clock_gettime);
@@ -158,8 +159,23 @@ sub relax_pfss_world {
         print "\n\tLoading World...\n\n";
         my $this_world_orig = read_world($full_world_path);
 
+        # Neighbour seeding: FLUX's first relaxation step does a global O(V^2) neighbour search (861 s at 79k vertices,
+        # measured 2026-11-24). seed_neighbors.py writes KD-tree VNEIGHBOR candidates into a temporary copy of the
+        # world, and one local update_neighbors(0) replaces the global search. neighbor_seed = 0 turns this off.
+        my $seed_k = int($configs{neighbor_seed} // 0);
+        my $seeded_path = $seed_k > 0 ? seed_neighbors($full_world_path, $seed_k) : undef;
+
         use Storable qw(dclone);
-        my $this_world_relaxed = dclone($this_world_orig);
+        my $this_world_relaxed = $seeded_path ? read_world($seeded_path) : dclone($this_world_orig);
+        if ($seeded_path) {
+            unlink $seeded_path;
+            my $tn = clock_gettime();
+            $this_world_relaxed->update_neighbors(0);
+            $this_world_relaxed->{rel_step} = 1;    # simple_relaxer then skips its update_neighbors(-1)
+            my $dt_nb = sprintf("%.2f", clock_gettime() - $tn);
+            print "\tLocal neighbour update from seeds: $dt_nb s\n";
+            stage_detail("relax", "neighbour seeds k=$seed_k, local init ${dt_nb} s");
+        }
 
         $this_world_relaxed->forces('f_pressure_equi2b', 'f_curvature', 'f_vertex4', 'b_eqa');  # OLD
         # $this_world_relaxed->forces('b_eqa', 'f_p_eqa_perp', 'f_curv_hm', 'f_vert4'); # NEW
@@ -270,6 +286,30 @@ sub relax_pfss_world {
 
         return $this_world_orig, $this_world_relaxed, $stepnum;
     }
+}
+
+=head2 seed_neighbors
+
+    my $tmp = seed_neighbors($world_path, $k);
+
+Runs seed_neighbors.py on C<$world_path> and returns the path of a temporary copy with C<$k> KD-tree VNEIGHBOR
+seeds per vertex, or undef (with a warning) if that failed, in which case FLUX's own global search runs as before.
+
+=cut
+
+sub seed_neighbors {
+    my ($world_path, $k) = @_;
+    my $script = File::Spec->catfile(dirname(abs_path(__FILE__)), "seed_neighbors.py");
+    my ($fh, $tmp) = File::Temp::tempfile("fluxseed_XXXXXX", SUFFIX => ".flux", TMPDIR => 1);
+    close $fh;
+    my $tn = clock_gettime();
+    if (system("python3", $script, $world_path, $tmp, $k) == 0 && -s $tmp) {
+        printf "\tNeighbour seeds written in %.2f s\n", clock_gettime() - $tn;
+        return $tmp;
+    }
+    warn "\tseed_neighbors.py failed (status $?), so FLUX does its full neighbour search\n";
+    unlink $tmp;
+    return undef;
 }
 
 =head2 make_relax_movie
