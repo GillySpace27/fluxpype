@@ -103,3 +103,24 @@ def test_ghosts_table1(z, ion, wl, logt_eq, logq):
     assert logT[f[ion - 1].argmax()] == pytest.approx(logt_eq, abs=0.011)
     line = Line(z, ion, wl, root=CH8, spline="ghosts")
     assert np.log10(line.q(10**logt_eq)) == pytest.approx(logq, abs=0.011)
+
+
+def test_upsilon_type1_natural_log_vs_ghosts_log10():
+    scups = {"dE": 1.0, "gf": 0.1, "lim": 0.0, "type": 1, "C": 2.0, "x": np.linspace(0, 1, 5), "y": np.full(5, 1.0)}
+    T = np.array([1e5, 1e6])
+    E = T / (rates.RYD_K * 1.0)
+    np.testing.assert_allclose(rates.Upsilon(scups)(T), np.log(E + np.e), rtol=1e-6)
+    ghosts = rates.Upsilon(scups, spline="ghosts")(T)
+    np.testing.assert_allclose(rates.Upsilon(scups)(T) / ghosts, np.log(10), rtol=1e-3)
+
+
+def test_read_elvlc_chianti9_format(tmp_path):
+    d = tmp_path / "o" / "o_6"
+    d.mkdir(parents=True)
+    (d / "o_6.elvlc").write_text(
+        "      1 1s2.2s      1     2    S  0.5          0.000          0.000 ,      0.00000000 ,     -1.00000000\n"
+        "      3 1s2.2p      2     2    P  1.5      96907.500      96909.115 ,      0.88308608 ,      0.88310080\n"
+        " -1\n"
+    )
+    assert chianti.read_elvlc_j(str(tmp_path), 8, 6) == {1: 0.5, 3: 1.5}
+    assert chianti.read_elvlc_energy(str(tmp_path), 8, 6)[3] == pytest.approx(96907.5 / 109737.31568)

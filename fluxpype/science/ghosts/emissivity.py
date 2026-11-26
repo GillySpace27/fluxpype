@@ -14,6 +14,7 @@ class Line:
     """One emission line of ion (z, ion) near ``wavelength`` A."""
 
     def __init__(self, z, ion, wavelength, root=None, spline="cubic", tol=0.01):
+        """``spline="ghosts"`` reproduces GHOSTS exactly (see ``rates.Upsilon``); the default follows ChiantiPy."""
         self.root = chianti.chianti_dir(root)
         self.z, self.ion = z, ion
         lower, upper, lam, gf, a_ul = chianti.find_line(self.root, z, ion, wavelength, tol)
@@ -26,10 +27,15 @@ class Line:
             self.note = ""
         self.w_lower = 2 * chianti.read_elvlc_j(self.root, z, ion)[lower] + 1
         self.ups = rates.Upsilon(chianti.read_scups(self.root, z, ion, lower, upper), spline=spline)
+        if spline == "ghosts":
+            self.de_ryd = None  # GHOSTS used the scups energy
+        else:
+            e = chianti.read_elvlc_energy(self.root, z, ion)
+            self.de_ryd = abs(e[upper] - e[lower])
         self.nu0 = rates.C_CMS / (self.wavelength * 1e-8)
 
     def q(self, T):
-        return rates.q_excitation(self.ups, T, self.w_lower)
+        return rates.q_excitation(self.ups, T, self.w_lower, self.de_ryd)
 
     def emissivity(self, n_e, n_ion, T):
         """erg cm^-3 s^-1 sr^-1."""

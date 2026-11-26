@@ -68,12 +68,27 @@ def find_line(root, z, ion, wavelength, tol=0.01):
 
 
 def read_elvlc_j(root, z, ion):
-    """Level index -> J (the value GHOSTS took as ``data[-3]`` of each elvlc row)."""
+    """Level index -> J. GHOSTS took ``data[-3]`` of each row, which is right for CHIANTI 8; CHIANTI 9+ rows append
+    comma-separated Rydberg energies, so only the text before the first comma is split."""
     out = {}
     for ln in _data_lines(ion_file(root, z, ion, "elvlc")):
-        p = ln.split()
+        p = ln.split(",")[0].split()
         try:
             out[int(p[0])] = float(p[-3])
+        except (ValueError, IndexError):
+            continue
+    return out
+
+
+def read_elvlc_energy(root, z, ion):
+    """Level index -> energy above ground in Rydberg: observed where CHIANTI has it, else theoretical (ChiantiPy's
+    choice)."""
+    out = {}
+    for ln in _data_lines(ion_file(root, z, ion, "elvlc")):
+        p = ln.split(",")[0].split()
+        try:
+            obs, th = float(p[-2]), float(p[-1])
+            out[int(p[0])] = (obs if obs >= 0 else th) / 109737.31568
         except (ValueError, IndexError):
             continue
     return out

@@ -24,20 +24,24 @@ RYD_K = 1.57888e5  # K per Rydberg (GHOSTS findUpsilon)
 class Upsilon:
     """Effective collision strength Upsilon(T) for one transition from Burgess-Tully scaled values.
 
-    ``spline="cubic"`` interpolates the scaled points with a cubic spline through them (CHIANTI's practice).
-    ``spline="ghosts"`` reproduces GHOSTS: scipy ``UnivariateSpline`` with its default smoothing, sampled on 200
+    ``spline="cubic"`` (default) follows CHIANTI/ChiantiPy: an interpolating cubic spline (not-a-knot, as
+    ``splrep(s=0)``) and natural-log descaling, Upsilon = y ln(E + e) (type 1) or y ln(E + C) (type 4).
+    ``spline="ghosts"`` reproduces GHOSTS exactly, including its descaling with log10 instead of ln, which makes
+    type 1 and 4 upsilons a factor ln(10) = 2.303 too small. The spline is scipy ``UnivariateSpline`` with its
+    default smoothing, sampled on 200
     points in [0, 1] and then interpolated linearly.
     """
 
     def __init__(self, scups, spline="cubic"):
         self.s = scups
+        self._log = np.log10 if spline == "ghosts" else np.log
         x, y = scups["x"], scups["y"]
         if spline == "ghosts":
             xs = np.linspace(0, 1, 200)
             ys = interpolate.UnivariateSpline(x, y)(xs)
             self._f = lambda q: np.interp(q, xs, ys, left=np.nan, right=np.nan)
         elif spline == "cubic":
-            f = interpolate.CubicSpline(x, y, bc_type="natural")
+            f = interpolate.CubicSpline(x, y, bc_type="not-a-knot")
             self._f = lambda q: np.where((q >= x[0]) & (q <= x[-1]), f(q), np.nan)
         else:
             raise ValueError(spline)
@@ -54,20 +58,21 @@ class Upsilon:
             raise ValueError(f"Burgess-Tully type {K} not supported (GHOSTS handled 1-4)")
         Y = self._f(X)
         if K == 1:
-            Y = Y * np.log10(E + np.e)
+            Y = Y * self._log(E + np.e)
         elif K == 3:
             Y = Y / (E + 1)
         elif K == 4:
-            Y = Y * np.log10(E + C)
+            Y = Y * self._log(E + C)
         return Y
 
 
-def q_excitation(upsilon, T, w_lower):
+def q_excitation(upsilon, T, w_lower, de_ryd=None):
     """Collisional excitation rate coefficient q(T), cm^3 s^-1 (GHOSTS findQt):
-    2.172e-8 sqrt(I_inf / kT) exp(-dE / kT) Upsilon / w_lower."""
+    2.172e-8 sqrt(I_inf / kT) exp(-dE / kT) Upsilon / w_lower. ``de_ryd`` overrides the scups energy in the
+    Boltzmann factor (ChiantiPy uses the elvlc level energies, observed where available)."""
     T = np.asarray(T, dtype=float)
     kt = KB * T
-    dE = upsilon.s["dE"] * I_INF  # Rydberg -> erg (GHOSTS ryd2erg)
+    dE = (upsilon.s["dE"] if de_ryd is None else de_ryd) * I_INF  # Rydberg -> erg (GHOSTS ryd2erg)
     return 2.172e-8 * np.sqrt(I_INF / kt) * np.exp(-dE / kt) * upsilon(T) / w_lower
 
 
