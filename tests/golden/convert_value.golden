@@ -46,6 +46,7 @@
  "100  # Number of steps to perform in each relaxation cycle": "int\t100",
  "11  # Number of concurrent processes to run": "int\t11",
  "110  # Number of concurrent processes to run": "int\t110",
+ "12  # KD-tree neighbour seeds per vertex before relaxing, replacing FLUX's O(V^2) start-up search (0 = off, the old behaviour)": "int\t12",
  "172.0  # FLUXlight view from Carrington lon (deg): L0 at 2014-05-18T20:00 UT; unset = pole-on": "float\t172.0",
  "1_000": "int\t1000",
  "1e-3": "float\t0.001",

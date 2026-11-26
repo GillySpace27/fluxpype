@@ -91,7 +91,7 @@ sub make_world_sphere {
       ##p $open_start, $open_end, "\n";
 
     unless($open_start){
-      push(@out,sprintf("NEW %d %9.3g %9.3g %9.3g 1",
+      push(@out,sprintf("NEW %d %.7g %.7g %.7g 1",
 			($fc0=$j++),
 			$line->at(0,0), $line->at(1,0), $line->at(2,0)
 			)
@@ -99,7 +99,7 @@ sub make_world_sphere {
     }
 
     unless($open_end){
-      push(@out,sprintf("NEW %d %9.3g %9.3g %9.3g -1",
+      push(@out,sprintf("NEW %d %.7g %.7g %.7g -1",
 			($fc1=$j++),
 			$line->at(0,-1), $line->at(1,-1), $line->at(2,-1)
 			)
@@ -115,7 +115,7 @@ sub make_world_sphere {
     $ln++;
     for my $k(1..$line->dim(1)-2) {
      ## print "line $ln; k=$k\n";
-      push(@out,sprintf("VERTEX %d %d %d %9.3g %9.3g %9.3g",
+      push(@out,sprintf("VERTEX %d %d %d %.7g %.7g %.7g",
 			$fl,
 			$j++,
 			$k,
