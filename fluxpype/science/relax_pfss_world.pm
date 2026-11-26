@@ -165,8 +165,9 @@ sub relax_pfss_world {
         my $seed_k = int($configs{neighbor_seed} // 0);
         my $seeded_path = $seed_k > 0 ? seed_neighbors($full_world_path, $seed_k) : undef;
 
-        use Storable qw(dclone);
-        my $this_world_relaxed = $seeded_path ? read_world($seeded_path) : dclone($this_world_orig);
+        # A second read, never Storable::dclone: dclone copies the Perl wrapper but not the C world, so both
+        # objects would share one WORLD pointer with refct 1 (double free on teardown; stack audit A1-02).
+        my $this_world_relaxed = read_world($seeded_path // $full_world_path);
         if ($seeded_path) {
             unlink $seeded_path;
             my $tn = clock_gettime();
