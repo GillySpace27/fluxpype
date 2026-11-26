@@ -60,24 +60,40 @@ def test_occultation():
     assert fe.occulted(pts, d).tolist() == [False, True, False, True]
 
 
-def test_loop_model_reference_and_scaling(tmp_path):
-    loops = [_semicircle(0, 0, 0.1, h) for h in (0.02, 0.05, 0.1)]
+def test_loop_plasma_uses_loop_model(tmp_path):
+    from fluxpype.science.loop_model import LoopModel
+
+    loops = [_semicircle(0, lat, 0.1, h) for lat, h in ((0, 0.02), (3, 0.05), (6, 0.1))]
     f = tmp_path / "w.flux"
     f.write_text(_world_text(loops))
     fl = fe.read_world(str(f))
     geom = fe.tube_geometry(fl)
-    pl = fe.loop_plasma(fl, geom, t_ref=1.5e6, alpha=0.0, beta=0.0)
+    pl = fe.loop_plasma(fl, geom, flux_per_fluxon=1e20)
     assert pl["closed"].all()
-    # with no B or L dependence of the heating, the median-length loop sits at T_ref
-    i = np.argsort(pl["half_length_cm"])[1]
-    assert pl["T"][i] == pytest.approx(1.5e6, rel=1e-9)
-    # RTV holds for every loop
-    assert np.allclose(pl["T"], 1.4e3 * (pl["p"] * pl["half_length_cm"]) ** (1 / 3))
-    assert np.allclose(pl["n_base"], pl["p"] / (2 * fe.K_B * pl["T"]))
+    lm = LoopModel()
+    for k in range(3):
+        a = lm.apex(pl["half_length_cm"][k], pl["b_sun"][k])
+        assert pl["T_max"][k] == pytest.approx(a["T_max"], rel=1e-9)
+        assert pl["T_grid"][k].max() == pytest.approx(a["T_max"], rel=1e-6)
+    assert np.all(pl["b_sun"] > 0)
+    T, ne = fe.sample_plasma(pl, np.zeros(3, int), np.array([0.0, pl["half_length_cm"][0] / fe.RSUN_CM, 1e9]))
+    assert T[1] == pytest.approx(pl["T_max"][0], rel=1e-6)
+    assert T[0] == pytest.approx(1e4, rel=1e-6) and T[2] == pytest.approx(1e4, rel=1e-6)
+
+
+def _em_quadrature(pl, geom, nh_ne, logt_edges, n=20000):
+    tot = 0.0
+    for k in range(len(geom["len"])):
+        s = geom["s0"][k] + (np.arange(n) + 0.5) / n * geom["len"][k]
+        T, ne = fe.sample_plasma(pl, np.full(n, geom["owner"][k]), s)
+        lt = np.log10(T)
+        ok = (lt >= logt_edges[0]) & (lt < logt_edges[-1])
+        tot += nh_ne * np.sum(ne[ok] ** 2) * geom["len"][k] / n * np.pi * geom["radius"][k] ** 2
+    return tot * fe.RSUN_CM**3
 
 
 def test_em_total_conserved_for_unocculted_loop(tmp_path):
-    """A loop facing the observer, fully in the field of view: the image holds sum n^2 V / A_pix."""
+    """A loop facing the observer, fully in the field of view: the image holds the loop's EM volume integral."""
     pytest.importorskip("sunpy")
     import sunpy.coordinates.sun as sun
 
@@ -86,22 +102,36 @@ def test_em_total_conserved_for_unocculted_loop(tmp_path):
     loop = _semicircle(l0, 0, 0.1, 0.05)
     f = tmp_path / "w.flux"
     f.write_text(_world_text([loop]))
-    hdus, info = fe.render(
-        str(f), obstime=obstime, npix=600, scale_arcsec=4.0, stratify=False, n_disc=8, r_tube_max=0.005
-    )
+    hdus, info = fe.render(str(f), obstime=obstime, npix=600, scale_arcsec=4.0, n_disc=8, r_tube_max=0.005)
     em = hdus["EM_TOTAL"].data.astype(float)
     fl = fe.read_world(str(f))
     geom = fe.tube_geometry(fl, r_tube_max=0.005)
     pl = fe.loop_plasma(fl, geom)
     _, dsun, _ = fe.observer_frame(obstime)
     pix_cm2 = (np.radians(4.0 / 3600) * dsun * fe.RSUN_CM) ** 2
-    vol = (np.pi * geom["radius"] ** 2 * geom["len"]).sum() * fe.RSUN_CM**3
-    expect = pl["n_base"][0] ** 2 * vol / pix_cm2
-    # thin tube, so only the few samples that dip below r = 1 at the footpoints are lost
-    assert em.sum() == pytest.approx(expect, rel=0.03)
-    assert em.sum() <= expect * 1.0001
+    expect = _em_quadrature(pl, geom, fe.DEFAULTS["nh_ne"], hdus["LOGT"].data["LOGT_EDGE"]) / pix_cm2
+    assert em.sum() == pytest.approx(expect, rel=0.01)
     assert hdus[0].data.shape[0] == len(hdus["LOGT"].data) - 1
     assert hdus[0].header["CTYPE1"] == "HPLN-TAN"
+
+
+def test_aia_table_images(tmp_path):
+    pytest.importorskip("sunpy")
+    import sunpy.coordinates.sun as sun
+    from astropy.io import fits
+
+    logt, logne = np.array([4.0, 8.0]), np.array([6.0, 12.0])
+    hdus = [fits.PrimaryHDU(), fits.ImageHDU(np.full((2, 2), 3.0), name="A193")]
+    for name, arr in (("LOGT", logt), ("LOGNE", logne)):
+        hdus.append(fits.BinTableHDU.from_columns([fits.Column(name=name, format="D", array=arr)], name=name))
+    tab = tmp_path / "k.fits"
+    fits.HDUList(hdus).writeto(tab)
+    obstime = "2020-06-01T00:00"
+    loop = _semicircle(sun.L0(obstime).deg, 10, 0.1, 0.05)
+    f = tmp_path / "w.flux"
+    f.write_text(_world_text([loop]))
+    out, _ = fe.render(str(f), obstime=obstime, npix=300, scale_arcsec=8.0, aia_table=str(tab))
+    assert np.allclose(out["SYN_A193"].data, 3.0 * out["EM_TOTAL"].data, rtol=1e-5)
 
 
 def test_response_contraction(tmp_path):

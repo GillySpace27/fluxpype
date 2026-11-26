@@ -106,6 +106,8 @@ class LoopModel:
         else:
             if H is None:
                 H = self.E0 * self._h_bracket(L, b_sun, delta)
+            if not H > 0:  # no heating (v_perp fully quenched): no coronal solution
+                return dict(T_max=0.0, P0=0.0, H=0.0, **e)
             # eqs. 27-28 in logs: 2 lnP - (5.5+g) lnT = A ; (beta-2) lnP + (alpha+g+2) lnT = Bc
             A = np.log(KAPPA0 / ((3.5 + delta) * L**2 * chi0 * e["eps"]))
             Bc = np.log(e["xi"] * chi0 / H)

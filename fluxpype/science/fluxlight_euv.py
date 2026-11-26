@@ -6,15 +6,16 @@ The renderer has three separable parts, so each can be replaced without touching
    nearest vertex on another fluxon (radius = half that distance, capped at ``r_tube_max``), and B is the fluxon's
    flux over that area, in relative units. Tube samples are projected into a helioprojective image for an observer
    at Earth at ``obstime``; samples hidden behind the photosphere are dropped.
-2. Plasma (``loop_plasma``): a temperature and base density per closed fluxon. Default is the RTV scaling law
-   T_max = 1400 (p L)^(1/3) (Rosner, Tucker & Vaiana 1978; T in K, p in dyn cm^-2, L the loop half-length in cm)
-   with heating E_H ∝ <B>^alpha L^-beta, normalised so the median loop has T_ref, plus isothermal hydrostatic
-   stratification in spherical gravity. Open fluxons emit nothing by default. All of alpha, beta, T_ref and
-   mu are assumptions of this model, set by the caller.
-3. Emissivity: the output is EM(T) per pixel (cm^-5 per log T bin), which is independent of any atomic model.
-   A synthetic channel image is the contraction sum_T EM(T) R(T) with a temperature response R(T) the caller
-   supplies (``load_response``), e.g. an AIA response exported from SolarSoft. A GHOSTS emissivity module would
-   plug in at this same point.
+2. Plasma (``loop_plasma``): each closed fluxon gets T(s) and n_e(s) from the steady loop model of Cranmer & Gilly
+   (2026) (``loop_model.LoopModel``: Martens 2010 scaling with their conductivity, cooling curve, heating exponents
+   m, n and normalization T_norm, plus hydrostatic pressure). Its inputs per fluxon are the half-length L and the
+   basal field B_sun, the geometric mean of the two footpoint fields Phi / (pi r^2). FLUX world files carry fluxon
+   flux in relative units, so the flux per fluxon in Mx is a parameter (``flux_per_fluxon``; the default is an
+   assumption). Open fluxons emit nothing yet.
+3. Emissivity: the output is EM(T) per pixel (EM = n_e n_H dl in cm^-5, per log T bin), independent of any atomic
+   model. With an AIA table from ``aia_response`` (K(T, n_e) from ChiantiPy multi-level spectra), each sample also
+   adds K(T, n_e) EM to a synthetic channel image (SYN_A<channel>). A temperature-only response R(T)
+   (``load_response``) is contracted with the EM cube instead.
 
 Output: a FITS file with the EM cube (primary HDU, 3-D WCS: x, y, log T), the total EM image, one image per
 supplied response, and a LOOPS table with the per-fluxon model values, so every number in the image can be
@@ -32,6 +33,7 @@ import numpy as np
 from astropy import constants as const
 from astropy import units as u
 from astropy.io import fits
+from scipy.sparse import coo_matrix
 from scipy.spatial import cKDTree
 
 from fluxpype.plumber.fluxfile import parse_text
@@ -40,17 +42,17 @@ RSUN_CM = const.R_sun.to_value(u.cm)
 K_B = const.k_B.cgs.value
 M_P = const.m_p.cgs.value
 G_SUN = (const.G * const.M_sun / const.R_sun**2).cgs.value
-RTV_T_COEFF = 1.4e3  # RTV (1978) T_max = 1.4e3 (p L)^(1/3), cgs, L = half-length
 
 DEFAULTS = dict(
-    t_ref=1.5e6,  # K, temperature given to the median closed loop (assumption)
-    alpha=1.0,  # heating exponent on mean |B| (assumption)
-    beta=1.0,  # heating exponent on half-length (assumption)
-    mu=0.6,  # mean molecular weight for the scale height (assumption)
+    m=1.607,  # heating exponents and normalization: Cranmer & Gilly (2026) Table 3, 2018 (all), t_n = 0
+    n=1.144,
+    t_norm=1.487e6,
+    flux_per_fluxon=1.0e20,  # Mx per fluxon (assumption; set it from the magnetogram and fluxon count)
+    nh_ne=0.83,  # n_H / n_e for a fully ionized coronal plasma (assumption)
     r_tube_max=0.05,  # R_sun, cap on tube radius (assumption)
-    stratify=True,
     closed_rmax=1.05,  # a fluxon is closed when both ends lie below this radius (R_sun)
 )
+X_GRID = np.concatenate([[0.0], np.logspace(-7, 0, 1500)])  # s / L samples for the loop profiles
 
 
 # ---------------------------------------------------------------------------------------------------- world
@@ -75,7 +77,7 @@ def read_world(path):
 
 def tube_geometry(fluxons, r_tube_max=DEFAULTS["r_tube_max"]):
     """Per-segment midpoints, direction, length (R_sun), tube radius (R_sun) and owner index."""
-    mids, dirs, lens, own = [], [], [], []
+    mids, dirs, lens, own, s0 = [], [], [], [], []
     for k, f in enumerate(fluxons):
         p = f["xyz"]
         d = np.diff(p, axis=0)
@@ -85,7 +87,8 @@ def tube_geometry(fluxons, r_tube_max=DEFAULTS["r_tube_max"]):
         dirs.append((d[ok] / ln[ok, None]))
         lens.append(ln[ok])
         own.append(np.full(ok.sum(), k))
-    mids, dirs, lens, own = map(np.concatenate, (mids, dirs, lens, own))
+        s0.append((np.cumsum(ln) - ln)[ok])  # arc length at each segment's start, R_sun
+    mids, dirs, lens, own, s0 = map(np.concatenate, (mids, dirs, lens, own, s0))
     # nearest midpoint that belongs to another fluxon
     kq = min(len(mids), 24)
     dist, idx = cKDTree(mids).query(mids, k=kq)
@@ -93,52 +96,117 @@ def tube_geometry(fluxons, r_tube_max=DEFAULTS["r_tube_max"]):
     first = np.where(other.any(axis=1), other.argmax(axis=1), kq - 1)
     dnn = dist[np.arange(len(mids)), first]
     radius = np.clip(0.5 * dnn, 1e-4, r_tube_max)
-    return {"mid": mids, "dir": dirs, "len": lens, "radius": radius, "owner": own}
+    return {"mid": mids, "dir": dirs, "len": lens, "radius": radius, "owner": own, "s0": s0}
 
 
 # ---------------------------------------------------------------------------------------------------- plasma
 
 
-def loop_plasma(fluxons, geom, t_ref=1.5e6, alpha=1.0, beta=1.0, closed_rmax=1.05, **_):
-    """Per-fluxon model values. Returns a dict of arrays (one entry per fluxon): closed, half_length_cm, b_rel,
-    heat_rel, p (dyn cm^-2), T (K), n_base (cm^-3). Open fluxons get T = n = 0."""
+def loop_plasma(fluxons, geom, m=1.607, n=1.144, t_norm=1.487e6, flux_per_fluxon=1.0e20, closed_rmax=1.05, **_):
+    """Per-fluxon loop solutions. Returns a dict of arrays, one entry per fluxon: closed, half_length_cm, b_sun (G),
+    delta, T_max (K), P0 (dyn cm^-2), and the profiles T_grid (K) and ne_grid (cm^-3) on ``X_GRID`` = s / L from
+    the nearer footpoint. Open fluxons get zeros."""
+    from fluxpype.science.loop_model import LoopModel, delta_of_length
+
+    model = LoopModel(m=m, n=n, t_norm=t_norm)
     nf = len(fluxons)
     own, ln, rad = geom["owner"], geom["len"], geom["radius"]
-    flux = np.array([f["flux"] for f in fluxons])
-    b_seg = flux[own] / (np.pi * rad**2)  # relative units: flux per fluxon / area in R_sun^2
     length = np.bincount(own, weights=ln, minlength=nf)
-    b_mean = np.bincount(own, weights=b_seg * ln, minlength=nf) / np.maximum(length, 1e-30)
     r0 = np.array([np.linalg.norm(f["xyz"][0]) for f in fluxons])
     r1 = np.array([np.linalg.norm(f["xyz"][-1]) for f in fluxons])
     closed = (r0 < closed_rmax) & (r1 < closed_rmax)
     half = 0.5 * length * RSUN_CM
-    out = dict(closed=closed, half_length_cm=half, b_rel=b_mean, heat_rel=np.zeros(nf), p=np.zeros(nf))
-    out["T"] = np.zeros(nf)
-    out["n_base"] = np.zeros(nf)
-    if not closed.any():
-        return out
-    l_ref = np.median(half[closed])
-    b_ref = np.median(b_mean[closed])
-    p_ref = (t_ref / RTV_T_COEFF) ** 3 / l_ref
-    h = (b_mean / b_ref) ** alpha * (half / l_ref) ** (-beta)
-    # RTV: E_H ∝ p^(7/6) L^(-5/6)  =>  p = p_ref h^(6/7) (L/L_ref)^(5/7)
-    p = p_ref * h ** (6.0 / 7.0) * (half / l_ref) ** (5.0 / 7.0)
-    T = RTV_T_COEFF * (p * half) ** (1.0 / 3.0)
-    n = p / (2.0 * K_B * T)  # fully ionised hydrogen, n_e = n_p
-    out["heat_rel"] = np.where(closed, h, 0.0)
-    out["p"] = np.where(closed, p, 0.0)
-    out["T"] = np.where(closed, T, 0.0)
-    out["n_base"] = np.where(closed, n, 0.0)
+    # footpoint field: flux over the area of the first and last segment's tube
+    first = np.full(nf, -1)
+    last = np.full(nf, -1)
+    idx = np.arange(len(own))
+    np.maximum.at(last, own, idx)
+    first[own[::-1]] = idx[::-1]
+    flux = np.array([f["flux"] for f in fluxons]) * flux_per_fluxon
+    area = lambda k: np.pi * (rad[k] * RSUN_CM) ** 2  # noqa: E731
+    b_sun = np.where(closed, flux / np.sqrt(area(first) * area(last)), 0.0)
+    out = dict(closed=closed, half_length_cm=half, b_sun=b_sun)
+    for k in ("delta", "T_max", "P0"):
+        out[k] = np.zeros(nf)
+    out["T_grid"] = np.zeros((nf, len(X_GRID)))
+    out["ne_grid"] = np.zeros((nf, len(X_GRID)))
+    for k in np.nonzero(closed)[0]:
+        sol = model.apex(half[k], b_sun[k], delta_of_length(half[k]))
+        if not (np.isfinite(sol["T_max"]) and sol["T_max"] > 2 * 1e4):
+            # no heating left (e.g. sunspot quenching of v_perp at very strong footpoint field): no corona
+            closed[k] = False
+            continue
+        T, ne, sol = model.profile(X_GRID * half[k], half[k], b_sun[k], delta_of_length(half[k]))
+        out["delta"][k], out["T_max"][k], out["P0"][k] = sol["delta"], sol["T_max"], sol["P0"]
+        out["T_grid"][k], out["ne_grid"][k] = T, ne
     return out
 
 
-def density_along(r, T, n_base, mu=0.6, stratify=True):
-    """Isothermal hydrostatic density at radius r (R_sun) above a base at 1 R_sun."""
-    if not stratify:
-        return n_base * np.ones_like(r)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        h_rsun = K_B * T / (mu * M_P * G_SUN) / RSUN_CM
-        return n_base * np.exp(-(1.0 / h_rsun) * (1.0 - 1.0 / np.maximum(r, 1.0)))
+def sample_plasma(plasma, owner, s_rsun):
+    """T and n_e at arc length ``s_rsun`` (from the fluxon's first vertex) for samples of fluxons ``owner``."""
+    L = plasma["half_length_cm"][owner] / RSUN_CM
+    s = np.clip(s_rsun, 0.0, 2 * L)
+    x = np.minimum(s, 2 * L - s) / np.maximum(L, 1e-30)
+    j = np.clip(np.searchsorted(X_GRID, x) - 1, 0, len(X_GRID) - 2)
+    w = (x - X_GRID[j]) / (X_GRID[j + 1] - X_GRID[j])
+    lt = (
+        np.log(np.maximum(plasma["T_grid"][owner, j], 1.0)) * (1 - w)
+        + np.log(np.maximum(plasma["T_grid"][owner, j + 1], 1.0)) * w
+    )
+    ln_ = (
+        np.log(np.maximum(plasma["ne_grid"][owner, j], 1e-30)) * (1 - w)
+        + np.log(np.maximum(plasma["ne_grid"][owner, j + 1], 1e-30)) * w
+    )
+    return np.exp(lt), np.exp(ln_)
+
+
+def segment_emission(plasma, geom, segs, logt_edges, nh_ne=0.83, table=None):
+    """Exact (on the profile grid) emission of each segment in ``segs``: EM volume integral pi r^2 int n_e n_H ds
+    per log T bin, shape (len(segs), nT) in cm^-3, and, with an AIA ``table``, int K(T, n_e) n_e n_H dV per channel,
+    shape (len(segs), nchan) in DN s^-1 cm^2 pix^-1. Integrating the profile instead of point-sampling it keeps the
+    thin, dense transition region from turning into shot noise."""
+    nt = len(logt_edges) - 1
+    chans = sorted(table.K) if table is not None else []
+    em = np.zeros((len(segs), nt))
+    syn = np.zeros((len(segs), len(chans)))
+    own = geom["owner"][segs]
+    for k in np.unique(own):
+        rows = np.nonzero(own == k)[0]
+        L = plasma["half_length_cm"][k]
+        T, ne = plasma["T_grid"][k], plasma["ne_grid"][k]
+        f = nh_ne * ne * ne
+        dx = np.diff(X_GRID)
+        fm = 0.5 * (f[1:] + f[:-1]) * dx * L  # cm^-6 * cm per interval
+        tb = np.digitize(np.log10(np.sqrt(T[1:] * T[:-1])), logt_edges) - 1
+        cum = np.zeros((nt, len(X_GRID)))
+        good = (tb >= 0) & (tb < nt)
+        contrib = np.zeros((nt, len(dx)))
+        contrib[tb[good], np.nonzero(good)[0]] = fm[good]
+        cum[:, 1:] = np.cumsum(contrib, axis=1)
+        if chans:
+            kk = np.array([table(c, T, ne) for c in chans])  # (nchan, nx)
+            g = kk * f
+            gm = 0.5 * (g[:, 1:] + g[:, :-1]) * dx * L * good  # same temperature range as the EM cube
+            cumk = np.zeros((len(chans), len(X_GRID)))
+            cumk[:, 1:] = np.cumsum(gm, axis=1)
+        Lr = L / RSUN_CM
+        for i in rows:
+            j = segs[i]
+            sa, sb = geom["s0"][j], geom["s0"][j] + geom["len"][j]
+            pieces = []  # (x_lo, x_hi) in folded coordinate
+            if sb <= Lr:
+                pieces.append((sa / Lr, sb / Lr))
+            elif sa >= Lr:
+                pieces.append(((2 * Lr - sb) / Lr, (2 * Lr - sa) / Lr))
+            else:
+                pieces += [(sa / Lr, 1.0), ((2 * Lr - sb) / Lr, 1.0)]
+            area = np.pi * (geom["radius"][j] * RSUN_CM) ** 2
+            for lo, hi in pieces:
+                lo, hi = np.clip([lo, hi], 0.0, 1.0)
+                em[i] += area * np.array([np.interp(hi, X_GRID, c) - np.interp(lo, X_GRID, c) for c in cum])
+                if chans:
+                    syn[i] += area * np.array([np.interp(hi, X_GRID, c) - np.interp(lo, X_GRID, c) for c in cumk])
+    return em, syn, chans
 
 
 # ---------------------------------------------------------------------------------------------------- observer
@@ -197,10 +265,12 @@ def render(
     n_disc=16,
     seed=0,
     responses=None,
+    aia_table=None,
     **model,
 ):
     """Render a world. Returns (hdulist, info). ``responses`` maps a name to a callable R(logT) in
-    DN cm^5 s^-1 pix^-1 (or any per-EM unit), applied to the EM cube."""
+    DN cm^5 s^-1 pix^-1 (or any per-EM unit), applied to the EM cube. ``aia_table`` is a K(T, n_e) file from
+    ``aia_response build``; each of its channels becomes a SYN_A<channel> image in DN s^-1 per AIA pixel."""
     import sunpy.coordinates.sun as sun
     from astropy.time import Time
 
@@ -226,19 +296,28 @@ def render(
     ny = nx = int(npix)
     nt = len(logt_edges) - 1
     cube = np.zeros((nt, ny, nx))
+    table = None
+    if aia_table is not None:
+        from fluxpype.science.aia_response import Response
+
+        table = Response(aia_table)
+        syn = {c: np.zeros((ny, nx)) for c in sorted(table.K)}
 
     seg_on = plasma["closed"][geom["owner"]]
     sel = np.nonzero(seg_on)[0]
-    T_seg = plasma["T"][geom["owner"]]
-    tbin = np.digitize(np.log10(np.maximum(T_seg, 1.0)), logt_edges) - 1
+    em_seg, syn_seg, chans = segment_emission(plasma, geom, sel, logt_edges, opts["nh_ne"], table)
+    cube_flat = cube.reshape(nt, -1)
+    syn_flat = np.zeros((len(chans), ny * nx))
     n_kept = n_samples = 0
-    for chunk in np.array_split(sel, max(1, len(sel) // 20000)):
-        if not len(chunk):
+    for chunk_idx in np.array_split(np.arange(len(sel)), max(1, len(sel) // 20000)):
+        if not len(chunk_idx):
             continue
+        chunk = sel[chunk_idx]
         mid, d, ln, rad = geom["mid"][chunk], geom["dir"][chunk], geom["len"][chunk], geom["radius"][chunk]
         m = np.maximum(1, np.ceil(ln / (0.5 * pix_rsun)).astype(int))
         rep = np.repeat(np.arange(len(chunk)), m * n_disc)
-        frac = (np.concatenate([(np.arange(k) + 0.5) / k for k in m]) - 0.5).repeat(n_disc)
+        k_along = np.concatenate([np.arange(k) for k in m]).repeat(n_disc)
+        frac = (k_along + rng.random(len(rep))) / m[rep] - 0.5
         # point along the segment, then a uniform offset in the disc perpendicular to it
         e1 = np.cross(d, np.where(np.abs(d[:, :1]) < 0.9, [[1.0, 0, 0]], [[0, 1.0, 0]]))
         e1 /= np.linalg.norm(e1, axis=1, keepdims=True)
@@ -252,20 +331,27 @@ def render(
             + (rr * np.sin(th))[:, None] * e2[rep]
         )
         r = np.linalg.norm(pts, axis=1)
-        own = geom["owner"][chunk][rep]
-        n = density_along(r, plasma["T"][own], plasma["n_base"][own], opts["mu"], opts["stratify"])
-        vol_cm3 = (np.pi * rad[rep] ** 2 * ln[rep] / (m[rep] * n_disc)) * RSUN_CM**3
-        w = n * n * vol_cm3 / pix_area_cm2  # cm^-5 contributed to the pixel
+        # tube offsets near a tilted footpoint can dip below the photosphere; lift those samples onto it so the
+        # (dense, bright) base of the loop is not lost
+        low = r < 1.0
+        pts[low] *= (1.0 + 1e-9) / r[low, None]
         hcc = pts @ rot  # rot rows are the heliocentric images of the Carrington x, y, z unit vectors
-        keep = (r >= 1.0) & ~occulted(hcc, dsun)
+        keep = ~occulted(hcc, dsun)
         tx, ty = to_helioprojective(hcc[keep], dsun)
         ix = np.floor(tx / scale_arcsec + nx / 2).astype(int)
         iy = np.floor(ty / scale_arcsec + ny / 2).astype(int)
-        tb = tbin[chunk][rep][keep]
-        ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny) & (tb >= 0) & (tb < nt)
-        np.add.at(cube, (tb[ok], iy[ok], ix[ok]), w[keep][ok])
+        ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
+        seg_local = rep[keep][ok]
+        pix = iy[ok] * nx + ix[ok]
+        share = 1.0 / (m[seg_local] * n_disc) / pix_area_cm2  # each sample carries this fraction of its segment
+        W = coo_matrix((share, (seg_local, pix)), shape=(len(chunk), ny * nx)).tocsr()
+        cube_flat += (W.T @ em_seg[chunk_idx]).T
+        if chans:
+            syn_flat += (W.T @ syn_seg[chunk_idx]).T
         n_samples += len(rep)
         n_kept += int(ok.sum())
+    if table is not None:
+        syn = {c: syn_flat[i].reshape(ny, nx) for i, c in enumerate(chans)}
 
     hdus = _to_fits(cube, logt_edges, scale_arcsec, obstime, earth, dsun, plasma, fluxons, world_path, opts)
     if responses:
@@ -276,14 +362,21 @@ def render(
             h.header["BUNIT"] = "response unit x cm-5 (e.g. DN s-1 pix-1)"
             h.header["COMMENT"] = f"sum over log T of EM(T) * R_{name}(T)"
             hdus.append(h)
+    if table is not None:
+        for c, img in syn.items():
+            h = fits.ImageHDU(img.astype(np.float32), header=_wcs2(hdus[0].header), name=f"SYN_A{c}")
+            h.header["BUNIT"] = "DN s-1 pix-1"
+            h.header["COMMENT"] = "sum of K(T, n_e) n_e n_H dl over the line of sight; per AIA 0.6 arcsec pixel"
+            h.header["AIATABLE"] = os.path.basename(aia_table)[:68]
+            hdus.append(h)
     info = dict(
         obstime=obstime.isot,
         n_fluxons=len(fluxons),
         n_closed=int(plasma["closed"].sum()),
         samples=n_samples,
         samples_in_image=n_kept,
-        T_range=(
-            (float(plasma["T"][plasma["closed"]].min()), float(plasma["T"][plasma["closed"]].max()))
+        T_max_range=(
+            (float(plasma["T_max"][plasma["closed"]].min()), float(plasma["T_max"][plasma["closed"]].max()))
             if plasma["closed"].any()
             else None
         ),
@@ -328,11 +421,18 @@ def _to_fits(cube, edges, scale, obstime, earth, dsun, plasma, fluxons, world_pa
     h["RSUN_OBS"] = np.degrees(np.arcsin(1.0 / dsun)) * 3600.0
     h["CONTENT"] = "FLUXlight EUV emission measure per log T bin"
     h["WORLD"] = os.path.basename(world_path)[:68]
-    for k in ("t_ref", "alpha", "beta", "mu", "r_tube_max", "closed_rmax"):
-        h[f"M_{k.upper()}"[:8]] = (float(opts[k]), f"model {k} (assumption)")
-    h["M_STRAT"] = (bool(opts["stratify"]), "hydrostatic stratification")
-    h["COMMENT"] = "EM(T) per pixel: sum over the line of sight of n_e n_H dl, binned by loop temperature."
-    h["COMMENT"] = "Loop plasma: RTV scaling + heating ~ <B>^alpha L^-beta normalised to T_ref at the median loop."
+    for key, k in (
+        ("M_HEATM", "m"),
+        ("M_HEATN", "n"),
+        ("M_TNORM", "t_norm"),
+        ("M_FLUX", "flux_per_fluxon"),
+        ("M_NHNE", "nh_ne"),
+        ("M_RTUBE", "r_tube_max"),
+        ("M_CLOSED", "closed_rmax"),
+    ):
+        h[key] = (float(opts[k]), f"model {k}")
+    h["COMMENT"] = "EM(T) per pixel: sum over the line of sight of n_e n_H dl, binned by local temperature."
+    h["COMMENT"] = "Loop plasma: Cranmer & Gilly (2026) steady loops (fluxpype.science.loop_model)."
     prim = fits.PrimaryHDU(cube.astype(np.float32), header=h)
     tot = fits.ImageHDU(cube.sum(axis=0).astype(np.float32), header=_wcs2(h), name="EM_TOTAL")
     tot.header["BUNIT"] = "cm-5"
@@ -342,11 +442,10 @@ def _to_fits(cube, edges, scale, obstime, earth, dsun, plasma, fluxons, world_pa
         fits.Column(name="FLUXON", format="K", array=ids),
         fits.Column(name="CLOSED", format="L", array=plasma["closed"]),
         fits.Column(name="HALF_LENGTH", format="D", unit="cm", array=plasma["half_length_cm"]),
-        fits.Column(name="B_REL", format="D", array=plasma["b_rel"]),
-        fits.Column(name="HEAT_REL", format="D", array=plasma["heat_rel"]),
-        fits.Column(name="PRESSURE", format="D", unit="dyn cm-2", array=plasma["p"]),
-        fits.Column(name="T", format="D", unit="K", array=plasma["T"]),
-        fits.Column(name="N_BASE", format="D", unit="cm-3", array=plasma["n_base"]),
+        fits.Column(name="B_SUN", format="D", unit="G", array=plasma["b_sun"]),
+        fits.Column(name="DELTA", format="D", array=plasma["delta"]),
+        fits.Column(name="T_MAX", format="D", unit="K", array=plasma["T_max"]),
+        fits.Column(name="P0", format="D", unit="dyn cm-2", array=plasma["P0"]),
     ]
     loops = fits.BinTableHDU.from_columns(cols, name="LOOPS")
     return fits.HDUList([prim, tot, edges_hdu, loops])
@@ -393,10 +492,11 @@ def main(argv=None):
     ap.add_argument("--npix", type=int, default=1024)
     ap.add_argument("--scale", type=float, default=2.4, help="arcsec per pixel (2.4 = AIA binned 4x)")
     ap.add_argument("--response", action="append", default=[], help="NAME=FILE, a temperature response table")
-    ap.add_argument("--t-ref", type=float, default=DEFAULTS["t_ref"])
-    ap.add_argument("--alpha", type=float, default=DEFAULTS["alpha"])
-    ap.add_argument("--beta", type=float, default=DEFAULTS["beta"])
-    ap.add_argument("--no-stratify", action="store_true")
+    ap.add_argument("--aia-table", default=None, help="K(T, n_e) FITS from 'python -m fluxpype.science.aia_response'")
+    ap.add_argument("--m", type=float, default=DEFAULTS["m"], help="heating exponent m (Cranmer & Gilly 2026)")
+    ap.add_argument("--n", type=float, default=DEFAULTS["n"], help="heating exponent n")
+    ap.add_argument("--t-norm", type=float, default=DEFAULTS["t_norm"], help="K, apex T of the reference loop")
+    ap.add_argument("--flux-per-fluxon", type=float, default=DEFAULTS["flux_per_fluxon"], help="Mx")
     ap.add_argument("--out", default=None)
     ap.add_argument("--png", action="store_true")
     a = ap.parse_args(argv)
@@ -410,18 +510,20 @@ def main(argv=None):
         npix=a.npix,
         scale_arcsec=a.scale,
         responses=responses,
-        t_ref=a.t_ref,
-        alpha=a.alpha,
-        beta=a.beta,
-        stratify=not a.no_stratify,
+        aia_table=a.aia_table,
+        m=a.m,
+        n=a.n,
+        t_norm=a.t_norm,
+        flux_per_fluxon=a.flux_per_fluxon,
     )
     out = a.out or a.world.replace(".flux", "_euv.fits")
     hdus.writeto(out, overwrite=True)
     print(f"wrote {out}: {info}")
     if a.png:
         quicklook_png(hdus, out.replace(".fits", ".png"))
-        for name in responses:
-            quicklook_png(hdus, out.replace(".fits", f"_{name}.png"), ext=f"SYN_{name}")
+        names = [h.name for h in hdus if h.name.startswith("SYN_")]
+        for name in names:
+            quicklook_png(hdus, out.replace(".fits", f"_{name[4:]}.png"), ext=name)
     return 0
 
 
