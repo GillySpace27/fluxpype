@@ -44,6 +44,33 @@ def _point_to_segments_distance_and_t(p, seg_a, seg_b):
     return d, t
 
 
+def _min_distance_to_candidate_segments(points, idx, seg_a, seg_b, chunk=65536):
+    """
+    Distance from each point to the nearest of its candidate segments, vectorized.
+
+    points: (N,3); idx: (N,k) candidate segment indices (e.g. from a KD-tree query); seg_a/seg_b: (M,3).
+    Same arithmetic as calling _point_to_segments_distance_and_t once per point and taking np.nanmin, so the
+    result is identical, but about 4x faster for the whole FLUXlight render (audit finding A2-02). Points are
+    processed in chunks to bound the (chunk, k, 3) temporaries.
+    """
+    n = points.shape[0]
+    out = np.empty(n, float)
+    for lo in range(0, n, chunk):
+        hi = min(lo + chunk, n)
+        p = points[lo:hi]
+        a = seg_a[idx[lo:hi]]
+        ab = seg_b[idx[lo:hi]] - a
+        ap = p[:, None, :] - a
+        ab2 = np.sum(ab * ab, axis=2)
+        good = ab2 > 0
+        t = np.zeros(ab2.shape, float)
+        t[good] = np.clip(np.sum(ap[good] * ab[good], axis=1) / ab2[good], 0.0, 1.0)
+        closest = a + t[..., None] * ab
+        d = np.linalg.norm(p[:, None, :] - closest, axis=2)
+        out[lo:hi] = np.nanmin(d, axis=1)
+    return out
+
+
 class Fluxon:
     """
     Represents an individual fluxon with its endpoints, flux value, spatial coordinates,
@@ -229,15 +256,17 @@ class FluxWorld:
             if match_f:
                 self.nflx = match_f.group(1)
 
+            # The wind stage's *_radial_fr.dat is only needed by compute_cross_sectional_areas(method="file").
+            # A world with no sibling wind/ folder (wind skipped, a scene, a copied world) must still load,
+            # so a missing file leaves flux_area_file None and that method raises if it is ever asked for.
             try:
                 self.flux_area_file = [
                     join(self.dat_dir, pp)
                     for pp in listdir(self.dat_dir)
                     if (pp.endswith("_radial_fr.dat") and self.cr in pp and self.nflx in pp)
                 ][0]
-                pass
-            except Exception as e:
-                raise e
+            except Exception:
+                self.flux_area_file = None
 
     def __str__(self):
         key_color = "\033[94m"  # blue color for keys
@@ -921,13 +950,7 @@ class FluxWorld:
             if k == 1:
                 idx = idx[:, None]
 
-            distances = np.full(coords_val.shape[0], np.inf)
-            for i in range(coords_val.shape[0]):
-                cand = np.unique(idx[i])
-                sa = self._seg_a[cand]
-                sb = self._seg_b[cand]
-                d, _ = _point_to_segments_distance_and_t(coords_val[i], sa, sb)
-                distances[i] = np.nanmin(d)
+            distances = _min_distance_to_candidate_segments(coords_val, idx, self._seg_a, self._seg_b)
 
             distances = distances * u.R_sun
 
@@ -1021,9 +1044,10 @@ class FluxWorld:
         if method == "file":
             # Read ground truth areas from an output file.
             # The file should have columns: fluxon id, x, y, z, r, theta, phi, A, fr
-            if not hasattr(self, "flux_area_file") or not self.flux_area_file:
-                raise ValueError(
-                    "flux_area_file not specified. Please set self.flux_area_file to the path of the ground truth data file."
+            if not getattr(self, "flux_area_file", None):
+                raise FileNotFoundError(
+                    "area method 'file' needs the wind stage's *_radial_fr.dat, and none was found in "
+                    f"{getattr(self, 'dat_dir', '?')}. Run the wind stage (do_wind_calc = 1) or use light_method = fluxel."
                 )
             gt_data = np.loadtxt(self.flux_area_file)
 

@@ -663,6 +663,11 @@ def _trace_lines_magex(output, f_vars, open_path, closed_path, adapt):
         except Exception:
             skip_num += 1
             continue
+        if fl_rads.size == 0:
+            # The tracer can return a line with no points (seen on a real ADAPT map, CR2225, after
+            # "field line ran out of steps"); np.max of it raised ValueError and killed the PFSS stage.
+            skip_num += 1
+            continue
 
         sgn_i = int(f_sgn[i]) if i < len(f_sgn) else 0
 
@@ -848,6 +853,8 @@ def _trace_each_single_impl(coords, i, output, fl_open, fl_closed, flnum_open, f
     first = True
     fl = output.trace(tracer, x0)
     fl = fl.field_lines[0]
+    if len(fl.coords) == 0:
+        raise ValueError("tracer returned an empty field line")
     if fl.is_open:
         fl_pol = fl.polarity
         fl = fl.coords.spherical

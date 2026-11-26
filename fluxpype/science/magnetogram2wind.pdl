@@ -352,12 +352,13 @@ our $this_world_orig;
 my $selected_file_path;
 my $original_file_path;
 
-if (1){
+# The relaxed world is loaded whether or not the wind runs: FLUXlight needs $selected_file_path too.
+($this_world_relaxed, $this_world_orig, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
-
-
+# do_wind_calc = 0 skips the wind solve and its plots (the SBIR magnetogram -> FLUXlight path does not need them).
+# recompute = 1 forces it back on above.
+if ($do_wind_calc){
   stage_start("wind");
-  ($this_world_relaxed, $this_world_orig, $selected_file_path, $original_file_path) = pipe_helper::load_highest_numbered_world($datdir, $batch_name, $CR, $n_fluxons_wanted, $inst);
 
   our $use_world = 0;
   my $plot_stiff = 0;
@@ -378,6 +379,7 @@ if (1){
 
 
 }
+stage_skipped("do_wind_calc=0", "wind", "wind_plots") unless $do_wind_calc;
 
 
 
@@ -385,7 +387,7 @@ if (1){
 ## Plot the Solar wind Solutions  #####################################################################
 #######################################################################################################
 
-if (1) {
+if ($do_wind_calc) {
 
 use File::Spec::Functions qw(catfile);
 use Term::ANSIColor;
@@ -471,7 +473,8 @@ stage_end("wind_plots");
 } # End of the if (0) block
 
 if ($configs{light}){
-  our $sci_dir;
+  # Set here too: the wind-plot block that also sets it is skipped when do_wind_calc = 0.
+  our $sci_dir = File::Spec::Functions::catfile($base_dir, "fluxpype", "fluxpype", "science");
   stage_start("fluxlight");
   run_command("python3 " . catfile($sci_dir, "fluxlight.py ") . $selected_file_path);
   stage_end("fluxlight");
