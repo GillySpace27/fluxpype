@@ -155,6 +155,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let attempt = 0;
     let restartSeen = false; // set by server_restarting; the next socket open reloads the page
     let invalidateTimer: number | undefined;
+    let bootId: string | null = null; // the server process the last hello came from
+    let restartTimer: number | undefined;
 
     // keys pile up until the timer fires, so a busy stream of events cannot starve an earlier invalidation
     const pending = new Map<string, unknown[]>();
@@ -189,6 +191,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           return;
         }
         switch (msg.type) {
+          case "hello": {
+            // a tab that missed the restart broadcast still reloads once it sees a different server process
+            const boot = msg.data?.boot as string | undefined;
+            if (boot && bootId && boot !== bootId) {
+              window.location.reload();
+              return;
+            }
+            bootId = boot ?? bootId;
+            break;
+          }
           case "task_state": {
             const s = msg.data as TaskState;
             qc.setQueryData(["task", s.id], s);
@@ -246,6 +258,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "server_restarting":
             restartSeen = true;
             setRestarting(true);
+            // if the exec failed the socket never drops; after 30 s with it still open, the restart did not happen
+            window.clearTimeout(restartTimer);
+            restartTimer = window.setTimeout(() => {
+              if (ws?.readyState === WebSocket.OPEN) {
+                restartSeen = false;
+                setRestarting(false);
+              }
+            }, 30_000);
             break;
           case "events_read":
             takeCounts(msg.data);
@@ -265,6 +285,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(invalidateTimer);
+      window.clearTimeout(restartTimer);
       ws?.close();
     };
   }, [qc, catchUp]);
