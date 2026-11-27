@@ -89,11 +89,16 @@ Sources: fluxpype `README.md`, `pyproject.toml`, `config_runner.py`, `science/ma
 3. `make_world_from_pfss.pm` reads those with `rcols`, converts (lon,lat,r) deg via `t_spherical`, calls
    `make_world_sphere(@lines, {rmax=>199})` -> text -> `str2world` -> `write_world` to
    `world/cr<CR>_f<N>_<inst>.flux`.
-4. `relax_pfss_world.pm`: sets forces, `concurrency`, loops `simple_relaxer` (update_force[_parallel] +
+4. `relax_pfss_world.pm`: sets forces and the fork count (`relax_concurrency` when defined, else `concurrency`;
+   `science/relax_pfss_world.pm:190-192`), loops `simple_relaxer` (update_force[_parallel] +
    relax_step[_parallel]) in cycles of `do_steps`, `fix_curvature`/`fix_proximity` between cycles until
    stiffness (f_av/fs_av*100, percent) < threshold; writes `..._relaxed_s<stepnum>.flux`.
-5. Wind/flow maps (`get_wind`, `gen_fluxon_*flow.pm`), plots, then `fluxlight.py` (Thomson-scattering
-   image from the relaxed world, Python reader `open_world_python.read_flux_world`).
+5. Wind/flow maps (`get_wind`, `gen_fluxon_*flow.pm`) and wind plots run only when `do_wind_calc` is 1
+   (`magnetogram2wind.pdl:360`, `:390`; with 0 both stages show as skipped, `:382`). Then `fluxlight.py`
+   (Thomson-scattering image from the relaxed world, Python reader `open_world_python.read_flux_world`).
+   FLUXlight does not need the wind stage or a `wind/` folder: the default `light_method = fluxel` never reads
+   the wind file (`open_world_python.py:261-269`, `:1047`); only the `file` area method does and it says so.
+   FLUXlight is run when `light = 1` (`magnetogram2wind.pdl:473`).
 
 ## 2. The text `.flux` world format
 
