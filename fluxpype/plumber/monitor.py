@@ -25,50 +25,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from .. import names
+from .. import stages as stage_manifest
 
-STAGES = [
-    ("magnetogram", "Magnetogram"),
-    ("footpoints", "Footpoints"),
-    ("pfss", "PFSS trace"),
-    ("world", "World"),
-    ("relax", "Relaxation"),
-    ("world_plots", "World plots"),
-    ("fieldmap", "Field map"),
-    ("wind", "Wind"),
-    ("wind_plots", "Wind plots"),
-    ("fluxlight", "FLUXlight"),
-    ("euv", "EUV compare"),
-]
-STAGE_IDS = [s for s, _ in STAGES]
-LABELS = dict(STAGES)
+# the stage list, labels and log markers come from the manifest (A2-09)
+STAGES = [(st.id, st.label) for st in stage_manifest.STAGES]
+STAGE_IDS = stage_manifest.STAGE_IDS
+LABELS = stage_manifest.LABELS
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _NUM = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?|nan|inf|-inf)"
 
 # stage start markers in the log, in pipeline order (a later marker also ends earlier stages)
-LOG_STARTS = [
-    ("magnetogram", re.compile(r"THE CR IS \d+|LIBS ARE LOADED")),
-    ("footpoints", re.compile(r"\(pdl\) Tracing Magnetogram to get \d+ Footpoints")),
-    ("pfss", re.compile(r"\(py\) Running PFSS Code to Trace Footpoints")),
-    ("world", re.compile(r"\(pdl\) Converting PFSS Fieldlines into FLUX Fluxons")),
-    ("relax", re.compile(r"\(pdl\) Relax the Initial World State")),
-    ("world_plots", re.compile(r"Relaxation Complete in \d+ Steps|Worlds Successfully loaded")),
-    ("fieldmap", re.compile(r"\(py\) Plotting Magnetic Field Maps")),
-    ("wind", re.compile(r"\(pdl\) Calculating Coronal Plasma Parameters")),
-    ("wind_plots", re.compile(r"\(py\) Plotting Solar Wind Maps")),
-]
-LOG_REUSED = [
-    ("footpoints", re.compile(r"Found a \d+ footpoint file on Disk")),
-    ("pfss", re.compile(r"Fluxon Loc data files already exist")),
-    ("world", re.compile(r"Skipped conversion! World already exists")),
-    ("relax", re.compile(r"Skipped relaxation!")),
-    ("fieldmap", re.compile(r"Skipped! Files already exist")),
-]
-LOG_FAILURES = [
-    ("magnetogram", re.compile(r"get_magnetograms\.py failed.*")),
-    ("pfss", re.compile(r"get_pfss\.py failed.*")),
-    ("fieldmap", re.compile(r"plot_fieldmap\.py failed.*")),
-    ("relax", re.compile(r"TOO MANY FLUXONS.*")),
+LOG_STARTS = stage_manifest.log_markers("log_start")
+LOG_REUSED = stage_manifest.log_markers("log_reused")
+LOG_FAILURES = stage_manifest.log_markers("log_failure") + [
     (None, re.compile(r"Error executing command.*")),
     (None, re.compile(r"PDL script failed with exit code \d+")),
 ]
@@ -104,30 +74,15 @@ class ProbeContext:
     reduce: str = "4"
     adapt_select: str = "2"
 
+    def fields(self) -> Dict[str, str]:
+        return stage_manifest.fields_for(
+            self.data_dir, self.batch, self.cr, self.nflux, self.inst, self.reduce, self.adapt_select
+        )
+
     def patterns(self) -> Dict[str, List[str]]:
-        d, b, cr, n, inst = self.data_dir, self.batch, self.cr, self.nflux, self.inst
-        batch = os.path.join(d, "batches", b)
-        mag = f"CR{cr}_r{self.reduce}_hmi.fits" if inst == "hmi" else f"CR{cr}_rf{self.adapt_select}_adapt.fits"
-        return {
-            "magnetogram": [os.path.join(d, "magnetograms", mag)],
-            "footpoints": [
-                os.path.join(batch, "data", f"cr{cr}", "floc", f"floc_cr{cr}_*_f{n}_{inst}.dat"),
-                os.path.join(batch, f"cr{cr}", "floc", f"floc_cr{cr}_*_f{n}_{inst}.dat"),
-            ],
-            "pfss": [os.path.join(d, "pfss", f"pfss_cr{cr}_*{inst}*.pkl")],
-            "world": [os.path.join(batch, "data", f"cr{cr}", "world", f"cr{cr}_f{n}_{inst}.flux")],
-            "relax": [os.path.join(batch, "data", f"cr{cr}", "world", f"cr{cr}_f{n}_{inst}_relaxed_s*.flux")],
-            # new names first (A7-01); the old ones keep a batch written before then found
-            "wind": [
-                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_{inst}_*"),
-                # old spellings cr<CR>_f<N>_radial_* and cr<CR>_f<N>_stiff_radial_* in one pattern ([!ah]: not _hmi/_adapt)
-                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_[!ah]*"),
-            ],
-            "fluxlight": [
-                os.path.join(batch, "**", f"cr{cr}_f{n}_{inst}_fluxlight_*.png"),
-                os.path.join(batch, "**", f"cr{cr}_fluxlight_*.png"),
-            ],
-        }
+        """Glob patterns per stage id that has probes (from the stage manifest)."""
+        f = self.fields()
+        return {s.id: stage_manifest.probes(s.id, f) for s in stage_manifest.STAGES if s.probes}
 
     def image_globs(self) -> List[str]:
         return [os.path.join(self.data_dir, "batches", self.batch, "data", f"cr{self.cr}", "**", "*.png")]

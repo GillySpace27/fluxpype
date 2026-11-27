@@ -13,21 +13,14 @@ import re
 from typing import Any, Dict, List, Optional
 
 from .. import names
+from .. import stages as stage_manifest
 from .cache import classify
 from . import plotrun
 from .monitor import ProbeContext
 from .plotcatalog import PLOTS
 
-# stage id, label, key in ProbeContext.patterns(), most files to list
-PRODUCTS = [
-    ("magnetogram", "Magnetogram", "magnetogram", 1),
-    ("footpoints", "Footpoints", "footpoints", 4),
-    ("pfss", "PFSS model", "pfss", 4),
-    ("world", "Initial world", "world", 2),
-    ("relaxed_world", "Relaxed world", "relax", 6),
-    ("wind", "Wind", "wind", 40),
-    ("fluxlight", "FLUXlight", "fluxlight", 40),
-]
+# (product id, label, stage id whose probes find it, most files to list), from the stage manifest
+PRODUCTS = stage_manifest.products()
 PLOT_EXT = (".png", ".jpg", ".jpeg", ".gif", ".pdf", ".svg")
 SLACK_S = 5.0  # file clocks and the task's start time are compared with this much tolerance
 
