@@ -30,7 +30,8 @@ from .conversations import ConversationError, Conversations
 from .health import Health
 from .presets import PresetError
 from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
-from .monitor import STAGES, first_match_for_context
+from .. import stages as stage_manifest
+from .monitor import first_match_for_context
 from .notify import Notifier, clean_id
 from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError, SchedulerNotFound
 from .sysmon import SysMon
@@ -40,7 +41,7 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 APP_DOMAIN = "plumber.localhost"  # *.localhost always resolves to loopback (RFC 6761)
 PUBLIC_FILES = {"/manifest.webmanifest", "/sw.js", "/login", "/favicon.ico"}
 PUBLIC_PREFIXES = ("/assets/", "/icons/")
-# results product id -> pipeline stage id (monitor.STAGES)
+# results product id -> pipeline stage id (fluxpype/stages.py)
 PRODUCT_STAGE = {"relaxed_world": "relax"}
 
 IMAGE_TYPES = {
@@ -666,7 +667,7 @@ def create_app(
                 "active_backend": sched.active_backend,
                 "sandboxed": sched.is_sandboxed(),
                 "scenarios": list(SCENARIOS) if "fake" in sched.backends else [],
-                "stages": [{"id": s, "label": l} for s, l in STAGES],
+                "stages": stage_manifest.public(),
                 "forbidden_keys": sorted(config_io.FORBIDDEN_KEYS),
                 "agent": (
                     None
