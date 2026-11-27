@@ -120,7 +120,7 @@ class Runner:
 
     def run(self) -> int:
         s = self.spec
-        emit("run.start", mode=s["mode"], scenes=s["ids"], lid=s.get("lid"))
+        emit("run.start", mode=s["mode"], scenes=s["ids"], lid=s.get("lid"), flux_pm=s.get("flux_pm"))
         emit("stage.start", stage="relax")
         self.say(f"Relaxing {' and '.join(s['ids'])} ({s['mode']}): {s['cycles']} cycles of {s['steps']} steps")
         results: Dict[int, Dict[str, Any]] = {}
@@ -185,15 +185,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     speed = float(argv[argv.index("--speed") + 1]) if "--speed" in argv else 1.0
     run_dir = Path(spec["run_dir"])
     run_dir.mkdir(parents=True, exist_ok=True)
-    if not fake:  # FLUX's Perl: the pipeline runner puts Flux.pm on PERL5LIB the same way (config_runner.py)
+    if not fake:  # FLUX's Perl and PERL5LIB come from the same resolver as the pipeline runner (A7-05)
         try:
-            from ..pipe_helper import get_flux_perl_lib
+            from ..flux_runtime import flux_runtime
 
-            lib = get_flux_perl_lib(spec.get("flux_config") or {})
-            if lib:
-                os.environ["PERL5LIB"] = lib + (
-                    os.pathsep + os.environ["PERL5LIB"] if os.environ.get("PERL5LIB") else ""
-                )
+            cfg = dict(spec.get("flux_config") or {})
+            if spec.get("perl"):
+                cfg["flux_perl"] = spec["perl"]
+            rt = flux_runtime(cfg)
+            os.environ.update(rt.env)
+            spec["perl"] = rt.perl if rt.perl_source != "path" else None
+            spec["flux_pm"] = rt.flux_pm
         except Exception:  # noqa: BLE001 - without it FLUX may still be on Perl's own path
             pass
     runner = Runner(spec, fake, speed)

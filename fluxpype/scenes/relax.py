@@ -113,7 +113,18 @@ def parse_line(line: str) -> Optional[Dict]:
 
 
 def find_perl(perl: Optional[str] = None) -> str:
-    return perl or os.environ.get("FLUX_PERL") or "perl"
+    """`--perl`, else `$FLUX_PERL`, else config.ini `flux_perl`, else `perl` (see fluxpype/flux_runtime.py)."""
+    from ..flux_runtime import resolve_perl
+
+    cfg = None
+    if not (perl or os.environ.get("FLUX_PERL")):
+        try:
+            from ..config import configurations
+
+            cfg = configurations(debug=False)
+        except Exception:  # noqa: BLE001 - no readable config.ini: fall back to PATH, as before
+            cfg = None
+    return resolve_perl(cfg, perl, honor_env=True)[0]
 
 
 # Which FLUX build ran: relaxed worlds depend on the PDL version (audit A6-03), so a result is only comparable with
@@ -295,12 +306,23 @@ def main(argv=None) -> int:
         p.add_argument("worlds", nargs=nargs)
         p.add_argument("--cycles", type=int, default=150)
         p.add_argument("--steps", type=int, default=100, help="relaxation steps per cycle (fluxpype do_steps)")
-        p.add_argument("--perl", help="the Perl that can `use Flux` (default $FLUX_PERL, else perl)")
+        p.add_argument(
+            "--perl", help="the Perl that can `use Flux` (default $FLUX_PERL, else config.ini flux_perl, else perl)"
+        )
         p.add_argument("--series", help="write the per-cycle series as JSON here")
         p.add_argument("--no-register", action="store_true", help="do not list the run in Plumber")
         if name == "run":
             p.add_argument("--out", help="relaxed world (default WORLD.relaxed.flux)")
     a = ap.parse_args(argv)
+    try:  # same Perl and PERL5LIB rule as the pipeline runner and Plumber scene tasks (A7-05)
+        from ..config import configurations
+        from ..flux_runtime import flux_runtime
+
+        rt = flux_runtime(configurations(debug=False), a.perl, honor_env=True)
+        os.environ.update(rt.env)
+        a.perl = rt.perl
+    except Exception:  # noqa: BLE001 - no readable config.ini: keep the plain --perl / $FLUX_PERL / perl rule
+        pass
     common = dict(cycles=a.cycles, steps=a.steps, perl=a.perl)
 
     if a.cmd == "run":
