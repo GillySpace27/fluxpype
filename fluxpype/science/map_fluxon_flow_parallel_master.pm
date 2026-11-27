@@ -165,12 +165,12 @@ sub save_full_velocity_profiles {
 }
 
 #------------------------------------------------------------------------
-# map_fluxon_flow_parallel_master($output_file_name, \@fluxons, $flow_method, $CR, $n_want, [$max_processes])
+# map_fluxon_flow_parallel_master($output_file_name, \@fluxons, $flow_method, $CR, $n_want, [$max_processes], [$inst])
 #
 # Primary subroutine to coordinate parallel flow calculations on fluxons.
 #------------------------------------------------------------------------
 sub map_fluxon_flow_parallel_master {
-    my ($output_file_name, $fluxon_list, $flow_method, $CR, $n_want, $max_processes_arg) = @_;
+    my ($output_file_name, $fluxon_list, $flow_method, $CR, $n_want, $max_processes_arg, $inst) = @_;
 
     # Safely extract fluxons array
     die "ERROR: fluxon_list must be an array ref"
@@ -220,14 +220,17 @@ sub map_fluxon_flow_parallel_master {
     print "     -> $num_active_fluxons footpoints total.\n\n";
     print "     Beginning Calculation of $flow_method wind...\n\n";
 
+    # The precomputation scripts read this task's cr<CR>_f<N>_<inst>_radial_bmag_all.dat, so they need its instrument (A7-01).
+    my $adapt_arg = ( defined $inst and $inst eq 'adapt' ) ? " --adapt 1" : "";
+
     # If requested, run a precomputation step
     if ($flow_method eq "tempest") {
         # Make the tempest file
-        my $fmap_command = "python3 fluxpype/science/tempest.py --cr $CR --nwant $n_want";
+        my $fmap_command = "python3 fluxpype/science/tempest.py --cr $CR --nwant $n_want$adapt_arg";
         system($fmap_command) == 0 or die "Python script returned error $?";
     }
     elsif ($flow_method eq "cranmer") {
-        my $fmap_command = "python3 fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want";
+        my $fmap_command = "python3 fluxpype/science/cranmer_wind.py --cr $CR --nwant $n_want$adapt_arg";
         system($fmap_command) == 0 or die "Python script returned error $?";
     }
     elsif ($flow_method eq "wsa") {

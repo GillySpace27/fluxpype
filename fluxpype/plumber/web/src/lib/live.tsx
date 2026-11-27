@@ -30,13 +30,15 @@ export interface EventsState {
 
 interface LiveCtx {
   connected: boolean;
+  /** The server announced a restart; the page reloads once the socket reconnects. */
+  restarting: boolean;
   agent: AgentPing | null;
   onLog: (fn: LogListener) => () => void;
   ev: EventsState;
 }
 
 const NO_EVENTS: EventsState = { events: [], unread: 0, attention: 0, readUpto: 0, more: false, markRead: () => {}, ack: () => {}, loadOlder: () => {} };
-const Ctx = createContext<LiveCtx>({ connected: false, agent: null, onLog: () => () => {}, ev: NO_EVENTS });
+const Ctx = createContext<LiveCtx>({ connected: false, restarting: false, agent: null, onLog: () => () => {}, ev: NO_EVENTS });
 
 const mergeEvents = (cur: PlumberEvent[], add: PlumberEvent[]) => {
   const bySeq = new Map(cur.map((e) => [e.seq, e]));
@@ -48,6 +50,7 @@ const mergeEvents = (cur: PlumberEvent[], add: PlumberEvent[]) => {
 export function LiveProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [agent, setAgent] = useState<AgentPing | null>(null);
   const listeners = useRef(new Set<LogListener>());
   const toast = useToast();
@@ -150,7 +153,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     let timer: number | undefined;
     let closed = false;
     let attempt = 0;
+    let restartSeen = false; // set by server_restarting; the next socket open reloads the page
     let invalidateTimer: number | undefined;
+    let bootId: string | null = null; // the server process the last hello came from
+    let restartTimer: number | undefined;
 
     // keys pile up until the timer fires, so a busy stream of events cannot starve an earlier invalidation
     const pending = new Map<string, unknown[]>();
@@ -168,6 +174,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/api/ws`);
       ws.onopen = () => {
+        if (restartSeen) {
+          window.location.reload(); // the new server may ship a new bundle
+          return;
+        }
         attempt = 0;
         setConnected(true);
         qc.invalidateQueries();
@@ -181,6 +191,16 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           return;
         }
         switch (msg.type) {
+          case "hello": {
+            // a tab that missed the restart broadcast still reloads once it sees a different server process
+            const boot = msg.data?.boot as string | undefined;
+            if (boot && bootId && boot !== bootId) {
+              window.location.reload();
+              return;
+            }
+            bootId = boot ?? bootId;
+            break;
+          }
           case "task_state": {
             const s = msg.data as TaskState;
             qc.setQueryData(["task", s.id], s);
@@ -235,6 +255,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           case "event":
             arriveRef.current(msg.data as PlumberEvent);
             break;
+          case "server_restarting":
+            restartSeen = true;
+            setRestarting(true);
+            // if the exec failed the socket never drops; after 30 s with it still open, the restart did not happen
+            window.clearTimeout(restartTimer);
+            restartTimer = window.setTimeout(() => {
+              if (ws?.readyState === WebSocket.OPEN) {
+                restartSeen = false;
+                setRestarting(false);
+              }
+            }, 30_000);
+            break;
           case "events_read":
             takeCounts(msg.data);
             break;
@@ -253,12 +285,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       closed = true;
       window.clearTimeout(timer);
       window.clearTimeout(invalidateTimer);
+      window.clearTimeout(restartTimer);
       ws?.close();
     };
   }, [qc, catchUp]);
 
   const value = useRef<LiveCtx>({
     connected: false,
+    restarting: false,
     agent: null,
     ev: NO_EVENTS,
     onLog: (fn) => {
@@ -267,8 +301,9 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     },
   });
   value.current.connected = connected;
+  value.current.restarting = restarting;
   const ev: EventsState = { events, ...counts, more, markRead, ack, loadOlder };
-  return <Ctx.Provider value={{ connected, agent, onLog: value.current.onLog, ev }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ connected, restarting, agent, onLog: value.current.onLog, ev }}>{children}</Ctx.Provider>;
 }
 
 export const useLive = () => useContext(Ctx);

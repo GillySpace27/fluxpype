@@ -18,7 +18,55 @@ FLUX has two halves: the **core** (a C library with Perl/PDL bindings, in
 1. **Build the core** by following the guide for your platform in
    [fluxon-mhd/doc](https://github.com/lowderchris/fluxon-mhd/tree/main/doc).
    It is done when, in a *new* terminal, `perl -MPDL -MFlux -e1` prints nothing and returns.
-2. **Install fluxpype** (Python 3.10 to 3.12):
+
+   Build libflux with optimization: the default build has no `-O` flag, and an
+   `-O2` build makes every relax about 1.5x faster with byte-identical golden
+   output (measured on two fixtures, 1.46x to 1.65x). From the fluxon-mhd checkout:
+
+   ```sh
+   make everything CFLAGS="-I../include -g -fPIC -O2"
+   ```
+
+   Link-order trap: Perl links with `-L/usr/local/lib` first, so an older
+   `/usr/local/lib/libflux.a` is linked silently instead of your new one. Remove
+   it first, or install to `/usr/local`. Not yet checked: the pdl half of
+   `make everything` with this override, and Mac clang. `flux-doctor` reports the
+   optimization level it can read from `libflux.a`.
+
+   > **Warning: do not run `make condaflux` (or `make condauninstall`).**
+   > The conda sections of the fluxon-mhd guides
+   > ([install-linux.md:57](https://github.com/lowderchris/fluxon-mhd/blob/main/doc/install-linux.md),
+   > [install-macos.md:65](https://github.com/lowderchris/fluxon-mhd/blob/main/doc/install-macos.md))
+   > tell you to. That target runs `lib/uninstall_condaflux.sh`, which does
+   > `rm -rf` on the first folder of `PDLLIB` and of `PERL5LIB` whenever its path
+   > contains "flux" (any case; `lib/uninstall_condaflux.sh` lines 14-29).
+   > A folder such as `~/vscode/fluxons/my-analysis` or `.../envs/fluxenv/...` is
+   > deleted with no prompt. On Ubuntu and Debian, where `/bin/sh` is dash, the
+   > target instead stops with `source: not found` and `Error 127`
+   > (`Makefile:70` runs `source` under `/bin/sh -c`). The fix belongs in
+   > fluxon-mhd and is not made yet.
+   >
+   > Safe build, from the fluxon-mhd checkout, with the conda env activated so
+   > its `perl` is first on `PATH`:
+   >
+   > ```sh
+   > ( unset PL_PREFIX PERL5LIB PDLLIB; FL_PREFIX="$CONDA_PREFIX" make everything )
+   > ```
+   >
+   > The parentheses run it in a subshell, so your own shell keeps its
+   > `PERL5LIB` and `PDLLIB`. Not yet checked: whether this build alone lets PDL
+   > find the FLUX autoload scripts (`simple_relaxer` and the others in the
+   > checkout's `pdl/PDL/`). If a relaxation says it cannot find one, add that
+   > folder to `PDLLIB`, for example
+   > `export PDLLIB="+$HOME/path/to/fluxon-mhd/pdl/PDL:$PDLLIB"`.
+   >
+   > With `PL_PREFIX` empty, `Makefile:24` passes an empty `INSTALL_BASE`, so
+   > `Flux.pm` is installed into that Perl's own site directory (already on its
+   > `@INC`) and no `PERL5LIB` line is needed. This is how the container's
+   > reference build was installed. Not yet tried inside a conda env on macOS;
+   > check with the `perl -MPDL -MFlux -e1` test above. Whatever you do, check
+   > `echo $PERL5LIB $PDLLIB` first and keep your own work out of any folder it lists.
+2. **Install fluxpype** (Python 3.10 to 3.13):
 
    ```sh
    git clone https://github.com/GillySpace27/fluxpype.git

@@ -17,6 +17,8 @@ fluxenv_pip/
 *.json
 *.npy
 *.sav
+# realflux goldens (tests/realflux) are data files on purpose
+!tests/data/realflux/**
 
 # C extensions
 *.so

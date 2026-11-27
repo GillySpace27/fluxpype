@@ -37,7 +37,7 @@ _RULES = [
     ),
     ("relaxed_world", re.compile(r"^cr(?P<cr>\d+)_f(?P<n>\d+)_(?P<inst>\w+?)_relaxed_s(?P<steps>\d+)\.flux$")),
     ("world", re.compile(r"^cr(?P<cr>\d+)_f(?P<n>\d+)_(?P<inst>\w+)\.flux$")),
-    ("fluxlight", re.compile(r"^cr(?P<cr>\d+)_fluxlight_.*\.png$")),
+    ("fluxlight", re.compile(r"^cr(?P<cr>\d+)_(?:f(?P<n>\d+)_(?P<inst>hmi|adapt)_)?fluxlight_.*\.png$")),
     ("plots", re.compile(r"^.*\.(?:png|pdf|jpg|jpeg|svg)$")),
 ]
 _WIND_DIR = re.compile(r"(?:^|/)batches/(?P<batch>[^/]+)/data/cr(?P<cr>\d+)/wind/")

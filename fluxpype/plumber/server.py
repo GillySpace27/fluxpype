@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -47,6 +48,67 @@ IMAGE_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
+
+# Response types and statuses that gzip must never touch: already compressed, streamed, or byte-ranged.
+_NO_GZIP_TYPES = ("image/", "video/", "audio/", "application/octet-stream", "application/fits", "application/zip")
+_NO_GZIP_EXACT = {"application/gzip", "application/x-gzip", "text/event-stream"}
+
+
+def _gzip_refused(accept_encoding: str) -> bool:
+    """True when the client sent `gzip;q=0` (Starlette only looks for the word gzip)."""
+    for part in accept_encoding.split(","):
+        name, _, params = part.partition(";")
+        if name.strip().lower() == "gzip":
+            q = params.replace(" ", "").lower()
+            if q.startswith("q="):
+                try:
+                    return float(q[2:]) == 0.0
+                except ValueError:
+                    return False
+    return False
+
+
+class _NoGzipMarker:
+    """Inside GZipMiddleware: tags responses that must stay as they are with `Content-Encoding: identity`,
+    which Starlette treats as already encoded and so leaves alone (any version, no exclusion list needed)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        async def guarded(message):
+            if message["type"] == "http.response.start":
+                headers = [(k, v) for k, v in message.get("headers", [])]
+                names = {k.lower(): v for k, v in headers}
+                ctype = names.get(b"content-type", b"").decode("latin-1").split(";")[0].strip().lower()
+                if b"content-encoding" not in names and (
+                    message["status"] == 206
+                    or ctype in _NO_GZIP_EXACT
+                    or ctype.startswith(_NO_GZIP_TYPES)
+                    or ctype.endswith("/fits")
+                ):
+                    message = {**message, "headers": headers + [(b"content-encoding", b"identity")]}
+            await send(message)
+
+        await self.app(scope, receive, guarded if scope["type"] == "http" else send)
+
+
+class SelectiveGZip:
+    """GZipMiddleware (bodies of 2 KiB and up) that steps aside for Range requests, `gzip;q=0`, partial (206)
+    responses, and images, video, FITS, archives and event streams (audit A3-05)."""
+
+    def __init__(self, app):
+        self.plain = app
+        self.gzip = GZipMiddleware(_NoGzipMarker(app), minimum_size=2048)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = {k.lower(): v for k, v in scope["headers"]}
+            if b"range" in headers or _gzip_refused(headers.get(b"accept-encoding", b"").decode("latin-1")):
+                return await self.plain(scope, receive, send)
+        await self.gzip(scope, receive, send)
+
+
 WEB_DIR = Path(__file__).resolve().parent / "web" / "dist"
 
 
@@ -366,6 +428,7 @@ def create_app(
                 task.cancel()
 
     app = FastAPI(title="Fluxpype Plumber", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.add_middleware(SelectiveGZip)
     allowed = {h.lower() for h in allowed_hosts}
     sched = scheduler
     caches: Dict[str, Cache] = {}
@@ -380,6 +443,7 @@ def create_app(
 
     sched.on_change = on_sched_change
     # the event log: runs in the loop whether or not a browser is connected (notify.py)
+    boot_id = uuid.uuid4().hex  # new for every server process; a tab that sees it change reloads for the new bundle
     notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
     app.state.notifier = notifier
     waits: Dict[str, int] = {}  # concurrent long polls of GET /api/events, per session (or client address)
@@ -2133,7 +2197,9 @@ def create_app(
         hub.clients.add(q)
         sender = None
         try:
-            await sock.send_text(json.dumps({"type": "hello", "data": {"version": version, "demo": demo}}))
+            await sock.send_text(
+                json.dumps({"type": "hello", "data": {"version": version, "demo": demo, "boot": boot_id}})
+            )
             sender = asyncio.create_task(_pump(sock, q))
             while True:
                 await sock.receive_text()  # ignore client messages; detects disconnect

@@ -12,6 +12,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from .. import names
 from .cache import classify
 from . import plotrun
 from .monitor import ProbeContext
@@ -28,7 +29,6 @@ PRODUCTS = [
     ("fluxlight", "FLUXlight", "fluxlight", 40),
 ]
 PLOT_EXT = (".png", ".jpg", ".jpeg", ".gif", ".pdf", ".svg")
-_NFLUX = re.compile(r"_f(\d+)(?:_|\.|$)")
 SLACK_S = 5.0  # file clocks and the task's start time are compared with this much tolerance
 
 
@@ -46,10 +46,9 @@ def plot_stage(path: str) -> Optional[str]:
     return "wind_plots" if "/imgs/" in p else None
 
 
-def for_this_nflux(name: str, nflux: str) -> bool:
-    """False only when the file name names a different fluxon count (``_f<N>_``)."""
-    m = _NFLUX.search(name)
-    return m is None or m.group(1) == str(nflux)
+def for_this_nflux(name: str, nflux: str, inst: Optional[str] = None) -> bool:
+    """False only when the file name names a different fluxon count (``_f<N>_``) or, if given, a different instrument."""
+    return names.is_this_task(name, nflux, inst)
 
 
 def made_here(mtime: float, started: Optional[float], ended: Optional[float]) -> Optional[bool]:
@@ -100,10 +99,14 @@ def _file(path: str, root: str, started, ended, posthoc=None) -> Optional[Dict[s
     }
 
 
-def _expand(patterns: List[str]) -> List[str]:
+def _expand(patterns: List[str], first: bool = False) -> List[str]:
+    """Files matching any pattern; with ``first`` only those of the first pattern that matches (new name, else old)."""
     out: List[str] = []
     for pat in patterns:
-        out += glob.glob(pat, recursive=True)
+        hits = glob.glob(pat, recursive=True)
+        if hits and first:
+            return sorted(set(hits))
+        out += hits
     return sorted(set(out))
 
 
@@ -116,13 +119,15 @@ def plot_catalog(
         files, n = [], 0
         if ctx:
             batch = os.path.join(ctx.data_dir, "batches", ctx.batch)
-            pat = e["pattern"].replace("{cr}", str(ctx.cr)).replace("{nflux}", str(ctx.nflux))
             top = os.path.realpath(ctx.data_dir) + os.sep
-            hits = [
-                p
-                for p in glob.glob(os.path.normpath(os.path.join(batch, pat)))
-                if os.path.isfile(p) and os.path.realpath(p).startswith(top)
-            ]
+            for pat in plotrun.pattern_candidates(e, ctx):  # new name first, the old one for an older batch
+                hits = [
+                    p
+                    for p in glob.glob(os.path.normpath(os.path.join(batch, pat)))
+                    if os.path.isfile(p) and os.path.realpath(p).startswith(top)
+                ]
+                if hits:
+                    break
             hits.sort(key=os.path.getmtime, reverse=True)
             n = len(hits)
             files = [f for f in (_file(p, ctx.data_dir, started, ended, posthoc) for p in hits[:8]) if f]
@@ -148,7 +153,11 @@ def task_results(
     seen = set()
     products = []
     for sid, label, key, limit in PRODUCTS:
-        hits = [p for p in _expand(pats[key]) if for_this_nflux(os.path.basename(p), ctx.nflux)]
+        hits = [
+            p
+            for p in _expand(pats[key], first=key in ("wind", "fluxlight"))
+            if for_this_nflux(os.path.basename(p), ctx.nflux, ctx.inst)
+        ]
         hits.sort(key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0, reverse=True)
         files = [f for f in (_file(p, root, started, ended) for p in hits[:limit]) if f]
         seen.update(os.path.realpath(p) for p in hits)
@@ -164,7 +173,7 @@ def task_results(
         for p in glob.glob(pat, recursive=True)[:2000]:
             if not p.lower().endswith(PLOT_EXT) or os.path.realpath(p) in seen:
                 continue
-            if not for_this_nflux(os.path.basename(p), ctx.nflux):
+            if not for_this_nflux(os.path.basename(p), ctx.nflux, ctx.inst):
                 continue
             if by_name and f"cr{ctx.cr}" not in os.path.basename(p):
                 continue
