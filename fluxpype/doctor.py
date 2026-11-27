@@ -12,9 +12,9 @@ import sys
 PY_MIN, PY_MAX = (3, 10), (3, 13)  # numpy 2 supports 3.13; 3.14 is untested
 
 
-def _run(cmd):
+def _run(cmd, env=None):
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
         return r.returncode, (r.stdout + r.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
@@ -127,9 +127,11 @@ def libflux_check(paths=None):
 def _flux_perl():
     """config.ini flux_perl (the Perl jobs run), or None when unset or the config cannot be read."""
     try:
-        from fluxpype.pipe_helper import configurations
+        from fluxpype.config import configurations
+        from fluxpype.flux_runtime import resolve_perl
 
-        return os.path.expanduser(configurations(debug=False).get("flux_perl") or "") or None
+        perl, source = resolve_perl(configurations(debug=False))
+        return perl if source == "config" else None
     except Exception:  # noqa: BLE001  the config check below reports a broken config.ini
         return None
 
@@ -155,7 +157,17 @@ def checks():
     code, out = _run([perl, "-MPDL", "-e", "print $PDL::VERSION"]) if perl else (1, "")
     yield ("PDL", code == 0, out.splitlines()[-1] if out else "", "cpanm PDL (see fluxon-mhd/doc)")
 
-    code, out = _run([perl, "-MFlux", "-e", "print $INC{'Flux.pm'}"]) if perl else (1, "")
+    # Same Perl and PERL5LIB rule as the pipeline and scene jobs (fluxpype/flux_runtime.py), so a pass here means they load it too.
+    code, out = (1, "")
+    if perl:
+        try:
+            from fluxpype.config import configurations
+            from fluxpype.flux_runtime import flux_runtime
+
+            flux_env = flux_runtime(configurations(debug=False), perl=perl).env
+        except Exception:  # noqa: BLE001  the config check below reports a broken config.ini
+            flux_env = None
+        code, out = _run([perl, "-MFlux", "-e", "print $INC{'Flux.pm'}"], env=flux_env)
     yield (
         "Flux (FLUX core)",
         code == 0,

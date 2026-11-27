@@ -130,7 +130,9 @@ def display_splash_screen(configs, log_path=None):
 
 def _perl(configs):
     """The Perl every job stage uses: config.ini `flux_perl` if set, else the first `perl` on PATH."""
-    return os.path.expanduser(configs.get("flux_perl") or "perl")
+    from fluxpype.flux_runtime import resolve_perl
+
+    return resolve_perl(configs)[0]
 
 
 def _check_pdl_available(perl="perl"):
@@ -269,7 +271,8 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     subprocess.CalledProcessError
         If the script execution fails.
     """
-    from fluxpype.pipe_helper import configurations, get_flux_perl_lib
+    from fluxpype.flux_runtime import flux_runtime
+    from fluxpype.pipe_helper import configurations
 
     configs = configurations(debug=False)
 
@@ -291,27 +294,12 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
     # The Perl stage calls bare `python`/`python3`; make those resolve to this interpreter
     # (venv or conda bin dirs hold both names), so helpers see the same packages we do.
     env["PATH"] = os.path.dirname(sys.executable) + os.pathsep + env.get("PATH", "")
-    # Prefer Flux from current Perl's default @INC (e.g. conda site_perl) so C extension handshake matches.
-    # Only add fluxon-perl to PERL5LIB when Flux is not already loadable (avoids loading wrong .bundle from fluxon-perl).
-    try:
-        r = subprocess.run(
-            [perl, "-e", "use Flux; print qq(ok);"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            env=env,
-        )
-        flux_ok = r.returncode == 0 and "ok" in (r.stdout or "")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        flux_ok = False
-    if not flux_ok:
-        flux_perl_lib = get_flux_perl_lib(configs)
-        if flux_perl_lib:
-            env["PERL5LIB"] = (
-                flux_perl_lib + (os.pathsep + env.get("PERL5LIB", "")) if env.get("PERL5LIB") else flux_perl_lib
-            )
-        else:
-            emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
+    # Flux.pm and PERL5LIB come from the shared resolver (fluxpype/flux_runtime.py), as for scene relaxations.
+    rt = flux_runtime(configs, env=env)
+    env = rt.env
+    if rt.perl5lib_added is None and not rt.flux_loadable:
+        emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
+    emit(f"Flux.pm: {rt.flux_pm or 'not found'} (perl: {rt.perl})", style="dim")
 
     command = [
         perl,
