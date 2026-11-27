@@ -73,6 +73,7 @@ class Scheduler:
         # the tick owns running-task state (A3-09): it polls and refreshes once per tick; every reader copies from here
         self._states: Dict[str, Dict[str, Any]] = {}
         self._states_lock = threading.Lock()
+        self._tick_lock = threading.Lock()  # one tick at a time: a task is never polled twice at once
         self._cancel_at: Dict[str, float] = {}
         self._features: Dict[str, List[str]] = {}
         self._plotruns: Dict[str, Dict[str, Any]] = {}  # active post-hoc plot runs by id
@@ -529,6 +530,10 @@ class Scheduler:
         return self.backends[self.store.get_job(t["job_id"])["backend"]]
 
     def tick(self) -> None:
+        with self._tick_lock:
+            self._tick()
+
+    def _tick(self) -> None:
         polled = self._poll_running()  # network calls happen outside the scheduler lock (A3-02)
         with self.lock:
             changed_jobs = set()
@@ -545,7 +550,7 @@ class Scheduler:
         """Poll every running task once; this is the only place a backend is polled."""
         polled = {}
         for t in self.store.tasks_with_status("running"):
-            polled[t["id"]] = self._backend_for(t).poll(self._handle(t))
+            polled[t["id"]] = (t["attempt"], self._backend_for(t).poll(self._handle(t)))
         return polled
 
     def _refresh_running(self, polled: Dict[str, Any]) -> None:
@@ -556,14 +561,23 @@ class Scheduler:
             for tid in [k for k in self._states if k not in live]:
                 self._states.pop(tid, None)
         for t in running:
-            st = polled.get(t["id"])
-            if st is None:  # started this tick: the next tick polls it
+            got = polled.get(t["id"])
+            if got is None or got[0] != t["attempt"]:  # started this tick, or a retry: the next tick polls it
                 continue
             try:
-                state = self._compute_state(t, t["status"], self._alive(st))
-            except Exception:  # noqa: BLE001 - a vanished task is the next tick's business
+                state = self._compute_state(t, t["status"], self._alive(got[1]))
+            except Exception as e:  # noqa: BLE001 - keep the last state, but say it is stale
+                with self._states_lock:
+                    if t["id"] in self._states:
+                        self._states[t["id"]]["refresh_error"] = f"{type(e).__name__}: {e}"
                 continue
-            with self._states_lock:
+            self._store_state(t, state)
+
+    def _store_state(self, t: Dict[str, Any], state: Dict[str, Any]) -> None:
+        """Cache a running task's state unless the task moved on (retry or finish) while it was computed."""
+        with self._states_lock:
+            cur = self.store.get_task(t["id"])
+            if cur and cur["status"] == "running" and cur["attempt"] == t["attempt"]:
                 self._states[t["id"]] = state
 
     @staticmethod
@@ -578,9 +592,10 @@ class Scheduler:
             self.poll_state.pop(tid, None)
         for t in running:
             backend = self._backend_for(t)
-            st = polled.get(t["id"])
-            if st is None:  # started after the poll phase
+            got = polled.get(t["id"])
+            if got is None or got[0] != t["attempt"]:  # started after the poll phase, or a retry
                 continue
+            st = got[1]
             self.poll_state[t["id"]] = st.state
             bname = self.store.get_job(t["job_id"])["backend"]
             if st.state == "unknown":  # the backend cannot tell now: never finalize, flag the backend
@@ -833,7 +848,11 @@ class Scheduler:
                 cached = self._states.get(task_id)
             if cached is not None:
                 return copy.deepcopy(cached)
-        return self._compute_state(t, status, None)
+        state = self._compute_state(t, status, None)
+        if status == "running" and not force_status:  # first reader before the first tick: build once, then reuse
+            self._store_state(t, state)
+            return copy.deepcopy(state)
+        return state
 
     def _compute_state(self, t: Dict[str, Any], status: str, alive: Optional[bool]) -> Dict[str, Any]:
         finished = status in FINISHED

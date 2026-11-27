@@ -189,7 +189,10 @@ class TaskMonitor:
     ):
         self.run_dir = run_dir
         # refresh() advances the tail offsets; two threads in it at once duplicate or drop lines (A3-01)
+        # _lock guards the ingested lists (also taken by series readers); _refresh_lock serializes whole refreshes,
+        # so a slow probe or artifact scan never holds up a chart read
         self._lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
         self.probe = probe
         self.stale_after = stale_after
         self.min_stale = min_stale
@@ -428,7 +431,7 @@ class TaskMonitor:
 
     def refresh(self, *args, **kwargs) -> Dict[str, Any]:
         """Read whatever is new and return the task's state (see `_refresh`); one thread at a time."""
-        with self._lock:
+        with self._refresh_lock:
             return self._refresh(*args, **kwargs)
 
     def _refresh(
@@ -446,8 +449,9 @@ class TaskMonitor:
         once the task is finished: ok | failed | timeout | cancelled | crashed.
         """
         now = time.time() if now is None else now
-        self._ingest_events(now)
-        self._ingest_log(now)
+        with self._lock:
+            self._ingest_events(now)
+            self._ingest_log(now)
         finished = outcome is not None
         if finished:  # the final state must not reuse a probe taken while the task was still running
             self._probe_at = self._art_at = 0.0
