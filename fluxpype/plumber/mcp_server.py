@@ -394,15 +394,7 @@ def task_brief(state: dict) -> dict:
     return out
 
 
-def artifacts_of(state: dict) -> List[dict]:
-    arts = [a for a in state.get("artifacts", []) if a.get("path")]
-    return [
-        {"index": i, "name": os.path.basename(a["path"]), "kind": a.get("kind", "image"), "path": a["path"]}
-        for i, a in enumerate(arts)
-    ]
-
-
-def task_detail(state: dict) -> dict:
+def task_detail(state: dict, images: Optional[List[dict]] = None) -> dict:
     out = keep(state, *TASK_KEYS, "exit_code", "attempt", "mode", "current_stage", "outcome")
     out["elapsed_s"] = round(state["elapsed_s"], 1) if state.get("elapsed_s") is not None else None
     out["degraded"] = bool(state.get("degraded"))
@@ -414,7 +406,7 @@ def task_detail(state: dict) -> dict:
     if state.get("metrics"):
         out["metrics"] = [keep(m, "name", "value", "unit") for m in state["metrics"][:20]]
     out["failure"] = failure_of(state)
-    out["artifacts"] = artifacts_of(state)
+    out["artifacts"] = [keep(i, "index", "name", "product", "path", "headline") for i in images or []]
     out["headline"] = state.get("headline")
     return {k: v for k, v in out.items() if v is not None}
 
@@ -761,7 +753,10 @@ def build_server(
 
     @tool("One task: stages (status, source, verified, elapsed), latest relaxation, warnings, artifacts.", ro, True)
     async def get_task(task_id: str) -> str:
-        return dumps(task_detail(await get(f"/api/tasks/{ident(task_id, 'task_id')}")))
+        tid = ident(task_id, "task_id")
+        state = await get(f"/api/tasks/{tid}")
+        view = await get(f"/api/tasks/{tid}/images")  # the server's list, the same one the Results tab shows
+        return dumps(task_detail(state, view.get("images")))
 
     @tool(
         "Relaxation history of a task as rows of [step, stiffness, fmax, f_av, fs_av, n_av, vertices], "
@@ -851,7 +846,8 @@ def build_server(
             finished = state.get("status") in FINISHED
             reached = finished if until == "finished" else by_id[until].get("status") not in ("pending", "running")
             if reached or finished:
-                return dumps({"still_running": False, "reached": reached, **task_detail(state)})
+                imgs = (await get(f"{path}/images")).get("images")
+                return dumps({"still_running": False, "reached": reached, **task_detail(state, imgs)})
             if time.monotonic() >= deadline:
                 return dumps(
                     {
@@ -1204,27 +1200,31 @@ def build_server(
         )
 
     @tool(
-        "Fetch one of a task's image artifacts (see get_task for the list): `index` -1 is the newest. Large images "
-        "are downscaled to `max_edge` pixels when Pillow is installed.",
+        "Fetch one of a task's images (the list get_task shows, same as the Results tab): `index` -1 is the headline "
+        "image, 0 and up are positions in that list. Large images are downscaled to `max_edge` pixels when Pillow "
+        "is installed.",
         ro,
         True,
     )
     async def get_task_image(task_id: str, index: int = -1, max_edge: int = 1024) -> list:
-        state = await get(f"/api/tasks/{ident(task_id, 'task_id')}")
-        every = artifacts_of(state)
-        arts = [a for a in every if a["kind"] == "image"] if index < 0 else every  # -1 means the newest image
+        tid = ident(task_id, "task_id")
+        view = await get(f"/api/tasks/{tid}/images")
+        arts = view.get("images") or []
         if not arts:
             raise ToolError("this task has no image artifacts yet")
-        if not -len(arts) <= index < len(arts):
-            raise ToolError(f"index {index} is out of range: the task has {len(arts)} artifacts (0 to {len(arts) - 1})")
-        art = arts[index]
-        if art["kind"] != "image":
-            raise ToolError(f"artifact {index} is a {art['kind']} file, not an image; pick an image index")
+        if index == -1:
+            art = next((a for a in arts if a.get("headline")), arts[0])
+        elif 0 <= index < len(arts):
+            art = arts[index]
+        else:
+            raise ToolError(
+                f"index {index} is out of range: the task has {len(arts)} images (0 to {len(arts) - 1}, or -1)"
+            )
         resp = await api("GET", "/api/artifacts", {"path": art["path"]})
         data, fmt, note = await anyio.to_thread.run_sync(
             prepare_image, resp.content, os.path.splitext(art["name"])[1], clamp(max_edge, 64, 2048)
         )
-        caption = f"{state.get('id')} artifact {art['index']} of {len(arts)}: {art['name']} ({note})"
+        caption = f"{tid} image {art['index']} of {len(arts)}: {art['name']} ({note})"
         return [Image(data=data, format=fmt), cap(caption)]
 
     @tool(

@@ -1337,6 +1337,17 @@ def create_app(
             raise HTTPException(404, "unknown task")
         return reply({"task_id": task_id, "job_id": t["job_id"], **results_for(t)})
 
+    @app.get("/api/tasks/{task_id}/images")
+    def task_images_view(task_id: str):
+        """The task's image files as one list, headline first (A4-04). The MCP tools pass this through."""
+        from .results import image_list
+
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        out = results_for(t)
+        return reply({"task_id": task_id, "headline": out.get("headline"), "images": image_list(out)})
+
     @app.get("/api/tasks/{task_id}/compare")
     def task_compare(task_id: str, channel: Optional[str] = None, size: int = 512, arrays: bool = True):
         """FLUXlight against AIA for one channel (A4-03): both images at a display size, the shared WCS, the summary
