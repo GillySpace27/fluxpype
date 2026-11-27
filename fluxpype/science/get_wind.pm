@@ -254,7 +254,7 @@ sub get_wind {
         if ( !-e $out_wind || !file_has_content($out_wind)) { $do_wind_map = 1; }
 
         # Pass the image into the main function
-        if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want); }
+        if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want, undef, $inst ); }
         else { print "Skipped on Line 256\n\n";}
 
         # #run the python script to plot the angles
@@ -286,7 +286,8 @@ if ($0 eq __FILE__) {
     my ($highest_file, $highest_number) = find_highest_numbered_file_with_string($world_dir, $search_string);
 
     my $this_world = read_world($highest_file);
-    get_wind($this_world)
+    # The search string above is the HMI world, so the wind tables get the matching _hmi name (A7-01).
+    get_wind( $this_world, undef, undef, undef, undef, undef, "hmi" );
 
 }
 

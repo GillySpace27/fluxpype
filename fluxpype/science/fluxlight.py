@@ -98,6 +98,10 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         print(f"Loading cached Fluxlight results from {results_file}")
         with open(results_file, "rb") as f:
             results = pickle.load(f)
+        # A cache written before A7-01 holds a world with no instrument; the file name still has it.
+        w = results.get("world") if isinstance(results, dict) else None
+        if w is not None and getattr(w, "inst", None) in (None, "", "unknown"):
+            w.inst = names.inst_in_name(flux_world_file) or "unknown"
         return results
     flux_world = read_flux_world(flux_world_file)
     # flux_world.plot_all()

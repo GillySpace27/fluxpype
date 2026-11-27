@@ -28,6 +28,12 @@ def inst_name(adapt) -> str:
     return "adapt" if str(adapt).strip().lower() not in ("", "0", "false", "none") else "hmi"
 
 
+def inst_in_name(path: str) -> Optional[str]:
+    """The instrument a ``..._f<N>_<inst>_...`` or ``..._f<N>_<inst>.<ext>`` file name carries, else None (old name)."""
+    m = _TASK_IN_NAME.search(os.path.basename(str(path)))
+    return m.group(2) if m and m.group(2) else None
+
+
 def stem(cr, nflux, inst: Optional[str]) -> str:
     """``cr{CR}_f{N}_{inst}``; the instrument is left out when it is not known (an old-style name)."""
     return f"cr{cr}_f{nflux}" + (f"_{inst}" if inst not in _UNKNOWN else "")

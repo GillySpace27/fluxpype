@@ -118,7 +118,8 @@ class ProbeContext:
             # new names first (A7-01); the old ones keep a batch written before then found
             "wind": [
                 os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_{inst}_*"),
-                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_radial_*"),
+                # old spellings cr<CR>_f<N>_radial_* and cr<CR>_f<N>_stiff_radial_* in one pattern ([!ah]: not _hmi/_adapt)
+                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_[!ah]*"),
             ],
             "fluxlight": [
                 os.path.join(batch, "**", f"cr{cr}_f{n}_{inst}_fluxlight_*.png"),
