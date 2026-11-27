@@ -19,6 +19,7 @@ import json
 import os
 import re
 import statistics
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -187,6 +188,11 @@ class TaskMonitor:
         self, run_dir: str, probe: Optional[ProbeContext] = None, stale_after: float = 120.0, min_stale: float = 10.0
     ):
         self.run_dir = run_dir
+        # refresh() advances the tail offsets; two threads in it at once duplicate or drop lines (A3-01)
+        # _lock guards the ingested lists (also taken by series readers); _refresh_lock serializes whole refreshes,
+        # so a slow probe or artifact scan never holds up a chart read
+        self._lock = threading.RLock()
+        self._refresh_lock = threading.Lock()
         self.probe = probe
         self.stale_after = stale_after
         self.min_stale = min_stale
@@ -410,8 +416,9 @@ class TaskMonitor:
 
     def relax_series(self, after: int = 0) -> Dict[str, Any]:
         """Chart data: points after index `after`, all cycles, and the total point count."""
-        pts = self.relax_points()
-        return {"n": len(pts), "points": pts[after:], "cycles": self.relax_cycles()}
+        with self._lock:
+            pts = self.relax_points()
+            return {"n": len(pts), "points": pts[after:], "cycles": self.relax_cycles()}
 
     # ------------------------------------------------------------------ state
     def _stale_threshold(self) -> float:
@@ -422,7 +429,12 @@ class TaskMonitor:
                 return min(self.stale_after, max(3 * statistics.median(gaps), self.min_stale))
         return self.stale_after
 
-    def refresh(
+    def refresh(self, *args, **kwargs) -> Dict[str, Any]:
+        """Read whatever is new and return the task's state (see `_refresh`); one thread at a time."""
+        with self._refresh_lock:
+            return self._refresh(*args, **kwargs)
+
+    def _refresh(
         self,
         now: Optional[float] = None,
         alive: Optional[bool] = None,
@@ -437,9 +449,12 @@ class TaskMonitor:
         once the task is finished: ok | failed | timeout | cancelled | crashed.
         """
         now = time.time() if now is None else now
-        self._ingest_events(now)
-        self._ingest_log(now)
+        with self._lock:
+            self._ingest_events(now)
+            self._ingest_log(now)
         finished = outcome is not None
+        if finished:  # the final state must not reuse a probe taken while the task was still running
+            self._probe_at = self._art_at = 0.0
         has_events = self.ev_lines > 0
         # staleness: events went quiet while the log kept moving
         degraded = False

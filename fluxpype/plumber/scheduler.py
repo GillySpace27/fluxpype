@@ -9,6 +9,7 @@ polled on the next tick and reattached or finalized (the launcher keeps jobs ali
 the server is down).
 """
 
+import copy
 import dataclasses
 import glob
 import json
@@ -68,6 +69,11 @@ class Scheduler:
         self.on_change = on_change or (lambda kind, payload: None)
         self.lock = threading.RLock()
         self._monitors: Dict[str, TaskMonitor] = {}
+        self._mon_lock = threading.Lock()  # guards _monitors (readers on several threads)
+        # the tick owns running-task state (A3-09): it polls and refreshes once per tick; every reader copies from here
+        self._states: Dict[str, Dict[str, Any]] = {}
+        self._states_lock = threading.Lock()
+        self._tick_lock = threading.Lock()  # one tick at a time: a task is never polled twice at once
         self._cancel_at: Dict[str, float] = {}
         self._features: Dict[str, List[str]] = {}
         self._plotruns: Dict[str, Dict[str, Any]] = {}  # active post-hoc plot runs by id
@@ -488,7 +494,10 @@ class Scheduler:
                     old = f"{t['run_dir']}.attempt{t['attempt']}"
                     if os.path.isdir(t["run_dir"]):
                         shutil.move(t["run_dir"], old)
-                    self._monitors.pop(t["id"], None)
+                    with self._mon_lock:
+                        self._monitors.pop(t["id"], None)
+                    with self._states_lock:
+                        self._states.pop(t["id"], None)
                     self._cancel_at.pop(t["id"], None)
                     self.store.update_task(
                         t["id"],
@@ -521,17 +530,61 @@ class Scheduler:
         return self.backends[self.store.get_job(t["job_id"])["backend"]]
 
     def tick(self) -> None:
+        with self._tick_lock:
+            self._tick()
+
+    def _tick(self) -> None:
+        polled = self._poll_running()  # network calls happen outside the scheduler lock (A3-02)
         with self.lock:
             changed_jobs = set()
-            changed_jobs |= self._reconcile_running()
+            changed_jobs |= self._reconcile_running(polled)
             self._reconcile_plot_runs()
             changed_jobs |= self._start_pending()
             for jid in changed_jobs:
                 self._publish_job(jid)
             if changed_jobs:
                 self.on_change("queue_state", self.queue_state())
+        self._refresh_running(polled)
 
-    def _reconcile_running(self) -> set:
+    def _poll_running(self) -> Dict[str, Any]:
+        """Poll every running task once; this is the only place a backend is polled."""
+        polled = {}
+        for t in self.store.tasks_with_status("running"):
+            polled[t["id"]] = (t["attempt"], self._backend_for(t).poll(self._handle(t)))
+        return polled
+
+    def _refresh_running(self, polled: Dict[str, Any]) -> None:
+        """Rebuild the cached state of each still-running task (one refresh per task per tick)."""
+        running = self.store.tasks_with_status("running")
+        live = {t["id"] for t in running}
+        with self._states_lock:
+            for tid in [k for k in self._states if k not in live]:
+                self._states.pop(tid, None)
+        for t in running:
+            got = polled.get(t["id"])
+            if got is None or got[0] != t["attempt"]:  # started this tick, or a retry: the next tick polls it
+                continue
+            try:
+                state = self._compute_state(t, t["status"], self._alive(got[1]))
+            except Exception as e:  # noqa: BLE001 - keep the last state, but say it is stale
+                with self._states_lock:
+                    if t["id"] in self._states:
+                        self._states[t["id"]]["refresh_error"] = f"{type(e).__name__}: {e}"
+                continue
+            self._store_state(t, state)
+
+    def _store_state(self, t: Dict[str, Any], state: Dict[str, Any]) -> None:
+        """Cache a running task's state unless the task moved on (retry or finish) while it was computed."""
+        with self._states_lock:
+            cur = self.store.get_task(t["id"])
+            if cur and cur["status"] == "running" and cur["attempt"] == t["attempt"]:
+                self._states[t["id"]] = state
+
+    @staticmethod
+    def _alive(st) -> Optional[bool]:
+        return None if st.state in ("queued", "unknown") else st.state in ("running", "starting")
+
+    def _reconcile_running(self, polled: Dict[str, Any]) -> set:
         changed = set()
         known = set()
         running = self.store.tasks_with_status("running")
@@ -539,7 +592,10 @@ class Scheduler:
             self.poll_state.pop(tid, None)
         for t in running:
             backend = self._backend_for(t)
-            st = backend.poll(self._handle(t))
+            got = polled.get(t["id"])
+            if got is None or got[0] != t["attempt"]:  # started after the poll phase, or a retry
+                continue
+            st = got[1]
             self.poll_state[t["id"]] = st.state
             bname = self.store.get_job(t["job_id"])["backend"]
             if st.state == "unknown":  # the backend cannot tell now: never finalize, flag the backend
@@ -761,18 +817,19 @@ class Scheduler:
         )
 
     def monitor_for(self, t: Dict[str, Any]) -> TaskMonitor:
-        mon = self._monitors.get(t["id"])
-        if mon is None:
-            if len(self._monitors) > 40:
-                for tid in [
-                    k
-                    for k, v in self._monitors.items()
-                    if self.store.get_task(k) and self.store.get_task(k)["status"] in FINISHED
-                ][:20]:
-                    self._monitors.pop(tid, None)
-            mon = TaskMonitor(t["run_dir"], self.probe_context(t), stale_after=self.stale_after)
-            self._monitors[t["id"]] = mon
-        return mon
+        with self._mon_lock:
+            mon = self._monitors.get(t["id"])
+            if mon is None:
+                if len(self._monitors) > 40:
+                    for tid in [
+                        k
+                        for k in list(self._monitors)
+                        if self.store.get_task(k) and self.store.get_task(k)["status"] in FINISHED
+                    ][:20]:
+                        self._monitors.pop(tid, None)
+                mon = TaskMonitor(t["run_dir"], self.probe_context(t), stale_after=self.stale_after)
+                self._monitors[t["id"]] = mon
+            return mon
 
     def task_state(self, task_id: str, force_status: str = None) -> Dict[str, Any]:
         t = self.store.get_task(task_id)
@@ -784,11 +841,22 @@ class Scheduler:
             cached = json.loads(t["summary_json"])
             cached["status"] = status
             return cached
+        if status == "running" and not force_status:
+            # readers never poll or refresh: the tick owns this state (A3-09). Before the first tick has
+            # seen the task there is nothing cached, so build it once without polling.
+            with self._states_lock:
+                cached = self._states.get(task_id)
+            if cached is not None:
+                return copy.deepcopy(cached)
+        state = self._compute_state(t, status, None)
+        if status == "running" and not force_status:  # first reader before the first tick: build once, then reuse
+            self._store_state(t, state)
+            return copy.deepcopy(state)
+        return state
+
+    def _compute_state(self, t: Dict[str, Any], status: str, alive: Optional[bool]) -> Dict[str, Any]:
+        finished = status in FINISHED
         mon = self.monitor_for(t)
-        alive = None
-        if status == "running":
-            st = self._backend_for(t).poll(self._handle(t))
-            alive = None if st.state in ("queued", "unknown") else st.state in ("running", "starting")
         state = mon.refresh(
             alive=alive,
             outcome=status if finished else None,
@@ -825,9 +893,12 @@ class Scheduler:
         if not t:
             raise SchedulerError("no such task")
         mon = self.monitor_for(t)
-        mon.refresh(
-            probe=False, alive=None, outcome=t["status"] if t["status"] in FINISHED else None, started=t["started"]
-        )
+        with self._states_lock:
+            owned = t["id"] in self._states
+        if not owned:  # a running task's monitor is refreshed by the tick; only others need a read here
+            mon.refresh(
+                probe=False, alive=None, outcome=t["status"] if t["status"] in FINISHED else None, started=t["started"]
+            )
         return mon.relax_series(after)
 
     # ------------------------------------------------------------------ post-hoc plot runs
