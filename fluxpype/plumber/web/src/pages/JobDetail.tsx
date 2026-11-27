@@ -3,7 +3,7 @@ import { ArrowLeft, Ban, ChevronLeft, ChevronRight, Copy, Sparkles } from "lucid
 import { Cover, coverUrl } from "../components/Cover";
 import { jobCoverVersion, jobHref, jobSummary } from "../components/RunCard";
 import { openAsk } from "../components/AskBar";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LogPane } from "../components/LogPane";
 import { PipelineChips } from "../components/PipelineChips";
@@ -40,7 +40,9 @@ function Strip({ task, selected, onSelect }: { task: TaskState; selected: string
 }
 
 /** One task: header with metrics and banners, then tabs. `results` adds the Results tab (the run view shows results in its own tab). */
-export function TaskView({ row, job, results = true, defaultTab = "progress" }: { row: TaskRow; job?: Job; results?: boolean; defaultTab?: string }) {
+export function TaskView({ row, job, results = true, defaultTab }: { row: TaskRow; job?: Job; results?: boolean; defaultTab?: string }) {
+  // a finished task opens on its results, a live or failed one on its progress; latched at mount so a running task does not jump tabs when it ends
+  const openTab = useRef(defaultTab ?? (row.status === "ok" ? "results" : "progress")).current;
   const active = row.status === "running" || row.status === "pending";
   const { data: t, error, refetch } = useTask(row.id, true);
   const live = t ? t.status === "running" || t.status === "pending" : active;
@@ -64,12 +66,12 @@ export function TaskView({ row, job, results = true, defaultTab = "progress" }: 
   // the selected stage: the one in the URL, else what is running, else what failed, else the last one that finished
   const pick = (f: (x: Stage) => boolean) => t.stages.find(f)?.id;
   const stageId = (t.stages.some((x) => x.id === sp.get("stage")) ? sp.get("stage") : null) ?? pick((x) => x.status === "running") ?? pick((x) => x.status === "failed") ?? [...t.stages].reverse().find((x) => x.status === "ok")?.id ?? t.stages[0]?.id ?? "";
-  const select = (id: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("stage", id); return n; }, { replace: true });
+  const select = (id: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("stage", id); n.set("tab", "progress"); return n; }, { replace: true });
   // ?view=compact swaps the strip for the stage rail beside the panel (kept for a compact view elsewhere)
   const compact = sp.get("view") === "compact";
   // the tab lives in the URL (?tab=) so a link opens on it
   const tabs = ["progress", "log", ...(results && t.adapt !== "scene" ? ["results"] : []), ...(job ? ["files", "settings"] : []), "sources"];
-  const tab = tabs.includes(sp.get("tab") ?? "") ? (sp.get("tab") as string) : defaultTab;
+  const tab = tabs.includes(sp.get("tab") ?? "") ? (sp.get("tab") as string) : tabs.includes(openTab) ? openTab : "progress";
   const setTab = (v: string) => setSp((p) => { const n = new URLSearchParams(p); n.set("tab", v); return n; }, { replace: true });
   const scene = t.adapt === "scene"; // a scene relaxation task: the label is the scene, not a Carrington rotation
   const bad = ["failed", "timeout", "crashed"].includes(t.status);
