@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parent.parent
-HEAVY = ("sunpy.net", "matplotlib.pyplot", "pandas", "drms")
+HEAVY = ("sunpy", "sunpy.net", "matplotlib.pyplot", "pandas", "drms")
 
 
 def _loaded_heavy(statement):
