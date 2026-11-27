@@ -66,7 +66,7 @@ Sources: `repo/README.md`, `repo/doc/flux.md`, wiki `Home.md`, `User_Manual.md`,
 | Perl/PDL | `use PDL; use Flux;` objects Flux::World, ::Concentration, ::Fluxon, ::Vertex (tied hashes) | `repo/pdl/Flux` |
 | PDL autoload scripts | `simple_relaxer`, `make_world_sphere`, `fluxon_placement_hilbert`, etc. | `repo/pdl/PDL/*.pdl` |
 | Python (repo) | `rdworld.py`, `plt-world.py`, `plt-relax.py`, `vizworld.py` | `repo/py` |
-| Build | top `Makefile` targets everything/install/condaflux | `repo/Makefile` |
+| Build | top `Makefile` targets everything/install/condaflux (do not run `make condaflux`: it can `rm -rf` the first PERL5LIB/PDLLIB folder containing "flux" and fails on Ubuntu; use `FL_PREFIX=$CONDA_PREFIX make everything`) | `repo/Makefile` |
 
 Key Flux::World methods (World.pm POD): `read_world($f)` (`.gz` gunzipped via /tmp), `str2world($s)`,
 `write_world($f)` (`.gz` gzipped), `string`, `fluxon_ids`, `fluxons(@ids)`, `vertex_ids`, `vertices`,
