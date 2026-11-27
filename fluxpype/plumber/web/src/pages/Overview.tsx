@@ -106,7 +106,7 @@ export function Overview() {
         title="Overview"
         sub="What is running, what is waiting, and what just finished."
         right={
-          <Link to="/presets" className="btn btn-primary">
+          <Link to="/jobs/new" className="btn btn-primary">
             <Rocket className="h-4 w-4" /> New run
           </Link>
         }
