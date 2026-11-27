@@ -20,15 +20,15 @@ Magnetogram, Footpoints, PFSS trace, World, Relaxation, World plots, Field map, 
 
 ## Speed and skipping stages
 
-- To run magnetogram to FLUXlight without the wind, set `do_wind_calc = 0` and `light = 1`. The wind and wind plots then show as skipped (`science/magnetogram2wind.pdl:360,382,390`) and FLUXlight still runs, with no `wind/` folder needed (`science/open_world_python.py:261-269`). A submit_job override can only set `do_wind_calc` if the chosen profile has it; a preset may set it.
-- A failed FLUXlight stage is a FLUXlight problem, not a missing wind file, unless the log mentions `_radial_fr.dat` (only the `file` area method wants it).
+- To run magnetogram to FLUXlight without the wind, set `do_wind_calc = 0` and `light = 1`. The wind and wind plots then show as skipped (`science/magnetogram2wind.pdl:360,382,390`) and FLUXlight still runs, with no `wind/` folder needed (`science/open_world_python.py:261-269`). `recompute = 1` turns the wind back on (`science/magnetogram2wind.pdl:201-206`), so do not combine it with a wind-free run. A submit_job override can only set `do_wind_calc` if the chosen profile has it; a preset may set it.
+- A failed FLUXlight stage is not caused by a missing wind file: FLUXlight uses the `halfplane` area method (`science/thomson_scattering_flux.py:142`), which never reads `wind/`.
 - FLUXlight's default `light_method` is `fluxel`, which is vectorized; do not suggest a joblib or parallelism setting for it (`science/fluxlight.py:116-118`).
 - To change relaxation speed, set `relax_concurrency`; `concurrency` does not affect relaxation when `relax_concurrency` is defined (`science/relax_pfss_world.pm:190-192`).
 
 ## Known gaps (still open; say so instead of working around them silently)
 
 - `relax_concurrency` is 33 in `[DEFAULT]` (`config.ini:46`), so a profile that does not set it relaxes with 33 forked workers, and the scheduler books `max(relax_concurrency, concurrency)` slots (`plumber/scheduler.py:407`). More workers than cores can be slower than fewer. Only `quickstart` and the demo profiles set their own.
-- Stage caches are keyed on rotation, fluxon count and instrument only. Changing a relax setting under an existing `batch_name` silently reuses the old relaxed world ("Skipped relaxation!", `science/relax_pfss_world.pm:263`); use a new `batch_name` or `recompute = 1`. The FLUXlight result (`.light` pickle) is likewise keyed on the world path, not on render settings (`science/fluxlight.py:86-92`).
+- Stage caches are keyed on rotation, fluxon count and instrument only. Changing a relax setting under an existing `batch_name` silently reuses the old relaxed world ("Skipped relaxation!", `science/relax_pfss_world.pm:263`); use a new `batch_name`, or `recompute = 1` (which also forces the wind stage on). The FLUXlight result (`.light` pickle) is likewise keyed on the world path, not on render settings (`science/fluxlight.py:86-92`).
 - Plumber has no side-by-side FLUXlight and AIA view; comparison with AIA is done by hand outside Plumber.
 
 ## Backends
