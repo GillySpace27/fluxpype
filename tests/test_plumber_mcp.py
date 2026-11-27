@@ -371,7 +371,7 @@ def test_wait_for_task_reports_progress_and_returns_the_final_state(rig, monkeyp
     assert not err and out["still_running"] is False and out["reached"] is True and out["status"] == "ok"
     assert out["id"] == tid and any(s["id"] == "relax" and s["status"] == "ok" for s in out["stages"])
     seen = [e[0] for e in progress.events]
-    assert len(seen) >= 3 and seen == sorted(seen) and progress.events[-1][:2] == (10, 10)
+    assert len(seen) >= 3 and seen == sorted(seen) and progress.events[-1][:2] == (11, 11)
     assert all(e[2] for e in progress.events)
     wait_status(rig, job["id"])
 
@@ -430,10 +430,10 @@ def test_tool_annotations(rig):
             return {t.name: t for t in (await c.list_tools()).tools}
 
     tools = anyio.run(go)
-    assert len(tools) == 29 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
+    assert len(tools) == 30 and "trash" not in " ".join(tools) and "delete" not in " ".join(tools)
     for name in ("status", "list_profiles", "get_profile", "list_jobs", "get_job", "get_task", "get_relax_series"):
         assert tools[name].annotations.read_only_hint is True, name
-    for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image"):
+    for name in ("read_task_log", "wait_for_task", "cache_summary", "get_task_image", "get_comparison"):
         assert tools[name].annotations.read_only_hint is True, name
     assert tools["cancel"].annotations.destructive_hint is True
     assert tools["list_proposals"].annotations.read_only_hint is True

@@ -37,6 +37,7 @@ STAGES = [
     ("wind", "Wind"),
     ("wind_plots", "Wind plots"),
     ("fluxlight", "FLUXlight"),
+    ("euv", "EUV compare"),
 ]
 STAGE_IDS = [s for s, _ in STAGES]
 LABELS = dict(STAGES)
@@ -494,7 +495,13 @@ class TaskMonitor:
         warnings = [f"{e.get('level', 'warn')}: {e.get('message')}" for e in self.ev_logs][-10:]
         warnings += [f.get("message") for f in self.lg_failures][-5:]
         artifacts = [
-            {"path": a.get("path"), "kind": a.get("kind", "image"), "t": a.get("t"), "source": "event"}
+            {
+                "path": a.get("path"),
+                "kind": a.get("kind", "image"),
+                "t": a.get("t"),
+                "source": "event",
+                **({"pair": a["pair"]} if a.get("pair") else {}),  # the AIA file that goes with a model image (A4-03)
+            }
             for a in self.ev_artifacts
         ]
         seen = {a["path"] for a in artifacts}

@@ -104,7 +104,7 @@ def test_status_and_profiles(client):
     st = client.get("/api/status", headers=H).json()
     assert st["demo"] and [b["name"] for b in st["backends"]][:1] == ["fake"]
     assert st["active_backend"] == "fake" and st["sandboxed"] is True
-    assert len(st["stages"]) == 10 and "run_script" in st["forbidden_keys"]
+    assert len(st["stages"]) == 11 and "run_script" in st["forbidden_keys"]
     profs = {p["name"]: p for p in client.get("/api/profiles", headers=H).json()["profiles"]}
     assert profs["t_two"]["task_count"] == 4 and profs["Real_Run"]["errors"]
 
