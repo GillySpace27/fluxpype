@@ -1,0 +1,91 @@
+{
+ "schema": 1,
+ "about": "Tier S: exact SHA256 of the relaxed world, only when the loaded build matches a key in `builds`. Tier L: topology (LINE records of relaxed/<name>.relaxed.flux) plus the final e_simple2 and stiffness within `bands` (relative; null means reported, not gated). Keys are added only by `python -m tests.realflux.record_build` after repeated identical runs; never automatically.",
+ "fixtures": {
+  "simple-4": {
+   "cycles": 10,
+   "steps": 50,
+   "slow": false,
+   "reference": {
+    "n": 55,
+    "e_simple2": 0.07991319992,
+    "stiffness": 1.336448079
+   },
+   "bands": {
+    "e_simple2": null,
+    "stiffness": null
+   },
+   "builds": [
+    {
+     "key": {
+      "pdl": "2.106",
+      "perl": "5.38.2",
+      "fluxon_mhd_sha": "3f65ebd"
+     },
+     "sha256": "e20910e42681ec737aa73149b75f35c75871e13433e3e8046b48217bb0b08463",
+     "runs": "2 of 2 identical (golden/README.md, audit A6-02 and A6-03)"
+    },
+    {
+     "key": {
+      "pdl": "2.085",
+      "perl": "5.38.2",
+      "flux_pm_sha256": "c13d0952ab013955a11b37cde10031c4a9d922439091701a4c3a6bb655a3f578",
+      "fluxon_mhd_sha": "3f65ebd"
+     },
+     "sha256": "f0bd4aaf8b1ea5430a4290d67d4f398443395609e5b83adc012680b7099c86bc",
+     "runs": "3 of 3 identical"
+    }
+   ]
+  },
+  "planar_shear2": {
+   "cycles": 20,
+   "steps": 50,
+   "slow": false,
+   "reference": {
+    "n": 171,
+    "e_simple2": 1.492753719,
+    "stiffness": 1.324927833
+   },
+   "bands": {
+    "e_simple2": 0.05,
+    "stiffness": null
+   },
+   "builds": [
+    {
+     "key": {
+      "pdl": "2.106",
+      "perl": "5.38.2",
+      "fluxon_mhd_sha": "3f65ebd"
+     },
+     "sha256": "c54dc4ddf1c542e0c7b415fb90371cd3025d98137d3dfdffc8718c2848ec9c3a",
+     "runs": "2 of 2 identical (golden/README.md, audit A6-02 and A6-03)"
+    }
+   ]
+  },
+  "twisted": {
+   "cycles": 10,
+   "steps": 50,
+   "slow": true,
+   "reference": {
+    "n": 1151,
+    "e_simple2": 174.8642846,
+    "stiffness": 2.235448395
+   },
+   "bands": {
+    "e_simple2": 0.05,
+    "stiffness": 0.05
+   },
+   "builds": [
+    {
+     "key": {
+      "pdl": "2.106",
+      "perl": "5.38.2",
+      "fluxon_mhd_sha": "3f65ebd"
+     },
+     "sha256": "c412c8e638e2da219a7bb2720b5805a463a6f78adea7d63a1b2363da331c3762",
+     "runs": "2 of 2 identical (golden/README.md, audit A6-02 and A6-03)"
+    }
+   ]
+  }
+ }
+}
