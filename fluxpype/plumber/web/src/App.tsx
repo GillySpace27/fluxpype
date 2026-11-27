@@ -1,14 +1,17 @@
+import { lazy } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
-import { CachePage } from "./pages/Cache";
-import { ComparePage } from "./pages/Compare";
-import { JobDetail } from "./pages/JobDetail";
-import { JobsPage } from "./pages/Jobs";
-import { NewRun } from "./pages/NewRun";
-import { Overview } from "./pages/Overview";
-import { PresetsPage } from "./pages/Presets";
-import { ScenesPage } from "./pages/Scenes";
-import { SettingsPage } from "./pages/Settings";
+
+// Pages load on first visit; the shell (Layout, live provider) stays in the main chunk.
+const CachePage = lazy(() => import("./pages/Cache").then((m) => ({ default: m.CachePage })));
+const ComparePage = lazy(() => import("./pages/Compare").then((m) => ({ default: m.ComparePage })));
+const JobDetail = lazy(() => import("./pages/JobDetail").then((m) => ({ default: m.JobDetail })));
+const JobsPage = lazy(() => import("./pages/Jobs").then((m) => ({ default: m.JobsPage })));
+const NewRun = lazy(() => import("./pages/NewRun").then((m) => ({ default: m.NewRun })));
+const Overview = lazy(() => import("./pages/Overview").then((m) => ({ default: m.Overview })));
+const PresetsPage = lazy(() => import("./pages/Presets").then((m) => ({ default: m.PresetsPage })));
+const ScenesPage = lazy(() => import("./pages/Scenes").then((m) => ({ default: m.ScenesPage })));
+const SettingsPage = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsPage })));
 
 /** The old Run layout's tab names, as tabs of the job page. */
 const RUN_TAB: Record<string, string> = { progress: "progress", settings: "settings", cache: "files", results: "results" };

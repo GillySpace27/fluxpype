@@ -9,7 +9,6 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
-    chunkSizeWarningLimit: 700,
   },
   server: {
     // the Ask panel's opening guide is imported from ../ask/welcome.md, outside this folder

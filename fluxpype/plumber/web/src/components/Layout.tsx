@@ -1,5 +1,6 @@
 import { Boxes, Database, Gauge, Layers, ListChecks, Settings } from "lucide-react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Suspense } from "react";
 import { cn } from "../lib/cn";
 import { useJobs, useStatus } from "../lib/hooks";
 import { RunMini } from "./RunCard";
@@ -146,7 +147,9 @@ export function Layout() {
       </header>
 
       <main className="mx-auto w-full max-w-[1280px] px-4 pb-28 pt-6 md:px-8 md:pb-12">
-        <Outlet />
+        <Suspense fallback={<div className="p-6 text-sm text-muted">Loading...</div>}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t hair bg-surface/90 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Primary">
