@@ -154,6 +154,32 @@ def test_env_vars_reach_the_pipeline(env):
         assert seen[key] == env[key]
 
 
+def test_flux_seed_defaults_to_fixed_and_is_logged(env):
+    r = run_runner(env, "--only", "2225,100,0,parker")
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = json.loads(Path(env["FAKE_PERL_DUMP"]).read_text())
+    assert (seen["PERL_HASH_SEED"], seen["PERL_RAND_SEED"]) == ("0", "1")
+    assert "FLUX random seed: flux_seed=0" in Path(env["FLUXPYPE_LOG_FILE"]).read_text()
+
+
+def test_flux_seed_from_the_environment_reaches_the_pipeline_and_the_log(env):
+    env["FLUXPYPE_FLUX_SEED"] = "424242"
+    r = run_runner(env, "--only", "2225,100,0,parker")
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = json.loads(Path(env["FAKE_PERL_DUMP"]).read_text())
+    assert (seen["PERL_HASH_SEED"], seen["PERL_RAND_SEED"]) == ("424242", "424242")
+    assert "flux_seed = 424242" in Path(env["FLUXPYPE_LOG_FILE"]).read_text()
+
+
+def test_flux_seed_jd_gives_a_julian_date_seed(env):
+    env["FLUXPYPE_FLUX_SEED"] = "jd"
+    r = run_runner(env, "--only", "2225,100,0,parker")
+    assert r.returncode == 0, r.stdout + r.stderr
+    seen = json.loads(Path(env["FAKE_PERL_DUMP"]).read_text())
+    assert 0 < int(seen["PERL_HASH_SEED"]) < 2**32
+    assert seen["PERL_RAND_SEED"] == seen["PERL_HASH_SEED"]
+
+
 def test_log_file_override_appends(env):
     log = Path(env["FLUXPYPE_LOG_FILE"])
     log.write_text("earlier run\n")

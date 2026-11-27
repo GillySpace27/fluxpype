@@ -34,6 +34,17 @@
      },
      "sha256": "f0bd4aaf8b1ea5430a4290d67d4f398443395609e5b83adc012680b7099c86bc",
      "runs": "3 of 3 identical"
+    },
+    {
+     "key": {
+      "pdl": "2.085",
+      "perl": "5.38.2",
+      "flux_pm_sha256": "c13d0952ab013955a11b37cde10031c4a9d922439091701a4c3a6bb655a3f578",
+      "fluxon_mhd_sha": "3fbce8b"
+     },
+     "sha256": "f0bd4aaf8b1ea5430a4290d67d4f398443395609e5b83adc012680b7099c86bc",
+     "runs": "3 of 3 identical",
+     "flux_pm": "/tmp/claude-0/-home-user/1e0cbcef-bbdf-52e2-9791-f5ae81fc8897/scratchpad/pfx-fix/lib/perl5/x86_64-linux-gnu-thread-multi/Flux.pm"
     }
    ]
   },
@@ -59,6 +70,17 @@
      },
      "sha256": "c54dc4ddf1c542e0c7b415fb90371cd3025d98137d3dfdffc8718c2848ec9c3a",
      "runs": "2 of 2 identical (golden/README.md, audit A6-02 and A6-03)"
+    },
+    {
+     "key": {
+      "pdl": "2.085",
+      "perl": "5.38.2",
+      "flux_pm_sha256": "c13d0952ab013955a11b37cde10031c4a9d922439091701a4c3a6bb655a3f578",
+      "fluxon_mhd_sha": "3fbce8b"
+     },
+     "sha256": "0612138c8756d4272894d4aceb75925503fdd1ca8ea8bac8db7b18c089d8cbee",
+     "runs": "3 of 3 identical",
+     "flux_pm": "/tmp/claude-0/-home-user/1e0cbcef-bbdf-52e2-9791-f5ae81fc8897/scratchpad/pfx-fix/lib/perl5/x86_64-linux-gnu-thread-multi/Flux.pm"
     }
    ]
   },
@@ -84,6 +106,17 @@
      },
      "sha256": "c412c8e638e2da219a7bb2720b5805a463a6f78adea7d63a1b2363da331c3762",
      "runs": "2 of 2 identical (golden/README.md, audit A6-02 and A6-03)"
+    },
+    {
+     "key": {
+      "pdl": "2.085",
+      "perl": "5.38.2",
+      "flux_pm_sha256": "c13d0952ab013955a11b37cde10031c4a9d922439091701a4c3a6bb655a3f578",
+      "fluxon_mhd_sha": "3fbce8b"
+     },
+     "sha256": "1246d0dbf929f6787b22f0c4e6ece2ce908cbc76247a3acc8942c59451584ec6",
+     "runs": "3 of 3 identical",
+     "flux_pm": "/tmp/claude-0/-home-user/1e0cbcef-bbdf-52e2-9791-f5ae81fc8897/scratchpad/pfx-fix/lib/perl5/x86_64-linux-gnu-thread-multi/Flux.pm"
     }
    ]
   }

@@ -48,7 +48,11 @@ def main(argv):
             f.write(json.dumps({"script": script, "args": [cr, nflux, adapt, method]}) + "\n")
     dump = os.environ.get("FAKE_PERL_DUMP")
     if dump:
-        keep = {k: v for k, v in os.environ.items() if k.startswith("FLUXPYPE_")}
+        keep = {
+            k: v
+            for k, v in os.environ.items()
+            if k.startswith("FLUXPYPE_") or k in ("PERL_HASH_SEED", "PERL_RAND_SEED")
+        }
         with open(dump, "w") as f:
             json.dump(keep, f)
 
