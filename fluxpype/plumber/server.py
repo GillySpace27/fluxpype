@@ -1298,6 +1298,31 @@ def create_app(
             raise HTTPException(404, "unknown task")
         return reply({"task_id": task_id, "job_id": t["job_id"], **results_for(t)})
 
+    @app.get("/api/tasks/{task_id}/compare")
+    def task_compare(task_id: str, channel: Optional[str] = None, size: int = 512, arrays: bool = True):
+        """FLUXlight against AIA for one channel (A4-03): both images at a display size, the shared WCS, the summary
+        numbers aia.compare gives, and the shared stretch. Without an AIA file on disk it says so and sends the model.
+        """
+        from . import compare
+
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        if channel is not None and not channel.isdigit():
+            raise HTTPException(400, "channel is an AIA wavelength such as 193")
+        res = results_for(t)
+        try:
+            state = sched.task_state(task_id)
+        except Exception:  # noqa: BLE001
+            state = {}
+        try:
+            body = compare.for_task(
+                res["products"], state.get("artifacts"), res["data_dir"], channel, size, cr=t.get("cr"), arrays=arrays
+            )
+        except Exception as e:  # noqa: BLE001 - a bad FITS header should read as a message, not a 500
+            raise HTTPException(422, f"could not compare these images: {e}")
+        return reply({"task_id": task_id, "cr": t.get("cr"), **body})
+
     @app.get("/api/jobs/{job_id}/files")
     def job_files(job_id: str):
         """Every file the job's tasks read or wrote (expected products plus plots), once each."""

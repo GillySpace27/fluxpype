@@ -59,6 +59,7 @@ READ_TOOLS = [
     "read_task_log",
     "cache_summary",
     "get_task_image",
+    "get_comparison",
     "list_proposals",
     "list_scenes",
     "get_scene",
