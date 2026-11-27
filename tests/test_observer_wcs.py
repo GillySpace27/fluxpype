@@ -32,3 +32,20 @@ def test_header_matches_fluxlight_grid(npix, fov):
 def test_carrington_observer_lon_matches_profile_comment():
     # config.ini's [light] profile hand-types observer_lon = 172.0 for this date.
     assert carrington_observer_lon(DATE) == pytest.approx(171.95, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    "unset", [{}, {"observation_date": None}, {"observation_date": ""}, {"observation_date": "None"}]
+)
+def test_derived_observer_lon_unset_changes_nothing(unset):
+    from fluxpype.science.observer_wcs import derived_observer_lon
+
+    assert derived_observer_lon(unset, 172.0) == 172.0
+    assert derived_observer_lon(unset, None) is None
+
+
+def test_derived_observer_lon_from_observation_date():
+    from fluxpype.science.observer_wcs import derived_observer_lon
+
+    # the observation time wins over a hand-typed longitude
+    assert derived_observer_lon({"observation_date": DATE}, 10.0) == carrington_observer_lon(DATE)

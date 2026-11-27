@@ -561,3 +561,16 @@ def test_cover_prefers_fluxlight_over_other_plots(tmp_path):
     assert covers._find(ctx) == (str(light), "image")
     light.unlink()
     assert covers._find(ctx) == (str(world), "image")
+
+
+# ------------------------------------------------------------------ "Compare with AIA" (audit A4-09)
+
+
+def test_aia_observer_derives_time_and_longitude(client):
+    pytest.importorskip("sunpy")
+    r = client.get("/api/aia/observer?cr=2150", headers=H).json()
+    assert r["time"].startswith("2014-05-18T05:") and abs(r["observer_lon"] - 180.0) < 0.5  # mid CR2150, L0 near 180
+    r = client.get("/api/aia/observer?time=2014-05-18T20:00:00", headers=H).json()
+    assert r["time"] == "2014-05-18T20:00:00" and abs(r["observer_lon"] - 171.95) < 0.01
+    assert client.get("/api/aia/observer?time=not-a-time", headers=H).status_code == 400
+    assert client.get("/api/aia/observer", headers=H).status_code == 400

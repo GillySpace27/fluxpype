@@ -38,7 +38,7 @@ FORBIDDEN_KEYS = frozenset(
 )
 
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_VALUE_RE = re.compile(r"^[\w.\-+\[\], /~()]*$")
+_VALUE_RE = re.compile(r"^[\w.\-+\[\], /~():]*$")  # ":" for times such as 2014-05-18T20:00:00
 _SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
 _KV_RE = re.compile(r"^(\s*)([^\s=:#;\[][^=:#]*?)(\s*[=:]\s*)(.*)$")
 _INTERP_RE = re.compile(r"\$\{([^}]+)\}")

@@ -82,6 +82,11 @@ nz = configs.get("nz", def_nz)
 nxy = configs.get("nxy", configs.get("npix", def_nxy))
 fov = configs.get("fov", def_fov)
 observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
+from fluxpype.science.observer_wcs import derived_observer_lon
+
+observer_lon = derived_observer_lon(
+    configs, observer_lon
+)  # observation_date, when set, replaces the hand-typed longitude
 
 
 def do_fluxlight(flux_world_file, save=True, force=False):
