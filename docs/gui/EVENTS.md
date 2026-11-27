@@ -99,3 +99,29 @@ satisfied or the stage is flagged `verified: false`. A dead process with no
 
 The log regexes are written from the print statements in the code, not from a
 captured real log; see the test docstrings.
+
+## Per-stage timing
+
+`python -m fluxpype.stage_timing <events.jsonl> [--json] [--task ID]` prints wall time and share
+per stage from the `stage.start`, `stage.end` and `run.end` events above. It reads only existing
+events; a run needs `FLUXPYPE_EVENTS` set, nothing else.
+
+Reference table (audit A5-01, **quoted**, not measured by this change). Measured 2026-11-26 on a
+4-core, 15 GB cloud container: CR 2225, 100 fluxons, 1 ADAPT member, parker wind, `relax_concurrency` 4,
+`concurrency` 4, FLUXlight nxy 61 nz 101, stock -O0 libflux, magnetogram already downloaded, one run.
+A second run repeated within about 5%.
+
+| Stage | Wall (s) | Share |
+|---|---|---|
+| magnetogram | 3.10 | 1% |
+| pfss | 4.59 | 2% |
+| relax | 83.77 | 35% |
+| wind | 108.94 | 46% |
+| wind_plots | 9.47 | 4% |
+| fluxlight | 19.73 | 8% |
+| run total | 236.3 | 100% |
+
+Not measured: any SBIR-path (no wind) total. Applying the audit's own factors gives about 34 s
+(computed), but those factors came from other paths, so treat a sub-minute figure as unmeasured.
+No FLUX build was available when `stage_timing` was added; rerun the profile on the Mac and replace
+this table with `stage_timing` output for the same settings.
