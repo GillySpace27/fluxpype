@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install fluxpype into ./.venv and verify the whole FLUX stack with flux-doctor.
+# Install fluxpype (with the plumber and mcp extras) into one ./.venv and verify the whole FLUX stack with flux-doctor.
 # The FLUX core (C library + Perl/PDL) is built separately: see fluxon-mhd/doc.
 #   ./install.sh                       # picks python3.12, 3.13, 3.11 or 3.10
 #   PYTHON=/path/to/python ./install.sh
@@ -22,7 +22,7 @@ fi
 echo "Using $("$PY" -c 'import sys; print(sys.executable, sys.version.split()[0])')"
 "$PY" -m venv .venv
 .venv/bin/pip install -q --upgrade pip
-.venv/bin/pip install -q -e ".[FLUXcore]"
+.venv/bin/pip install -q -e ".[FLUXcore,plumber,mcp]"
 
 # Verify in a fresh login shell: that is where stale PERL5LIB lines in rc files break Flux.
 echo; echo "Checking the stack (flux-doctor, in a login shell):"
