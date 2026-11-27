@@ -165,3 +165,61 @@ def test_resolved_data_dir_matches_auto_base_dir(shipped):
 
 def test_instrument_names():
     assert c.task_instrument("0") == "hmi" and c.task_instrument("1") == "adapt"
+
+
+# ---------------------------------------------------------------- "Compare with AIA" key (audit A4-09)
+
+
+def test_observation_date_defaults_to_unset_in_every_profile(shipped):
+    for name in shipped.profiles:
+        eff = shipped.effective(name)
+        assert eff["observation_date"].value == "None", name
+
+
+def test_observation_date_default_leaves_science_config_as_before():
+    from fluxpype.config import convert_value
+
+    # observation_date reads as None: observer_lon and header date unchanged
+    assert convert_value("None") is None
+
+
+def test_observation_date_override_validates_and_survives_all_three_parsers(shipped, tmp_path, monkeypatch):
+    import configparser
+
+    from fluxpype import config as flux_config
+
+    keys = set(shipped.effective("light"))
+    ok = c.validate_override(keys, "observation_date", "2014-05-18T20:00:00")
+    assert ok == "2014-05-18T20:00:00"
+    for bad in ("2014-05-18;rm", "$(x)", "a" * 201):
+        with pytest.raises(c.ConfigError):
+            c.validate_override(keys, "observation_date", bad)
+    snap = c.make_snapshot(shipped.text, "light", {"observation_date": ok}, str(tmp_path))
+    # parser 1: config_io
+    assert c.parse(snap).effective("light")["observation_date"].value == "2014-05-18T20:00:00"
+    # parser 2: config.configurations (configparser + convert_value)
+    p = tmp_path / "snap.ini"
+    p.write_text(snap)
+    monkeypatch.setenv("FLUXPYPE_CONFIG_FILE", str(p))
+    assert flux_config.configurations("light")["observation_date"] == "2014-05-18T20:00:00"
+    # parser 3: the Perl side strips "#" comments and reads key = value with Config::IniFiles; check the same
+    # cleaned text still carries the value (Config::IniFiles itself is not installed in CI).
+    cleaned = "\n".join(line.split("#", 1)[0].rstrip() for line in snap.splitlines())
+    raw = configparser.ConfigParser(interpolation=None)
+    raw.read_string(cleaned)
+    assert raw["light"]["observation_date"] == "2014-05-18T20:00:00"
+
+
+@pytest.mark.parametrize("good", ["2014-05-18", "2014-05-18T20:00:00", "2014-05-18 20:00:00", "None", "none"])
+def test_observation_date_accepts_real_dates_and_unset(shipped, good):
+    keys = set(shipped.effective("light"))
+    assert c.validate_override(keys, "observation_date", good) == good
+
+
+@pytest.mark.parametrize(
+    "bad", ["tomorrow", "2014-13-45", "2014-02-30T00:00:00", "20:00:00", "2014-05-18T25:00:00", "abc"]
+)
+def test_observation_date_rejects_non_dates(shipped, bad):
+    keys = set(shipped.effective("light"))
+    with pytest.raises(c.ConfigError, match="observation_date"):
+        c.validate_override(keys, "observation_date", bad)

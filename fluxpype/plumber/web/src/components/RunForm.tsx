@@ -1,5 +1,7 @@
 import { ChevronRight, FlaskConical, Layers } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { instOf } from "../lib/format";
 import { useHealth, useStatus } from "../lib/hooks";
@@ -8,6 +10,15 @@ import { Badge, Checkbox } from "./ui";
 
 /** The knobs worth changing per run, shown first. */
 export const COMMON = ["rotations", "fluxon_count", "adapts", "flow_method", "max_cycles", "relax_threshold", "do_steps", "light", "do_wind_calc"];
+
+/** The "Compare with AIA" section's settings; they get their own controls instead of plain rows. */
+export const AIA_KEYS = ["observation_date"];
+
+const valueOf = (detail: ProfileDetail, d: RunDraft, key: string) => d.overrides[key] ?? detail.entries.find((e) => e.key === key)?.value ?? "";
+const unset = (v: string) => ["", "none"].includes(v.trim().toLowerCase());
+
+/** The section applies when this run renders FLUXlight (light = 1) and the config has the keys it sets. */
+export const aiaSectionShown = (detail: ProfileDetail, d: RunDraft) => valueOf(detail, d, "light").trim() === "1" && AIA_KEYS.every((k) => detail.entries.some((e) => e.key === k && e.editable));
 
 /** What a run will be launched with, before it exists. `picked` holds task keys; null means every task. */
 export interface RunDraft {
@@ -56,8 +67,10 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
   const sim = !!status?.sandboxed;
   const backend = health?.backends.find((b) => b.active);
   const editable = detail.entries.filter((e) => e.editable);
-  const common = editable.filter((e) => COMMON.includes(e.key));
-  const rest = editable.filter((e) => !COMMON.includes(e.key));
+  const aia = aiaSectionShown(detail, draft);
+  const own = (e: ProfileEntry) => AIA_KEYS.includes(e.key) || (aia && e.key === "observer_lon");
+  const common = editable.filter((e) => COMMON.includes(e.key) && !own(e));
+  const rest = editable.filter((e) => !COMMON.includes(e.key) && !own(e));
   const keys = detail.tasks.map(taskKey);
   const picked = new Set(draft.picked ?? keys);
   const allPicked = keys.every((k) => picked.has(k));
@@ -92,6 +105,57 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
       <input className="input mt-1 font-mono" value={draft.overrides[e.key] ?? e.value} onChange={(ev) => onChange({ ...draft, overrides: { ...draft.overrides, [e.key]: ev.target.value } })} spellCheck={false} />
       {e.comment && <span className="mt-1 block text-[11px] leading-snug text-faint">{e.comment}</span>}
     </label>
+  );
+
+  const set = (key: string, v: string) => onChange({ ...draft, overrides: { ...draft.overrides, [key]: v } });
+  const firstCr = pickedTasks(detail, draft)[0]?.cr ?? detail.tasks[0]?.cr;
+  const when = valueOf(detail, draft, "observation_date").trim();
+  // derived observer_lon for the entered time (or the rotation's midpoint when none is entered)
+  const derive = useQuery({
+    queryKey: ["aia-observer", firstCr, unset(when) ? "" : when],
+    queryFn: () => api.get<{ time: string; observer_lon: number }>(`/api/aia/observer?${new URLSearchParams({ ...(firstCr ? { cr: firstCr } : {}), ...(unset(when) ? {} : { time: when }) })}`),
+    enabled: aia && !!firstCr,
+    retry: false,
+  });
+  // the button's midpoint comes from the task's rotation alone, whatever time is typed in the field
+  const mid = useQuery({
+    queryKey: ["aia-observer-mid", firstCr],
+    queryFn: () => api.get<{ time: string; observer_lon: number }>(`/api/aia/observer?${new URLSearchParams({ cr: firstCr as string })}`),
+    enabled: aia && !!firstCr,
+    retry: false,
+  });
+
+  const aiaSection = aia && (
+    <section className="space-y-3" data-testid="compare-aia">
+      <p className="label">Compare with AIA</p>
+      <label className="block">
+        <span className="flex items-baseline justify-between text-xs">
+          <span>Observation time (UTC)</span>
+          {mid.data && (
+            <button type="button" className="text-accent hover:underline" onClick={() => set("observation_date", mid.data.time)}>
+              use mid-rotation {mid.data.time.slice(0, 10)}
+            </button>
+          )}
+        </span>
+        <input
+          className="input mt-1 font-mono"
+          placeholder="2014-05-18T20:00:00 (blank: keep the preset)"
+          value={unset(when) ? "" : when}
+          onChange={(ev) => set("observation_date", ev.target.value.trim() || "None")}
+          spellCheck={false}
+        />
+      </label>
+      <p className="text-xs text-muted">
+        observer_lon:{" "}
+        {unset(when) ? (
+          <span className="font-mono">{valueOf(detail, draft, "observer_lon") || "pole-on"} (from the preset)</span>
+        ) : derive.data ? (
+          <span className="font-mono">{derive.data.observer_lon} (derived: Earth central meridian at that time)</span>
+        ) : (
+          <span className="text-faint">{derive.error ? "enter a valid ISO time" : "computing"}</span>
+        )}
+      </p>
+    </section>
   );
 
   const tasks = (
@@ -131,6 +195,7 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
     <section className="space-y-3">
       <p className="label">Settings for this run</p>
       {common.map(field)}
+      {aiaSection}
       {rest.length > 0 && (
         <>
           <button className="flex items-center gap-1 text-xs text-muted hover:text-ink" onClick={() => setShowAll(!showAll)}>

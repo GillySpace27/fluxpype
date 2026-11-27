@@ -38,7 +38,7 @@ FORBIDDEN_KEYS = frozenset(
 )
 
 _KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_VALUE_RE = re.compile(r"^[\w.\-+\[\], /~()]*$")
+_VALUE_RE = re.compile(r"^[\w.\-+\[\], /~():]*$")  # ":" for times such as 2014-05-18T20:00:00
 _SECTION_RE = re.compile(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$")
 _KV_RE = re.compile(r"^(\s*)([^\s=:#;\[][^=:#]*?)(\s*[=:]\s*)(.*)$")
 _INTERP_RE = re.compile(r"\$\{([^}]+)\}")
@@ -221,6 +221,19 @@ def task_instrument(adapt: str) -> str:
 # overrides
 
 
+def _check_observation_date(value: str) -> None:
+    """observation_date must be a real ISO date/time (2014-05-18 or 2014-05-18T20:00:00), not just safe characters."""
+    from astropy.time import Time
+
+    for fmt in ("isot", "iso"):
+        try:
+            Time(value, format=fmt, scale="utc")
+            return
+        except Exception:  # noqa: BLE001  astropy raises ValueError for bad strings and dates
+            continue
+    raise ConfigError(f"observation_date {value!r} is not a valid date/time (use ISO, e.g. 2014-05-18T20:00:00)")
+
+
 def validate_override(effective_keys, key: str, value: str) -> str:
     """Return the normalized value or raise ConfigError. Security boundary: see module docstring."""
     key = str(key).strip().lower()
@@ -240,6 +253,8 @@ def validate_override(effective_keys, key: str, value: str) -> str:
     # config values are passed through eval(): allow literals, never calls or subscripts
     if re.search(r"[\w)\]]\s*[(\[]", value):
         raise ConfigError(f"value for {key} may not contain calls or subscripts")
+    if key == "observation_date" and value.lower() not in ("", "none"):
+        _check_observation_date(value)
     if key == "batch_name" and not BATCH_RE.match(value):
         raise ConfigError("batch_name may only contain letters, digits, space, '-', '_' and '.'")
     return value

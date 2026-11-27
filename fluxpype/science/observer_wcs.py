@@ -62,3 +62,16 @@ def carrington_observer_lon(date: str) -> float:
     from sunpy.coordinates import sun
 
     return float(sun.L0(Time(date)).to_value(u.deg))
+
+
+def derived_observer_lon(configs: dict, default=None):
+    """FLUXlight ``observer_lon`` for a run: from ``observation_date`` when the run sets it, else ``default`` unchanged.
+
+    ``observation_date`` unset (absent, None or blank) leaves the hand-set ``observer_lon`` (or pole-on) exactly as it was,
+    so runs that predate the "Compare with AIA" form keep their images. When it is set it wins over a typed
+    ``observer_lon``: the time is the single input and the longitude follows from it.
+    """
+    t = configs.get("observation_date")
+    if t is None or str(t).strip() in ("", "None"):
+        return default
+    return carrington_observer_lon(str(t).strip())

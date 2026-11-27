@@ -84,6 +84,7 @@
  "False": "bool\tFalse",
  "For_real_this_time": "str\t'For_real_this_time'",
  "None": "NoneType\tNone",
+ "None  # Observation time, ISO (2014-05-18T20:00:00): dates the FLUXlight header; when set, observer_lon is derived from it (Earth L0)": "NoneType\tNone",
  "Shine1": "str\t'Shine1'",
  "TestConfig_batch": "str\t'TestConfig_batch'",
  "Test_config_batch": "str\t'Test_config_batch'",
