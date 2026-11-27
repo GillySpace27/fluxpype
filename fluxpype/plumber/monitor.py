@@ -635,7 +635,8 @@ class TaskMonitor:
                 row["detail"] = row["detail"] or f["message"]
                 if row["source"] == "none":
                     row["source"] = "log"
-        return out
+        # euv is optional: a task whose run never reported it does not get a permanently grey stage
+        return [r for r in out if r["id"] != "euv" or "euv" in self.ev_stage]
 
     def _fill_from_log(self, row, stage, last_log, log_order):
         if stage in self.lg_marks:

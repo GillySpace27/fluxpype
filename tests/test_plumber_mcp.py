@@ -371,7 +371,7 @@ def test_wait_for_task_reports_progress_and_returns_the_final_state(rig, monkeyp
     assert not err and out["still_running"] is False and out["reached"] is True and out["status"] == "ok"
     assert out["id"] == tid and any(s["id"] == "relax" and s["status"] == "ok" for s in out["stages"])
     seen = [e[0] for e in progress.events]
-    assert len(seen) >= 3 and seen == sorted(seen) and progress.events[-1][:2] == (11, 11)
+    assert len(seen) >= 3 and seen == sorted(seen) and progress.events[-1][:2] == (10, 10)
     assert all(e[2] for e in progress.events)
     wait_status(rig, job["id"])
 
