@@ -9,7 +9,7 @@ Inputs: `SCOPE.md` (draft 1) and an independent review of it. The review found r
 - Branch `claude/project-thread-rx783j` on GillySpace27/fluxpype. Commit in logical steps. Never touch `lowderchris/*`.
 - Terminal behavior must be unchanged when none of the new env vars are set. Every pipeline edit is additive and guarded.
 - Never use the em dash character in code, comments, docs, or UI strings. Use colons, semicolons, parentheses or periods.
-- No FLUX, PDL or Flux in the build container. System `perl` 5.38 (with core JSON::PP) and Node 22 are available. Python there is 3.13; fluxpype pins `<3.13`, so the plumber package and its tests must not import the science stack (see P0.1) and must run under 3.10 to 3.13.
+- No FLUX, PDL or Flux in the build container. System `perl` 5.38 (with core JSON::PP) and Node 22 are available. Python there is 3.13; fluxpype formerly pinned `<3.13` (lifted in A6-06), so the plumber package and its tests must not import the science stack (see P0.1) and must run under 3.10 to 3.13.
 - Edits to `.pdl`/`.pm` files that cannot be executed here are limited to single guarded lines that call a helper, and must pass `perl -c` where the file can be compiled standalone (`events.pm` can; the pipeline files cannot, so keep them trivially correct).
 
 ## 1. v1 deliverable (what ships in this PR)
