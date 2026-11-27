@@ -3,7 +3,7 @@ name: realflux
 # against Ubuntu's own PDL and Perl; fluxon-mhd is only read and built here, never changed.
 on:
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
