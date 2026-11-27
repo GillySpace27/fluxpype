@@ -279,3 +279,41 @@ def task_results(
         "headline": headline,
         "catalog": plot_catalog(ctx, started, ended, posthoc),
     }
+
+
+def image_list(results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The task's image files as one ordered list (A4-04): the headline first, then product images, then plots.
+
+    Built from a ``task_results`` view so the web Results tab and the MCP tools name the same files. Each row has an
+    ``index`` (position in this list), ``name``, ``rel`` (relative to the data folder), ``path`` (absolute, what
+    ``/api/artifacts`` serves), ``product`` (stage id or ``plot``) and ``headline``.
+    """
+    root = results.get("data_dir") or ""
+    head = results.get("headline")
+    rows: List[Dict[str, Any]] = []
+    seen = set()
+
+    def add(rel: str, product: str) -> None:
+        if rel in seen or not rel.lower().endswith(IMAGE_EXT):
+            return
+        seen.add(rel)
+        full = rel if os.path.isabs(rel) else os.path.join(root, rel)
+        rows.append(
+            {
+                "index": len(rows),
+                "name": os.path.basename(rel),
+                "rel": rel,
+                "path": full,
+                "product": product,
+                "headline": rel == head,
+            }
+        )
+
+    if head:
+        add(head, "headline")
+    for prod in results.get("products", []):
+        for f in prod.get("files", []):
+            add(f["path"], prod["id"])
+    for f in results.get("plots", []):
+        add(f["path"], "plot")
+    return rows
