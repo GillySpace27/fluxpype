@@ -1,5 +1,6 @@
 """A5-07: a cached footpoint file must report its row count, not a third of its first column."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,14 +35,21 @@ def test_cached_footpoints_count_rows(tmp_path):
     )
     floc = tmp_path / "floc.dat"
     floc.write_text("".join(f"{i}.5 {i}.25 {i}.75\n" for i in range(5)))
+    # Ask for 7 so a count taken from n_fluxons_wanted cannot pass; the path goes in
+    # through the environment, never into the Perl source.
     code = (
         "use get_hilbert_footpoints;"
-        "my ($f, $n) = get_hilbert_footpoints::get_hilbert_footpoints(flocdir=>'%s', flocfile=>'floc.dat',"
-        " n_fluxons_wanted=>5, force_process_magnetogram=>0);"
+        "my ($f, $n) = get_hilbert_footpoints::get_hilbert_footpoints(flocdir=>$ENV{FLOC_DIR}, flocfile=>'floc.dat',"
+        " n_fluxons_wanted=>7, force_process_magnetogram=>0);"
         'print "N=$n DIMS=", join(",", $f->dims), "\\n";'
-    ) % tmp_path
+    )
+    env = dict(os.environ, FLOC_DIR=str(tmp_path))
     out = subprocess.run(
-        ["perl", "-I", str(stubs), "-I", str(SCIENCE), "-e", code], capture_output=True, text=True, cwd=tmp_path
+        ["perl", "-I", str(stubs), "-I", str(SCIENCE), "-e", code],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=env,
     )
     assert out.returncode == 0, out.stderr
     assert "N=5 DIMS=3,5" in out.stdout
