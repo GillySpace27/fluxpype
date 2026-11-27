@@ -88,6 +88,16 @@ CURRENT_CALL: "contextvars.ContextVar[Tuple[str, str]]" = contextvars.ContextVar
 SUPERSEDES: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("flux_supersedes", default=None)
 
 
+def _code(resp: "httpx.Response") -> str:
+    """The server's stable error code (not_found, conflict, invalid, busy, ...), or "" from an older server."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) else ""
+
+
 def _detail(resp: "httpx.Response") -> str:
     try:
         body = resp.json()
@@ -168,7 +178,8 @@ class PlumberClient:
         if resp.status_code == 403:
             raise PlumberError(f"Plumber refused the request (HTTP 403): {_detail(resp)}")
         if resp.status_code >= 400:
-            raise PlumberError(_detail(resp))
+            code = _code(resp)
+            raise PlumberError(f"{_detail(resp)} [{code}]" if code else _detail(resp))
         return resp
 
     def get(self, path: str, **params) -> Any:

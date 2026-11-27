@@ -33,6 +33,10 @@ class SchedulerError(ValueError):
     pass
 
 
+class SchedulerNotFound(SchedulerError):
+    """An id names nothing (the API answers 404)."""
+
+
 class SchedulerConflict(SchedulerError):
     """The request is fine but not now (the API answers 409)."""
 
@@ -452,7 +456,7 @@ class Scheduler:
     def cancel_task(self, task_id: str) -> None:
         t = self.store.get_task(task_id)
         if not t:
-            raise SchedulerError("no such task")
+            raise SchedulerNotFound("no such task")
         with self.lock:
             self._cancel_task(t)
         self._publish_job(t["job_id"])
@@ -470,9 +474,9 @@ class Scheduler:
     def delete_job(self, job_id: str) -> None:
         job = self.store.get_job(job_id)
         if not job:
-            raise SchedulerError("no such job")
+            raise SchedulerNotFound("no such job")
         if any(t["status"] in ("pending", "running") for t in self.store.tasks_for_job(job_id)):
-            raise SchedulerError("cancel the job before deleting it")
+            raise SchedulerConflict("cancel the job before deleting it")
         self._no_plot_run_for(job_id)
         self.store.delete_job(job_id)
         self.store.ack_events(job=job_id)  # its inbox rows would point nowhere
@@ -485,7 +489,7 @@ class Scheduler:
         `by` (web, mcp, ask) is recorded in the job's origin as `retried_by`."""
         job = self.store.get_job(job_id)
         if not job:
-            raise SchedulerError("no such job")
+            raise SchedulerNotFound("no such job")
         self._no_plot_run_for(job_id)
         with self.lock:
             n = 0
@@ -513,7 +517,7 @@ class Scheduler:
                     )
                     n += 1
             if n == 0:
-                raise SchedulerError("nothing to retry")
+                raise SchedulerConflict("nothing to retry")
             fields: Dict[str, Any] = {"status": "pending", "ended": None, "notified": None}
             if by:
                 fields["origin_json"] = json.dumps({**job["origin"], "retried_by": by})
@@ -834,7 +838,7 @@ class Scheduler:
     def task_state(self, task_id: str, force_status: str = None) -> Dict[str, Any]:
         t = self.store.get_task(task_id)
         if not t:
-            raise SchedulerError("no such task")
+            raise SchedulerNotFound("no such task")
         status = force_status or t["status"]
         finished = status in FINISHED
         if finished and t["summary_json"] and not force_status:  # a finished task's stages never change afterwards
@@ -891,7 +895,7 @@ class Scheduler:
     def relax_series(self, task_id: str, after: int = 0) -> Dict[str, Any]:
         t = self.store.get_task(task_id)
         if not t:
-            raise SchedulerError("no such task")
+            raise SchedulerNotFound("no such task")
         mon = self.monitor_for(t)
         with self._states_lock:
             owned = t["id"] in self._states
@@ -927,10 +931,10 @@ class Scheduler:
     def _plot_dir(self, task_id: str, rid: str) -> str:
         t = self.store.get_task(task_id)
         if not t:
-            raise SchedulerError("no such task")
+            raise SchedulerNotFound("no such task")
         d = os.path.join(t["run_dir"], "plots", rid)
         if not RUN_ID_RE.match(rid) or not os.path.isfile(os.path.join(d, "request.json")):
-            raise SchedulerError("no such plot run")
+            raise SchedulerNotFound("no such plot run")
         return d
 
     def list_plot_runs(self, task_id: str) -> List[Dict[str, Any]]:
@@ -938,7 +942,7 @@ class Scheduler:
 
         t = self.store.get_task(task_id)
         if not t:
-            raise SchedulerError("no such task")
+            raise SchedulerNotFound("no such task")
         dirs = glob.glob(os.path.join(t["run_dir"], "plots", "p*", "request.json"))
         return [plotrun.read_view(os.path.dirname(p)) for p in sorted(dirs, reverse=True)]
 
@@ -958,7 +962,7 @@ class Scheduler:
         with self.lock:
             t = self.store.get_task(task_id)
             if not t:
-                raise SchedulerError("no such task")
+                raise SchedulerNotFound("no such task")
             job = self.store.get_job(t["job_id"])
             ctx = self.probe_context(t)
             if ctx is None:
@@ -986,7 +990,7 @@ class Scheduler:
         with self.lock:
             t = self.store.get_task(task_id)
             if not t:
-                raise SchedulerError("no such task")
+                raise SchedulerNotFound("no such task")
             if t["status"] not in FINISHED:
                 raise SchedulerConflict("the task has not finished")
             job = self.store.get_job(t["job_id"])
@@ -1054,7 +1058,7 @@ class Scheduler:
         with self.lock:
             t = self.store.get_task(task_id)
             if not t:
-                raise SchedulerError("no such task")
+                raise SchedulerNotFound("no such task")
             job = self.store.get_job(t["job_id"])
             backend = self.backends[job["backend"]]
             ctx = self.probe_context(t)
