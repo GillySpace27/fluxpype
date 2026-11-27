@@ -316,10 +316,13 @@ class SSHBackend:
         return (
             f"cd {_q(rdir)} 2>/dev/null || {{ echo @@norun; echo @@end; exit 0; }}\n"
             "echo @@pid; cat pid 2>/dev/null; echo\n"
-            "echo @@exit_code; cat exit_code 2>/dev/null; echo\n"
             "[ -e cancelled ] && echo @@cancelled\n"
             "p=$(sed -n 's/.*\"pid\": *\\([0-9][0-9]*\\).*/\\1/p' pid 2>/dev/null)\n"
-            'echo @@alive; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && echo yes\n'
+            "l=$(sed -n 's/.*\"launcher_pid\": *\\([0-9][0-9]*\\).*/\\1/p' pid 2>/dev/null)\n"
+            # the launcher outlives the task until it has written exit_code, so it counts as alive too
+            'echo @@alive; { { [ -n "$p" ] && kill -0 "$p"; } || { [ -n "$l" ] && kill -0 "$l"; }; } 2>/dev/null && echo yes\n'
+            # read exit_code after the liveness checks: if both are dead, exit_code is already on disk
+            "echo @@exit_code; cat exit_code 2>/dev/null; echo\n"
             "echo @@age; echo $(( $(date +%s) - $(date -r launch.json +%s 2>/dev/null || echo 0) ))\n"
             f"{sizes}{self._poll_extra()}echo @@end\n"
         )

@@ -140,6 +140,23 @@ def test_ssh_unreachable_is_unknown_not_lost(tmp_path):
     assert st.cancelled and st.state == "exited" and st.signal == 15
 
 
+def test_task_dead_but_launcher_still_writing_exit_code_is_not_lost(tmp_path):
+    """The window between the task being reaped and exit_code landing must not read as lost."""
+    b = SSHBackend(config(tmp_path), transport=Recording())
+    t = spec(tmp_path)
+    rdir = tmp_path / "remote" / "j1" / "j1-01"
+    rdir.mkdir(parents=True)
+    os.makedirs(t.run_dir)
+    (rdir / "launch.json").write_text("{}")
+    with open(os.path.join(t.run_dir, "remote.json"), "w") as f:
+        json.dump({"backend": "box", "remote_dir": str(rdir)}, f)
+    (rdir / "pid").write_text(json.dumps({"pid": 2**22 + 12345, "pid_start": "x", "launcher_pid": os.getpid()}))
+    h = Handle(t.task_id, t.run_dir)
+    assert b.poll(h).state == "running"  # launcher (this process) alive, task gone, no exit_code yet
+    (rdir / "pid").write_text(json.dumps({"pid": 2**22 + 12345, "pid_start": "x", "launcher_pid": 2**22 + 12346}))
+    assert b.poll(h).state == "lost"  # both gone and still no exit_code: genuinely lost
+
+
 def test_poll_without_a_remote_record_is_lost(tmp_path):
     b = SSHBackend(config(tmp_path), transport=Recording())
     assert b.poll(Handle("x", str(tmp_path / "nowhere"))).state == "lost"
