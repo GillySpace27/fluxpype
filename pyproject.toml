@@ -27,27 +27,23 @@ requires-python = ">=3.10,<3.14"  # numpy 2 lifts the old wheel limit; 3.13 inst
 dependencies = [
   "matplotlib>=3.9",
   "numpy>=1.26,<3.0",
-  "sunpy>=4.0",
+  "sunpy[net]>=4.0",  # [net] brings zeep, beautifulsoup4 and drms; zeep brings lxml
   "pandas>=2.2.2",
   "tqdm>=4.62",
   "astropy>=7.0; python_version >= '3.11'",  # astropy<7 calls np.in1d, gone in numpy 2.4
   "astropy>=6.1; python_version < '3.11'",  # Python 3.10 tops out at numpy 2.2, astropy 6.1
-  "beautifulsoup4>=0.0.1",
-  "lxml>=4.6",
-  "zeep>=4.1",
   "drms>=0.6",
   "timeout-decorator>=0.5",
   "rich>=10.13",
   "pfsspy>=1.2.0",
   "sunkit-magex>=1.0.0",
-  "PyQt5>=5.15.11",
   "opencv-python>=4.10.0.84",
   "joblib>=1.2",
   "sunkit-image>=0.5",
 ]
 
 [project.optional-dependencies]
-FLUXcore = ["pexpect", "PyQt5"]
+FLUXcore = ["pexpect"]
 plumber = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "psutil>=5.9", "tomli>=2; python_version < '3.11'"]
 mcp = ["mcp>=2.3,<3", "fastapi>=0.110", "uvicorn[standard]>=0.27", "httpx>=0.27", "psutil>=5.9"]
 test = ["pytest", "pytest-cov", "pytest-xdist"]

@@ -1,19 +1,2 @@
-pandas
-tqdm
-matplotlib
-astropy
-sunpy
-sunkit-image
-joblib
-bs4
-lxml
-zeep
-drms
-timeout_decorator
-opencv-python
-pexpect
-rich
-pfsspy
-sunkit-magex
-PyQt5
-numpy
+# Single source of truth is pyproject.toml; this file only defers to it (audit A6-11).
+-e .
