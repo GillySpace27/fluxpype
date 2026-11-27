@@ -19,12 +19,6 @@ use PDL::Graphics::Gnuplot;
 use Chart::Gnuplot;
 use POSIX ();
 
-# Forked workers inherit the parent's world and Gnuplot objects; destroying those copies at exit printed a
-# "Read '...world.flux'" line and a Gnuplot "subproc died" warning per worker. A worker has already handed
-# its result to the parent by the time END runs, so it can leave without global destruction.
-our $FORK_CHILD = 0;
-END { POSIX::_exit($?) if $FORK_CHILD }
-
 # use local::lib;
 # use lib "fluxpype/science";
 # use lib "fluxpype/helpers";
@@ -33,6 +27,11 @@ END { POSIX::_exit($?) if $FORK_CHILD }
 use FindBin;
 use lib $FindBin::Bin;       # Adds the script's directory
 use lib "$FindBin::Bin/..";  # Adds the parent directory
+
+# Forked workers inherit the parent's world and Gnuplot objects; destroying those copies at exit printed a
+# "Read '...world.flux'" line and a Gnuplot "subproc died" warning per worker. flux_api owns the rule (its END
+# block leaves a marked worker through POSIX::_exit); a worker has already handed its result to the parent by then.
+use flux_api qw(fork_child);
 
 use gen_fluxon_tflow       qw(gen_fluxon_tflow);
 use gen_fluxon_schonflow   qw(gen_fluxon_schonflow);
@@ -324,7 +323,7 @@ sub map_fluxon_flow_parallel_master {
     # Launch parallel tasks
     for my $fluxon_id (0 .. $max_fluxon_id - 1) {
         $fork_manager->start and next;  # child will skip
-        $FORK_CHILD = 1;
+        fork_child();
         $SIG{__WARN__} = sub { warn @_ unless $_[0] =~ /^\s*\(in cleanup\) PDL::Graphics::Gnuplot: subproc died/ };
 
         eval {
