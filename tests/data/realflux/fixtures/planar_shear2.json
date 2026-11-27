@@ -1,0 +1,27 @@
+{
+ "name": "planar-arcade",
+ "n_lines": 9,
+ "separation": 2.0,
+ "spacing": 0.25,
+ "shear_offset": 0.0,
+ "pairing": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  1,
+  0
+ ],
+ "flux_per_line": 1.0,
+ "height_ratio": 1.0,
+ "max_height": 1.5,
+ "vertices_per_line": 19,
+ "photosphere_z": -0.001,
+ "lid_height": null,
+ "seed": "arc",
+ "notes": "",
+ "schema": 1
+}

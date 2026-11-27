@@ -1,0 +1,53 @@
+name: realflux
+# Golden tests that run the real FLUX (tests/realflux, audit A6-02). Builds GillySpace27/fluxon-mhd at a pinned commit
+# against Ubuntu's own PDL and Perl; fluxon-mhd is only read and built here, never changed.
+on:
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+env:
+  # The commit the goldens were made from (tests/data/realflux/golden.json). Bump it together with the goldens.
+  FLUXON_MHD_SHA: 3f65ebdd42871bb46a850a90c5ec9a13280aa517
+
+jobs:
+  realflux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: GillySpace27/fluxon-mhd
+          ref: ${{ env.FLUXON_MHD_SHA }}
+          path: fluxon-mhd
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install PDL and build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pdl gnuplot-nox libpdl-graphics-gnuplot-perl \
+            libfile-sharedir-perl libfile-sharedir-install-perl
+      - name: Build fluxon-mhd
+        working-directory: fluxon-mhd
+        run: |
+          P="$RUNNER_TEMP/flux"
+          mkdir -p "$P"
+          export PERL5LIB="$P/lib/perl5/x86_64-linux-gnu-thread-multi:$P/lib/perl5"
+          GNUTERM=dumb FL_PREFIX="$P" PL_PREFIX="$P" make everything
+          echo "PERL5LIB=$PERL5LIB" >> "$GITHUB_ENV"
+      - name: Install fluxpype
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[plumber,mcp]" pytest pytest-cov
+      - name: Show the build
+        run: perl -MPDL -MFlux -e 'print "PDL $PDL::VERSION, Perl $^V, $INC{q{Flux.pm}}\n"'
+      - name: pytest -m realflux
+        # The nightly run adds the 50 s twisted fixture.
+        run: |
+          SLOW=""
+          if [ "${{ github.event_name }}" != "pull_request" ]; then SLOW="--realflux-slow"; fi
+          python -m pytest -q -m realflux tests/realflux -rs $SLOW
