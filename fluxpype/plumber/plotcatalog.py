@@ -387,28 +387,6 @@ PLOTS: List[Dict[str, Any]] = [
         legacy=True,
     ),
     _p(
-        "wsa_bkk_debug",
-        "wind",
-        "WSA predictor debug images (per fluxon)",
-        "debug_fluxon_*.png",
-        "fluxpype/science/gen_fluxon_wsaflow_bkk.pm:445,461",
-        "Distance and expansion arrays as Gnuplot images, written to the working directory.",
-        call="none (the module is not loaded anywhere)",
-        gate="Never loaded.",
-        legacy=True,
-    ),
-    _p(
-        "footpoint_distance_variants",
-        "wind",
-        "Footpoint distance maps (older variants)",
-        "data/cr{cr}/floc/distance_cr{cr}_f{nflux}_ou*_footpoints.png",
-        "fluxpype/science/footpoint_distances.py:384 (and _2, _wsa_bkk, _wsa_bkk2)",
-        "Footpoint topology over a distance-to-boundary map.",
-        call="none (only footpoint_distances_wsa.py is called)",
-        gate="Never called.",
-        legacy=True,
-    ),
-    _p(
         "tempest_mag",
         "wind",
         "FLUX against Zephyr field (tempest.py blocks)",
@@ -538,11 +516,8 @@ _NOT_HOC: Dict[str, Any] = {
     "windmap": "Four variants, none verified: hard-coded 'sequential' batch; PDL form uses --resave_from_dat which exits before plotting.",
     **{i: _NO_CALLER for i in ("magnetogram_raw", "footpoints_locations", "light_quad")},
     "relax_frames": "Drawn by Gnuplot inside the Perl relaxation loop (simple_relaxer.pm) from the in-memory world; no standalone command.",
-    **{i: _INSIDE for i in ("wsa_bkk_debug", "tempest_mag")},
-    **{
-        i: "Not verified: never called; writes outside the data folder."
-        for i in ("footpoint_distance_variants", "fss_theta_speed")
-    },
+    **{i: _INSIDE for i in ("tempest_mag",)},
+    "fss_theta_speed": "Not verified: never called; writes outside the data folder.",
 }
 for _e in PLOTS:
     if _e["id"] in _HOC:
