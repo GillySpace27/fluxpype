@@ -40,7 +40,11 @@ FLUX has two halves: the **core** (a C library with Perl/PDL bindings, in
    > ```
    >
    > The parentheses run it in a subshell, so your own shell keeps its
-   > `PERL5LIB` and `PDLLIB`.
+   > `PERL5LIB` and `PDLLIB`. Not yet checked: whether this build alone lets PDL
+   > find the FLUX autoload scripts (`simple_relaxer` and the others in the
+   > checkout's `pdl/PDL/`). If a relaxation says it cannot find one, add that
+   > folder to `PDLLIB`, for example
+   > `export PDLLIB="+$HOME/path/to/fluxon-mhd/pdl/PDL:$PDLLIB"`.
    >
    > With `PL_PREFIX` empty, `Makefile:24` passes an empty `INSTALL_BASE`, so
    > `Flux.pm` is installed into that Perl's own site directory (already on its
