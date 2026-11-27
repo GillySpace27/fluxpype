@@ -38,10 +38,10 @@ export function useNow(ms = 1000): number {
   return now;
 }
 
-/** Poll more slowly while the WebSocket is delivering pushes. */
-function useRefetch(fast: number, slow: number) {
+/** Poll only while the WebSocket is down; with it up, pushes and the refetch on reconnect keep the cache fresh. */
+function useRefetch(fast: number): number | false {
   const { connected } = useLive();
-  return connected ? slow : fast;
+  return connected ? false : fast;
 }
 
 export const useStatus = (poll?: number) => useQuery({ queryKey: ["status"], queryFn: () => api.get<StatusInfo>("/api/status"), staleTime: 60_000, refetchInterval: poll });
@@ -51,31 +51,43 @@ export const useAgentRecord = (enabled: boolean) =>
   useQuery({ queryKey: ["agent-log"], queryFn: () => api.get<AgentRecord>("/api/agent"), enabled, staleTime: 5_000 });
 
 /** The machine's load for the sidebar monitor; `procs` adds the process tables for its popup. */
-export const useSystem = (procs: boolean) =>
-  useQuery({
-    queryKey: ["system", procs],
-    queryFn: () => api.get<SysSnapshot>(`/api/system${procs ? "?procs=1" : ""}`),
+export const useSystem = (procs: boolean) => {
+  const qc = useQueryClient();
+  const key = ["system", procs];
+  return useQuery({
+    queryKey: key,
+    // ask only for samples newer than the last one held (the first call gets the whole history), then append
+    queryFn: async () => {
+      const old = qc.getQueryData<SysSnapshot>(key);
+      const last = old?.history.length ? old.history[old.history.length - 1].t : null;
+      const q = [procs ? "procs=1" : "", last != null ? `since=${last}` : ""].filter(Boolean).join("&");
+      const d = await api.get<SysSnapshot>(`/api/system${q ? `?${q}` : ""}`);
+      if (!old || last == null) return d;
+      return { ...d, history: [...old.history, ...d.history].slice(-HISTORY_KEEP) };
+    },
     refetchInterval: 2000,
     placeholderData: (prev) => prev,
   });
+};
+const HISTORY_KEEP = 120; // sysmon.py HISTORY
 
 export const useOverview = () => {
-  const refetchInterval = useRefetch(2000, 8000);
+  const refetchInterval = useRefetch(2000);
   return useQuery({ queryKey: ["overview"], queryFn: () => api.get<Overview>("/api/overview"), refetchInterval });
 };
 
 export const useQueue = () => {
-  const refetchInterval = useRefetch(3000, 10000);
+  const refetchInterval = useRefetch(3000);
   return useQuery({ queryKey: ["queue"], queryFn: () => api.get<QueueState>("/api/queue"), refetchInterval });
 };
 
 export const useJobs = () => {
-  const refetchInterval = useRefetch(3000, 10000);
+  const refetchInterval = useRefetch(3000);
   return useQuery({ queryKey: ["jobs"], queryFn: () => api.get<{ jobs: Job[] }>("/api/jobs"), refetchInterval });
 };
 
 export const useJob = (id: string | undefined) => {
-  const refetchInterval = useRefetch(2500, 10000);
+  const refetchInterval = useRefetch(2500);
   return useQuery({
     queryKey: ["job", id],
     queryFn: () => api.get<Job>(`/api/jobs/${id}`),
@@ -85,7 +97,7 @@ export const useJob = (id: string | undefined) => {
 };
 
 export const useTask = (id: string | undefined, active: boolean) => {
-  const refetchInterval = useRefetch(1500, 6000);
+  const refetchInterval = useRefetch(1500);
   return useQuery({
     queryKey: ["task", id],
     queryFn: () => api.get<TaskState>(`/api/tasks/${id}`),
@@ -95,10 +107,19 @@ export const useTask = (id: string | undefined, active: boolean) => {
 };
 
 export const useRelax = (id: string | undefined, nPoints: number, active: boolean) => {
-  const refetchInterval = useRefetch(2000, 6000);
+  const refetchInterval = useRefetch(2000);
+  const qc = useQueryClient();
   return useQuery({
     queryKey: ["relax", id],
-    queryFn: () => api.get<RelaxSeries>(`/api/tasks/${id}/relax`),
+    // the first fetch gets the series; later ones ask only for points after the ones held and append (A3-06)
+    queryFn: async () => {
+      const old = qc.getQueryData<RelaxSeries>(["relax", id]);
+      const after = old?.points.length ?? 0;
+      const d = await api.get<RelaxSeries>(`/api/tasks/${id}/relax${after ? `?after=${after}` : ""}`);
+      if (!old || !after) return d;
+      if (d.n < after) return api.get<RelaxSeries>(`/api/tasks/${id}/relax`); // the series restarted
+      return { ...d, points: [...old.points, ...d.points] };
+    },
     enabled: !!id,
     refetchInterval: active ? refetchInterval : false,
     // a new point count means new data; keep the previous series on screen while refetching
