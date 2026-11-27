@@ -28,6 +28,10 @@ jobs:
           cache: pip
       - name: Install PDL and build tools
         run: |
+          # An unrelated third-party source on the runner image (e.g. packages.microsoft.com) can fail
+          # apt-get update with a 403 or an unsigned-repository error; none of it is needed here.
+          sudo rm -f /etc/apt/sources.list.d/microsoft*.list /etc/apt/sources.list.d/microsoft*.sources \
+            /etc/apt/sources.list.d/*packages.microsoft*
           sudo apt-get update
           sudo apt-get install -y build-essential pdl gnuplot-nox libpdl-graphics-gnuplot-perl \
             libfile-sharedir-perl libfile-sharedir-install-perl
