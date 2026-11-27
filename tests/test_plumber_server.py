@@ -85,6 +85,18 @@ def test_websocket_needs_the_cookie_and_a_sane_origin(client):
         assert ws.receive_json()["type"] == "hello"
 
 
+def test_ws_hello_carries_a_boot_id(client):
+    """Tabs that missed the server_restarting broadcast compare this across connections and reload when it changes."""
+    client.cookies.set("flux_plumber", TOKEN)
+    boots = []
+    for _ in range(2):
+        with client.websocket_connect("/api/ws", headers={"Host": "localhost:8765"}) as ws:
+            msg = ws.receive_json()
+            assert msg["type"] == "hello"
+            boots.append(msg["data"]["boot"])
+    assert boots[0] and boots[0] == boots[1]
+
+
 # ------------------------------------------------------------------ read endpoints
 
 

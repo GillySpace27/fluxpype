@@ -443,6 +443,7 @@ def create_app(
 
     sched.on_change = on_sched_change
     # the event log: runs in the loop whether or not a browser is connected (notify.py)
+    boot_id = uuid.uuid4().hex  # new for every server process; a tab that sees it change reloads for the new bundle
     notifier = Notifier(sched, publish=lambda ev: hub.publish("event", ev), version=version, stall_after=stall_after)
     app.state.notifier = notifier
     waits: Dict[str, int] = {}  # concurrent long polls of GET /api/events, per session (or client address)
@@ -2212,7 +2213,9 @@ def create_app(
         hub.clients.add(q)
         sender = None
         try:
-            await sock.send_text(json.dumps({"type": "hello", "data": {"version": version, "demo": demo}}))
+            await sock.send_text(
+                json.dumps({"type": "hello", "data": {"version": version, "demo": demo, "boot": boot_id}})
+            )
             sender = asyncio.create_task(_pump(sock, q))
             while True:
                 await sock.receive_text()  # ignore client messages; detects disconnect

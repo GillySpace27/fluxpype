@@ -63,7 +63,7 @@ function RecentRunsNav() {
 
 export function Layout() {
   const { data: status } = useStatus();
-  const { connected } = useLive();
+  const { connected, restarting } = useLive();
   const NAV = NAV_PRESETS;
   const { data: jobs } = useJobs();
   const active = jobs?.jobs.filter((j) => j.status === "running").length ?? 0;
@@ -131,6 +131,12 @@ export function Layout() {
             <QueuePill />
           </div>
         </div>
+        {restarting && (
+          <div role="status" className="flex items-center gap-2 border-t border-accent/25 bg-accent/10 px-4 py-1.5 text-xs text-ink/90 md:px-8">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-run" />
+            Plumber is restarting. This page reloads when it is back.
+          </div>
+        )}
         {status?.sandboxed && (
           <div className="flex items-center gap-2 border-t border-accent/25 bg-accent/10 px-4 py-1.5 text-xs text-ink/90 md:px-8">
             <FlaskConical className="h-3.5 w-3.5 text-accent" />
