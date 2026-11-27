@@ -8,7 +8,7 @@ Inputs: `docs/mcp/SCOPE.md` and an independent review of it. This plan supersede
 - Never use the em dash character anywhere.
 - Do not change Plumber behavior except as listed in section 1. All existing tests (`pytest tests`, 171 at start) must still pass.
 - SDK: `mcp>=2.3,<3`, using `from mcp.server.mcpserver import MCPServer, Context, Image`, `mcp_types.ToolAnnotations`, and `from mcp import Client` for tests. These were verified against mcp 2.3.0 in this container. Do not use the removed `FastMCP` module.
-- The package requires Python `<3.13`; this container runs 3.13, so run everything as modules from the repo root (`python -m fluxpype.plumber.mcp_server`). Do not pip-install fluxpype here.
+- The package formerly required Python `<3.13` (lifted in A6-06); this container runs 3.13, so run everything as modules from the repo root (`python -m fluxpype.plumber.mcp_server`). Do not pip-install fluxpype here.
 - New extra in `pyproject.toml`: `mcp = ["mcp>=2.3,<3", "fastapi>=0.110", "uvicorn[standard]>=0.27"]`. The HTTP client is `httpx`, which ships with FastAPI's test stack. Add `httpx>=0.27` explicitly to the extra, since mcp 2.x does not depend on it.
 - Entry point `flux-plumb-mcp = "fluxpype.plumber.mcp_server:main"`.
 
