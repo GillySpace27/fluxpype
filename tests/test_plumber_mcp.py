@@ -612,17 +612,35 @@ def png_bytes(w, h):
 def test_get_task_image_returns_the_image_and_a_caption(rig, done):
     _, tid = done
     arts = rig.ok("get_task", task_id=tid)["artifacts"]
-    res = call_raw(rig, "get_task_image", task_id=tid)
+    assert arts
+    res = call_raw(rig, "get_task_image", task_id=tid)  # -1 is the headline
     assert not res.is_error
     kinds = [c.type for c in res.content]
     assert kinds == ["image", "text"] and res.content[0].mime_type == "image/png"
     assert base64.b64decode(res.content[0].data)[:4] == b"\x89PNG"
-    assert arts[-1]["name"] in res.content[1].text and f"artifact {arts[-1]['index']} of 3" in res.content[1].text
+    head = next(a for a in arts if a.get("headline"))
+    assert head["name"] in res.content[1].text and f"image {head['index']} of {len(arts)}" in res.content[1].text
     first = call_raw(rig, "get_task_image", task_id=tid, index=0)
     assert arts[0]["name"] in first.content[1].text
-    for bad in (3, -4):
+    for bad in (len(arts), -2):
         res = call_raw(rig, "get_task_image", task_id=tid, index=bad)
         assert res.is_error and "out of range" in res.content[0].text
+
+
+def test_mcp_and_http_list_the_same_images(rig, done):
+    """A4-04: get_task and GET /api/tasks/{id}/images give one list; the headline is the Results headline."""
+    _, tid = done
+    http = rig.tc.get(f"/api/tasks/{tid}/images", headers=H).json()
+    res = rig.tc.get(f"/api/tasks/{tid}/results", headers=H).json()
+    mcp = rig.ok("get_task", task_id=tid)["artifacts"]
+    assert http["images"] and [(i["index"], i["name"], i["path"]) for i in http["images"]] == [
+        (i["index"], i["name"], i["path"]) for i in mcp
+    ]
+    assert http["headline"] == res["headline"]
+    assert http["images"][0]["rel"] == res["headline"] and http["images"][0]["headline"]
+    waited = rig.ok("wait_for_task", task_id=tid)
+    assert [i["name"] for i in waited["artifacts"]] == [i["name"] for i in mcp]
+    assert rig.tc.get("/api/tasks/nope/images", headers=H).status_code == 404
 
 
 def test_get_task_image_without_artifacts_is_an_error(rig):
@@ -661,7 +679,7 @@ def test_prepare_image_downscales_with_pillow():
 def test_get_task_image_downscales_a_big_artifact_end_to_end(rig, done):
     PILImage = pytest.importorskip("PIL.Image")
     _, tid = done
-    art = rig.ok("get_task", task_id=tid)["artifacts"][-1]
+    art = next(a for a in rig.ok("get_task", task_id=tid)["artifacts"] if a.get("headline"))
     with open(art["path"], "wb") as f:
         f.write(png_bytes(2400, 1800))
     res = call_raw(rig, "get_task_image", task_id=tid, max_edge=300)
