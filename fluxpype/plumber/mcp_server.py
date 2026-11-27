@@ -404,6 +404,7 @@ def task_detail(state: dict) -> dict:
         out["metrics"] = [keep(m, "name", "value", "unit") for m in state["metrics"][:20]]
     out["failure"] = failure_of(state)
     out["artifacts"] = artifacts_of(state)
+    out["headline"] = state.get("headline")
     return {k: v for k, v in out.items() if v is not None}
 
 
@@ -587,6 +588,7 @@ def build_server(
         recent = []
         for r in overview.get("recent", []):
             row = keep(r, *TASK_KEYS, "exit_code", "stages_ok", "failure")
+            row["headline"] = r.get("thumb")
             recent.append(row)
         return dumps(
             {
@@ -1198,12 +1200,15 @@ def build_server(
     )
     async def get_task_image(task_id: str, index: int = -1, max_edge: int = 1024) -> list:
         state = await get(f"/api/tasks/{ident(task_id, 'task_id')}")
-        arts = artifacts_of(state)
+        every = artifacts_of(state)
+        arts = [a for a in every if a["kind"] == "image"] if index < 0 else every  # -1 means the newest image
         if not arts:
             raise ToolError("this task has no image artifacts yet")
         if not -len(arts) <= index < len(arts):
             raise ToolError(f"index {index} is out of range: the task has {len(arts)} artifacts (0 to {len(arts) - 1})")
         art = arts[index]
+        if art["kind"] != "image":
+            raise ToolError(f"artifact {index} is a {art['kind']} file, not an image; pick an image index")
         resp = await api("GET", "/api/artifacts", {"path": art["path"]})
         data, fmt, note = await anyio.to_thread.run_sync(
             prepare_image, resp.content, os.path.splitext(art["name"])[1], clamp(max_edge, 64, 2048)

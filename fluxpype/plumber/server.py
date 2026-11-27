@@ -1269,17 +1269,24 @@ def create_app(
     def results_for(t: Dict[str, Any]) -> Dict[str, Any]:
         from .results import task_results
 
-        out = task_results(sched.probe_context(t), t.get("started"), t.get("ended"), sched.posthoc_outputs(t))
+        try:
+            state = sched.task_state(t["id"])
+        except Exception:  # noqa: BLE001
+            state = {}
+        out = task_results(
+            sched.probe_context(t),
+            t.get("started"),
+            t.get("ended"),
+            sched.posthoc_outputs(t),
+            artifacts=state.get("artifacts"),
+        )
         runs = sched.list_plot_runs(t["id"])
         for c in out["catalog"]:  # the newest attempt that mentions each plot
             last = next(((r, p) for r in runs for p in r["plots"] if p["id"] == c["id"]), None)
             c["last_run"] = (
                 {"id": last[0]["id"], "status": last[1]["status"], "detail": last[1]["detail"]} if last else None
             )
-        try:
-            stages = {s["id"]: s["status"] for s in sched.task_state(t["id"]).get("stages", [])}
-        except Exception:  # noqa: BLE001
-            stages = {}
+        stages = {s["id"]: s["status"] for s in state.get("stages", [])}
         for prod in out["products"]:
             prod["stage_status"] = stages.get(PRODUCT_STAGE.get(prod["id"], prod["id"]))
         return out
@@ -1330,9 +1337,10 @@ def create_app(
     @app.get("/api/tasks/{task_id}")
     def task(task_id: str):
         try:
-            return reply(sched.task_state(task_id))
+            state = sched.task_state(task_id)
         except SchedulerError as e:
             fail(e, 404)
+        return reply({**state, "headline": headline_for(sched.store.get_task(task_id), state)})
 
     @app.post("/api/tasks/{task_id}/cancel")
     def cancel_task(task_id: str):
@@ -1889,6 +1897,16 @@ def create_app(
         hub.publish("events_read", sched.store.event_counts())
         return reply({**event_reply([]), "acked": n})
 
+    def headline_for(t: Dict[str, Any], state: Dict[str, Any]) -> Optional[str]:
+        """The task's headline image as an absolute path: the same rule Results uses (A3-07)."""
+        from .results import task_headline
+
+        ctx = sched.probe_context(t)
+        rel = task_headline(ctx, t.get("started"), t.get("ended"), state.get("artifacts"))
+        if rel and ctx and not os.path.isabs(rel):
+            return os.path.join(ctx.data_dir, rel)
+        return rel
+
     @app.get("/api/overview")
     def overview():
         running = []
@@ -1906,13 +1924,13 @@ def create_app(
         for t in sched.store.recent_finished(12):
             job = sched.store.get_job(t["job_id"])
             state = sched.task_state(t["id"])
-            arts = [a for a in state.get("artifacts", []) if a.get("path")]
+            head = headline_for(t, state)
             ok_stages = sum(1 for s in state.get("stages", []) if s["status"] == "ok")
             recent.append(
                 {
                     **sched.task_row_view(t),
                     "profile": job["profile"],
-                    "thumb": arts[-1]["path"] if arts else None,
+                    "thumb": head,
                     "stages_ok": ok_stages,
                     "stages": [
                         {"id": s["id"], "status": s["status"], "source": s["source"]} for s in state.get("stages", [])
