@@ -66,7 +66,7 @@ FLUX has two halves: the **core** (a C library with Perl/PDL bindings, in
    > reference build was installed. Not yet tried inside a conda env on macOS;
    > check with the `perl -MPDL -MFlux -e1` test above. Whatever you do, check
    > `echo $PERL5LIB $PDLLIB` first and keep your own work out of any folder it lists.
-2. **Install fluxpype** (Python 3.10 to 3.12):
+2. **Install fluxpype** (Python 3.10 to 3.13):
 
    ```sh
    git clone https://github.com/GillySpace27/fluxpype.git

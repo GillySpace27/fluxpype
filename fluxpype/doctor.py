@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import sys
 
-PY_MIN, PY_MAX = (3, 10), (3, 12)  # numpy<2 (required) has no wheels past 3.12
+PY_MIN, PY_MAX = (3, 10), (3, 13)  # numpy 2 supports 3.13; 3.14 is untested
 
 
 def _run(cmd):
@@ -141,7 +141,7 @@ def checks():
         "python version",
         PY_MIN <= v <= PY_MAX,
         f"{sys.executable} ({v[0]}.{v[1]})",
-        "use Python 3.10-3.12: rerun install.sh, or set PYTHON=python3.12",
+        "use Python 3.10-3.13: rerun install.sh, or set PYTHON=python3.12",
     )
 
     perl = _flux_perl() or shutil.which("perl")

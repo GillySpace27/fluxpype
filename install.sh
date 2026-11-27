@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Install fluxpype into ./.venv and verify the whole FLUX stack with flux-doctor.
 # The FLUX core (C library + Perl/PDL) is built separately: see fluxon-mhd/doc.
-#   ./install.sh                       # picks python3.12, 3.11 or 3.10
+#   ./install.sh                       # picks python3.12, 3.13, 3.11 or 3.10
 #   PYTHON=/path/to/python ./install.sh
 set -euo pipefail
 cd "$(dirname "$0")"
 
-ok_py() { "$1" -c 'import sys; sys.exit(not (3,10) <= sys.version_info[:2] <= (3,12))' 2>/dev/null; }
+ok_py() { "$1" -c 'import sys; sys.exit(not (3,10) <= sys.version_info[:2] <= (3,13))' 2>/dev/null; }
 PY=${PYTHON:-}
 if [ -z "$PY" ]; then
-  for c in python3.12 python3.11 python3.10 python3; do
+  for c in python3.12 python3.13 python3.11 python3.10 python3; do
     if command -v "$c" >/dev/null && ok_py "$c"; then PY=$c; break; fi
   done
 fi
 if [ -z "$PY" ] || ! ok_py "$PY"; then
-  echo "fluxpype needs Python 3.10-3.12 (numpy<2 has no wheels past 3.12)."
+  echo "fluxpype needs Python 3.10-3.13."
   echo "Install one (macOS: brew install python@3.12) or set PYTHON=/path/to/python."
   exit 1
 fi

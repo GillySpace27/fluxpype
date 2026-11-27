@@ -1,6 +1,6 @@
 """Every module in the package must compile on the running Python.
 
-CI runs 3.10, 3.11 and 3.12, but no test imports fluxpype/science/fluxlight.py, so a 3.12-only f-string there
+CI runs 3.10, 3.11, 3.12 and 3.13, but no test imports fluxpype/science/fluxlight.py, so a 3.12-only f-string there
 went unnoticed (audit finding A7-06). Compiling everything catches the next one on every interpreter in the matrix.
 """
 
