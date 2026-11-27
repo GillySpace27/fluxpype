@@ -1,4 +1,5 @@
 import { cn } from "../lib/cn";
+import { useNow } from "../lib/hooks";
 import type { TaskState } from "../lib/types";
 import { Badge, Banner } from "./ui";
 
@@ -20,7 +21,10 @@ const age = (s: number | null) => (s == null ? "never" : s < 2 ? "just now" : `$
 
 /** Which of the three sources is feeding this task's state, and how fresh each one is. */
 export function SourcesPanel({ task }: { task: TaskState }) {
+  const now = useNow(1000);
   const { events, log, files, process } = task.sources;
+  // the server leaves age_s out of its change test, so a push no longer refreshes it; count from last_change here
+  const since = (t: number | null) => (t == null ? null : Math.max(0, now - t));
   const unverified = task.stages.filter((s) => s.verified === false);
   const finished = task.outcome != null;
   return (
@@ -36,7 +40,7 @@ export function SourcesPanel({ task }: { task: TaskState }) {
         <Row tone={!events.present ? "faint" : task.degraded ? "info" : "ok"} title="Structured events" right={<Badge tone={task.mode === "events" ? "accent" : "neutral"}>{task.mode === "events" ? "primary" : task.mode === "degraded" ? "stale" : "absent"}</Badge>}>
           {events.present ? (
             <>
-              {events.lines.toLocaleString()} events{events.bad_lines ? `, ${events.bad_lines} unreadable` : ""}. {finished ? "Run finished." : `Last one ${age(events.age_s)}.`}
+              {events.lines.toLocaleString()} events{events.bad_lines ? `, ${events.bad_lines} unreadable` : ""}. {finished ? "Run finished." : `Last one ${age(since(events.last_change))}.`}
             </>
           ) : (
             "This run is not emitting events (started from a terminal, or an older install). The log and files are used instead."
@@ -45,7 +49,7 @@ export function SourcesPanel({ task }: { task: TaskState }) {
         <Row tone={log.present ? "ok" : "faint"} title="Log" right={<Badge tone={task.mode === "log" || task.mode === "degraded" ? "info" : "neutral"}>{task.mode === "log" ? "primary" : "fallback"}</Badge>}>
           {log.present ? (
             <>
-              {log.lines.toLocaleString()} lines parsed for banners and relaxation steps. {finished ? "" : `Last line ${age(log.age_s)}.`}
+              {log.lines.toLocaleString()} lines parsed for banners and relaxation steps. {finished ? "" : `Last line ${age(since(log.last_change))}.`}
             </>
           ) : (
             "No log output yet."
