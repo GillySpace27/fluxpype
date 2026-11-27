@@ -81,6 +81,7 @@ markers = [
   "spark: marks tests which need Spark",
   "slow: marks tests as slow",
   "unit: fast offline tests",
+  "realflux: golden tests that run the real FLUX (skip when Perl cannot load PDL and Flux); see tests/realflux",
 ]
 
 [tool.black]

@@ -116,6 +116,39 @@ def find_perl(perl: Optional[str] = None) -> str:
     return perl or os.environ.get("FLUX_PERL") or "perl"
 
 
+# Which FLUX build ran: relaxed worlds depend on the PDL version (audit A6-03), so a result is only comparable with
+# another from the same build. Read by a separate `perl -` so the relax driver itself (and its heap history) is untouched.
+PROVENANCE_PROBE = r"""
+use strict; use warnings;
+use PDL; use Flux; use JSON::PP; use Digest::SHA;
+my $path = $INC{'Flux.pm'};
+my $sha = '';
+if (open my $fh, '<:raw', $path) { $sha = Digest::SHA->new(256)->addfile($fh)->hexdigest; }
+print "PROVENANCE ", JSON::PP->new->canonical->encode({pdl => "$PDL::VERSION", perl => sprintf("%vd", $^V), flux_pm => $path, flux_pm_sha256 => $sha}), "\n";
+"""
+
+
+def provenance(perl: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> Dict:
+    """PDL version, Perl version, the Flux.pm that loads (path and SHA256) and the fluxon-mhd commit.
+
+    The commit is not recorded in an installed build, so it comes from `$FLUXON_MHD_SHA` (null when unset). Best
+    effort: returns {} when the Perl cannot load Flux, so it never stops a run.
+    """
+    env = os.environ if env is None else env
+    try:
+        r = subprocess.run(
+            [find_perl(perl), "-"], input=PROVENANCE_PROBE, capture_output=True, text=True, timeout=60, env=dict(env)
+        )
+        for line in r.stdout.splitlines():
+            if line.startswith("PROVENANCE "):
+                rec = json.loads(line[len("PROVENANCE ") :])
+                rec["fluxon_mhd_sha"] = env.get("FLUXON_MHD_SHA") or None
+                return rec
+    except Exception:  # noqa: BLE001  ponytail: provenance is a label, never a reason to fail a run
+        pass
+    return {}
+
+
 def _register(run_id: str, body: Dict) -> None:
     """Best effort: a registry write must never stop a relaxation."""
     try:
@@ -244,12 +277,13 @@ def _run_id(world: str) -> str:
     return f"scene-relax-{stem}-{int(time.time())}"
 
 
-def _summary(res: Dict) -> Dict:
+def _summary(res: Dict, perl: Optional[str] = None) -> Dict:
     last = res["series"][-1] if res["series"] else {}
     return {
         **{k: res[k] for k in ("relaxed", "log", "ok", "returncode", "settled_at")},
         "cycles": len(res["series"]) - 1,
         "final": last,
+        "provenance": provenance(perl),
     }
 
 
@@ -274,7 +308,7 @@ def main(argv=None) -> int:
         res = relax(w, out=a.out, run_id=None if a.no_register else _run_id(w), **common)
         if a.series:
             Path(a.series).write_text(json.dumps(res["series"], indent=1))
-        print(json.dumps(_summary(res), indent=1))
+        print(json.dumps(_summary(res, a.perl), indent=1))
         return 0 if res["ok"] else 1
 
     wa, wb = a.worlds
@@ -301,8 +335,8 @@ def main(argv=None) -> int:
     print(
         json.dumps(
             {
-                "a": _summary(ra),
-                "b": _summary(rb),
+                "a": _summary(ra, a.perl),
+                "b": _summary(rb, a.perl),
                 "difference_final": d[-1]["d_e_simple2"] if d else None,
                 "difference_settled_at": s,
                 "difference_at_settle": d[s]["d_e_simple2"] if s is not None else None,
