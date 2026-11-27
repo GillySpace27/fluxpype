@@ -122,9 +122,13 @@ def do_fluxlight(flux_world_file, save=True, force=False):
     key = cache_key(flux_world_file, render_params())
     cached = None
     if os.path.exists(results_file) and not force:
-        with open(results_file, "rb") as f:
-            cached = pickle.load(f)
-        if not (isinstance(cached, dict) and cached.get("cache_key") == key):
+        try:
+            with open(results_file, "rb") as f:
+                cached = pickle.load(f)
+        except Exception as e:  # truncated or unreadable cache: a miss, not a crash
+            print(f"Cached Fluxlight results in {results_file} are unreadable ({type(e).__name__}); re-rendering")
+            cached = None
+        if cached is not None and not (isinstance(cached, dict) and cached.get("cache_key") == key):
             # A7-03: the cache is keyed on world sha + render parameters; a cache without that key (written before
             # A7-03) or with another one is not reused.
             print(
@@ -180,8 +184,10 @@ def do_fluxlight(flux_world_file, save=True, force=False):
     results["cache_key"] = key
     print("Fluxlight Complete.")
     # Cache results to disk
-    with open(results_file, "wb") as f:
+    tmp = f"{results_file}.tmp"  # atomic: a reader or a crash never leaves a truncated cache
+    with open(tmp, "wb") as f:
         pickle.dump(results, f)
+    os.replace(tmp, results_file)
     print(f"Saved Fluxlight results to {results_file}")
     return results
 

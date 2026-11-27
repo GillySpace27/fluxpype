@@ -35,6 +35,11 @@ THOMSON_CHANNELS = {
 }
 
 
+# Bump when the render semantics change without any key input changing (new physics, a unit or grid fix), so old
+# caches are not reused.
+RENDER_VERSION = 1
+
+
 def world_sha(path, chunk=1 << 20):
     """sha256 of the world file's bytes."""
     h = hashlib.sha256()
@@ -47,7 +52,9 @@ def world_sha(path, chunk=1 << 20):
 def cache_key(world_path, params):
     """Key of a ``.light`` result: sha256 over the world sha and the render ``params`` (a dict of JSON-able values:
     observer geometry, resolution, channels, method...). Same world and parameters give the same key."""
-    blob = json.dumps({"world": world_sha(world_path), "params": params}, sort_keys=True, default=str)
+    blob = json.dumps(
+        {"world": world_sha(world_path), "version": RENDER_VERSION, "params": params}, sort_keys=True, default=str
+    )
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
@@ -65,7 +72,9 @@ def _write(path, data, header, bunit, channel, world_path):
     hdr["CHANNEL"] = channel
     if world_path:
         hdr["WORLD"] = os.path.basename(str(world_path))[:68]
-    fits.PrimaryHDU(np.asarray(data, dtype=np.float32), header=hdr).writeto(path, overwrite=True)
+    tmp = f"{path}.tmp"  # write beside the target, then replace, so a reader never sees a half-written file
+    fits.PrimaryHDU(np.asarray(data), header=hdr).writeto(tmp, overwrite=True)  # renderer's dtype, no cast
+    os.replace(tmp, path)
     return path
 
 
@@ -85,6 +94,21 @@ def thomson_header(results, date=None, observer_lon_deg=None):
     npix = np.asarray(results["B_total"]).shape[0]
     meta = observer_header(npix, fov, t.isot, 0.0 if observer_lon_deg is not None else 90.0)
     if observer_lon_deg is not None:
+        # The observer the renderer used: Carrington longitude observer_lon, latitude 0 (B0 ignored), at the header's
+        # distance. Express it in Stonyhurst so HGLN_OBS/HGLT_OBS/DSUN_OBS describe that geometry, not Earth.
+        import astropy.units as u
+        from astropy.coordinates import SkyCoord
+        from sunpy.coordinates import HeliographicCarrington, HeliographicStonyhurst
+
+        obs = SkyCoord(
+            float(observer_lon_deg) * u.deg,
+            float(meta["hglt_obs"]) * u.deg,
+            meta["dsun_obs"] * u.m,
+            frame=HeliographicCarrington(obstime=t, observer="self"),
+        ).transform_to(HeliographicStonyhurst(obstime=t))
+        meta["hgln_obs"] = float(obs.lon.to_value(u.deg))
+        meta["hglt_obs"] = float(obs.lat.to_value(u.deg))
+        meta["dsun_obs"] = float(obs.radius.to_value(u.m))
         meta["crln_obs"] = float(observer_lon_deg)  # Carrington longitude of the render's observer
     return meta
 
@@ -92,6 +116,12 @@ def thomson_header(results, date=None, observer_lon_deg=None):
 def write_thomson_fits(results, out_dir=None, date=None, observer_lon_deg=None):
     """Write one FITS per Thomson channel next to the PNGs. Returns the list of paths."""
     w = results["world"]
+    cr = getattr(w, "cr", None)
+    if not str(cr).isdigit() and date is None:
+        print(
+            f"WARNING: no Carrington rotation ({cr!r}) and no observation_date: FITS export skipped (PNGs unaffected)"
+        )
+        return []
     out_dir = out_dir or results["light_path"]
     os.makedirs(out_dir, exist_ok=True)
     meta = thomson_header(results, date, observer_lon_deg)
@@ -111,7 +141,8 @@ def write_euv_fits(hdus, out_dir, cr, nflux, inst, world_path=None):
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for h in hdus:
-        if not h.name.startswith("SYN_A"):
+        # AIA channels carry AIATABLE (fluxlight_euv); a custom --response named A... does not, and is not AIA
+        if not h.name.startswith("SYN_A") or "AIATABLE" not in h.header:
             continue
         channel = "aia" + h.name[len("SYN_A") :]
         hdr = {
