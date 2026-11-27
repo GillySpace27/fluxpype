@@ -72,6 +72,7 @@ def_nz = 301
 def_nxy = 301
 def_fov = 215.0
 
+from fluxpype import names
 from fluxpype.pipe_helper import configurations
 
 configs = configurations()
@@ -84,6 +85,12 @@ fov = configs.get("fov", def_fov)
 observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
 
 
+def _light_path(results, tail):
+    """Image path in the light folder; the name carries the world's rotation, fluxon count and instrument (A7-01)."""
+    w = results["world"]
+    return os.path.join(results["light_path"], names.light_png(w.cr, w.nflx, getattr(w, "inst", None), tail))
+
+
 def do_fluxlight(flux_world_file, save=True, force=False):
     results_file = flux_world_file.replace(".flux", ".light")
 
@@ -91,12 +98,18 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         print(f"Loading cached Fluxlight results from {results_file}")
         with open(results_file, "rb") as f:
             results = pickle.load(f)
+        # A cache written before A7-01 holds a world with no instrument; the file name still has it.
+        w = results.get("world") if isinstance(results, dict) else None
+        if w is not None and getattr(w, "inst", None) in (None, "", "unknown"):
+            w.inst = names.inst_in_name(flux_world_file) or "unknown"
         return results
     flux_world = read_flux_world(flux_world_file)
     # flux_world.plot_all()
 
     world_path = flux_world.out_dir
-    light_path = world_path.replace("world", "light")
+    light_path = os.path.join(
+        os.path.dirname(world_path), "light"
+    )  # not .replace("world", ...): a path may contain "world"
     if not os.path.exists(light_path):
         os.makedirs(light_path)
 
@@ -211,7 +224,7 @@ def quadplot(results, save=True):
     plt.suptitle(f"Forward Modeling of FLUX World CR {results['world'].cr}")
     plt.tight_layout()
     if save:
-        lightpath = f"{results['light_path']}/cr{results['world'].cr}_fluxlight_light_{method}_{results['nz']}.png"
+        lightpath = _light_path(results, f"light_{method}_{results['nz']}")
         print(lightpath)
         plt.savefig(lightpath)
         emit_event("artifact", path=str(lightpath), kind="image")
@@ -274,7 +287,9 @@ def triplot(results, fov_crop=None, save=True):
     plt.suptitle(f"Forward Modeling of FLUX CR {results['world'].cr}, R={results['influence_length']}")
     plt.tight_layout()
     if save:
-        lightpath = f"{results['light_path']}/cr{results['world'].cr}_fluxlight_light_{method}_{results['nz']}_{fov_crop}_{results['influence_length'].to_value()}.png"
+        lightpath = _light_path(
+            results, f"light_{method}_{results['nz']}_{fov_crop}_{results['influence_length'].to_value()}"
+        )
         print(lightpath)
         plt.savefig(lightpath, dpi=250)
         emit_event("artifact", path=str(lightpath), kind="image")

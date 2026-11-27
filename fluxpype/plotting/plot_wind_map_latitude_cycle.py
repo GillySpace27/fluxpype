@@ -42,6 +42,7 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
+from fluxpype import names
 from fluxpype.pipe_helper import (
     configurations,
     load_fits_magnetogram,
@@ -447,7 +448,13 @@ def plot_wind_map_latitude(configs):
     nwant = configs.get("nwant")
     reduce = configs.get("mag_reduce")
     CR = configs.get("cr")
-    dat_file = configs.get("file", f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat")
+    dat_file = configs.get("file") or names.wind_dat_path(
+        f"{dat_dir}/batches/{batch}/data/cr{CR}/wind",
+        CR,
+        nwant,
+        names.inst_name(configs.get("adapt", 0)),
+        "wind_parker",
+    )
     all_vmin, all_vmax = configs.get("all_vmin", 450), configs.get("all_vmax", 700)
     print(f"\n\tPlotting Windmap {CR} Lat Cycle...", end="\n" if __name__ == "__main__" else "")
 
@@ -864,7 +871,13 @@ if __name__ == "__main__":
             if isinstance(method, list):
                 method = method[0]
 
-            dat_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind_parker.dat"
+            dat_file = names.wind_dat_path(
+                f"{dat_dir}/batches/{batch}/data/cr{CR}/wind",
+                CR,
+                nwant,
+                names.inst_name(configs.get("adapt", 0)),
+                "wind_parker",
+            )
             pole_file = f'{dat_dir}/batches/{batch}/data/cr{CR}/floc/floc_open_cr{CR}_r{configs.get("mag_reduce")}_f{nwant}_hmi.dat'
             wind_file2 = f"{dat_dir}/batches/{batch}/data/wind/cr{CR}_f{nwant}_radial_wind_{method}.npy"
             label_file = f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/np_labels.txt"

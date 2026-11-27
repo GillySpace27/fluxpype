@@ -24,6 +24,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from .. import names
+
 STAGES = [
     ("magnetogram", "Magnetogram"),
     ("footpoints", "Footpoints"),
@@ -85,7 +87,6 @@ RE_STEP_STATS = re.compile(
 RE_CYCLE = re.compile(r"Cycle (\d+), Cumulative relaxation time: " + _NUM + r" seconds, (\d+) steps")
 RE_FIXES = re.compile(r"Cycle (\d+) :: Curvature changed (\d+) vertices, proximity changed (\d+) vertices")
 RE_TARGET = re.compile(r"Relaxing PFSS model for (\d+) steps to " + _NUM + r" stiffness")
-_NFLUX_IN_NAME = re.compile(r"_f(\d+)(?:_|\.|$)")
 RE_DONE = re.compile(r"Program Complete for CR(\d+) in ([\d.]+) Seconds")
 
 
@@ -115,8 +116,16 @@ class ProbeContext:
             "pfss": [os.path.join(d, "pfss", f"pfss_cr{cr}_*{inst}*.pkl")],
             "world": [os.path.join(batch, "data", f"cr{cr}", "world", f"cr{cr}_f{n}_{inst}.flux")],
             "relax": [os.path.join(batch, "data", f"cr{cr}", "world", f"cr{cr}_f{n}_{inst}_relaxed_s*.flux")],
-            "wind": [os.path.join(batch, "data", f"cr{cr}", "wind", "*")],
-            "fluxlight": [os.path.join(batch, "**", f"cr{cr}_fluxlight_*.png")],
+            # new names first (A7-01); the old ones keep a batch written before then found
+            "wind": [
+                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_{inst}_*"),
+                # old spellings cr<CR>_f<N>_radial_* and cr<CR>_f<N>_stiff_radial_* in one pattern ([!ah]: not _hmi/_adapt)
+                os.path.join(batch, "data", f"cr{cr}", "wind", f"cr{cr}_f{n}_[!ah]*"),
+            ],
+            "fluxlight": [
+                os.path.join(batch, "**", f"cr{cr}_f{n}_{inst}_fluxlight_*.png"),
+                os.path.join(batch, "**", f"cr{cr}_fluxlight_*.png"),
+            ],
         }
 
     def image_globs(self) -> List[str]:
@@ -358,9 +367,8 @@ class TaskMonitor:
                     continue
                 if started is not None and mt < started - 5:
                     continue  # left over from an earlier run
-                m = _NFLUX_IN_NAME.search(os.path.basename(path))
-                if m and m.group(1) != str(self.probe.nflux):
-                    continue  # another task's plot (same rotation, different fluxon count)
+                if not names.is_this_task(os.path.basename(path), self.probe.nflux, self.probe.inst):
+                    continue  # another task's plot (same rotation, different fluxon count or instrument)
                 found.append({"path": path, "kind": "image", "t": mt, "source": "file"})
         self._artifact_cache, self._art_at = found, now
         return found
