@@ -21,45 +21,91 @@ def _run(cmd):
 
 
 O2_MAKE = 'make everything CFLAGS="-I../include -g -fPIC -O2"'
-O2_ADVICE = (
-    f"libflux is built without optimization (-O0), which makes every relax about 1.5x slower with identical output. "
-    f"Rebuild: cd fluxon-mhd && {O2_MAKE}. Link-order trap: Perl puts -L/usr/local/lib first, so an old "
-    f"/usr/local/lib/libflux.a is linked silently instead of the new one; remove it first, or install to /usr/local"
+TRAP = (
+    "Link-order trap: Perl puts -L/usr/local/lib first, so an old /usr/local/lib/libflux.a is linked "
+    "silently instead of the new one; remove it first, or install to /usr/local"
 )
 _GCC_PRODUCER = re.compile(rb"GNU C[0-9A-Za-z+]* [\x20-\x7e]*")
+_O_FLAG = re.compile(rb"(?:^|\s)-O(0|[1-3sg]|fast)?(?=\s|$)")
+
+
+def _producer_level(p):
+    """'O0', 'optimized' or None for one GCC producer string; None when it records no switches at all."""
+    if not re.search(rb"(?:^|\s)-\S", p):
+        return None  # built with -gno-record-gcc-switches: the absence of -O proves nothing
+    flags = _O_FLAG.findall(p)
+    return "O0" if not flags or flags[-1] == b"0" else "optimized"  # the last -O wins; bare -O is -O1
 
 
 def libflux_opt_level(data):
-    """Optimization of a libflux.a image from its DWARF producer strings: 'O0', 'optimized' or None (cannot tell).
+    """Optimization of a libflux.a image from its DWARF producers: 'O0', 'optimized', 'mixed' or None (cannot tell).
 
-    GCC records its command line in DW_AT_producer, so a producer with no -O1/-O2/-O3/-Os/-Og/-Ofast flag means -O0.
-    A build without -g, or one by clang (producer string carries no flags), cannot be read: return None.
+    GCC records its command line in DW_AT_producer, so a producer with switches but no -O flag means -O0.
+    No -g, clang (no flags in the producer) or no recorded switches: None. 'optimized' needs every readable
+    producer optimized; a mix of optimized and -O0 objects is 'mixed'.
     """
-    producers = _GCC_PRODUCER.findall(data)
-    if not producers:
+    levels = {_producer_level(p) for p in _GCC_PRODUCER.findall(data)} - {None}
+    if not levels:
         return None
-    levels = [re.search(rb"(?:^|\s)-O(?:[1-3sg]|fast)\b", p) for p in producers]
-    return "optimized" if any(levels) else "O0"
+    return levels.pop() if len(levels) == 1 else "mixed"
+
+
+def _config_fl_prefix():
+    try:
+        from fluxpype.pipe_helper import configurations
+
+        return configurations(debug=False).get("fl_prefix") or ""
+    except Exception:  # noqa: BLE001  the config check reports a broken config.ini
+        return ""
+
+
+def _prefixes():
+    out = []
+    for p in (os.environ.get("FL_PREFIX", ""), _config_fl_prefix()):
+        p = os.path.expanduser(str(p).split("#")[0].strip())
+        if p and p not in out:
+            out.append(p)
+    return out
 
 
 def _libflux_candidates():
-    """libflux.a paths worth inspecting: $FL_PREFIX/lib first, then /usr/local/lib (Perl links it first)."""
-    dirs = [os.path.join(os.path.expanduser(os.environ[k]), "lib") for k in ("FL_PREFIX",) if os.environ.get(k)]
-    dirs.append("/usr/local/lib")
-    seen, out = set(), []
+    """libflux.a paths in the order Perl links them: /usr/local/lib first, then $FL_PREFIX, then config fl_prefix."""
+    dirs = ["/usr/local/lib"] + [os.path.join(p, "lib") for p in _prefixes()]
+    out = []
     for d in dirs:
         f = os.path.join(d, "libflux.a")
-        if f not in seen and os.path.isfile(f):
-            seen.add(f)
+        if f not in out and os.path.isfile(f):
             out.append(f)
     return out
 
 
+def _checkout_dir():
+    """The fluxon-mhd checkout when it can be found next to a known prefix, else None."""
+    for p in _prefixes():
+        for d in (p, os.path.join(os.path.dirname(p), "fluxon-mhd")):
+            if os.path.isfile(os.path.join(d, "Makefile")) and os.path.isdir(os.path.join(d, "lib")):
+                return d
+    return None
+
+
+def _advice(level, checkout=None):
+    where = f"cd {checkout}" if checkout else "in your fluxon-mhd checkout"
+    what = "contains objects built without optimization" if level == "mixed" else "is built without optimization (-O0)"
+    return (
+        f"libflux {what}, which makes every relax about 1.5x slower with identical output. "
+        f"Rebuild ({where}): {O2_MAKE}. {TRAP}"
+    )
+
+
 def libflux_check(paths=None):
-    """(ok, detail, fix) for the libflux optimization level; ok=None is a warning. Never a hard failure."""
+    """(status, detail, fix) for the libflux optimization level.
+
+    status is True (optimized), None (warn: the archive Perl links first is not optimized) or "info" (cannot
+    tell, or no archive found: a hint only). Judged on the first path, the one Perl links; the rest are listed.
+    """
     paths = _libflux_candidates() if paths is None else paths
     if not paths:
-        return None, "libflux.a not found in $FL_PREFIX/lib or /usr/local/lib", f"hint: build with {O2_MAKE}"
+        return "info", "libflux.a not found in /usr/local/lib, $FL_PREFIX/lib or config fl_prefix", f"hint: {O2_MAKE}"
     results = []
     for f in paths:
         try:
@@ -68,11 +114,14 @@ def libflux_check(paths=None):
         except OSError:
             results.append((f, None))
     detail = "; ".join(f"{f}: {lvl or 'unknown'}" for f, lvl in results)
-    if any(lvl == "O0" for _, lvl in results):
-        return None, detail, O2_ADVICE
-    if all(lvl == "optimized" for _, lvl in results):
+    if len(results) > 1:
+        detail = f"linked first: {detail}"
+    level = results[0][1]
+    if level in ("O0", "mixed"):
+        return None, detail, _advice(level, _checkout_dir())
+    if level == "optimized":
         return True, detail, ""
-    return None, detail, f"hint: optimization level cannot be read; for speed build with {O2_MAKE}"
+    return "info", detail, f"hint: optimization level cannot be read; for speed build with {O2_MAKE}. {TRAP}"
 
 
 def _flux_perl():
@@ -165,6 +214,10 @@ def checks():
 def main():
     failed = 0
     for name, ok, detail, fix in checks():
+        if ok == "info":  # a hint, not a problem: no failure, no warning
+            print(f"[info] {name}: {detail}")
+            print(f"       {fix}")
+            continue
         print(f"[{'ok' if ok else 'warn' if ok is None else 'FAIL'}] {name}: {detail}")
         if not ok:
             failed += ok is not None
