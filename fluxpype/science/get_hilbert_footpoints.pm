@@ -196,9 +196,12 @@ sub get_hilbert_footpoints {
         print "\n\t\t\t " . shorten_path($flocpath);
         print "\n";
     } else {
-        $floc     = rcols $flocpath;
-        $floc     = $floc->transpose;
-        $N_actual = int( ( $floc->nelem ) / 3 );
+        # rcols returns one piddle per column in list context but only the
+        # first column in scalar context; read all 3, stack to N x 3, then
+        # transpose to the 3 x N layout the fresh branch returns.
+        my @cols  = rcols $flocpath;
+        $floc     = cat(@cols)->transpose;
+        $N_actual = $floc->dim(1);    # count rows (footpoints), not elements
         my $flocpath_short = shorten_path($flocpath);
 
         print "\n\t\tFound a $N_actual footpoint file on Disk:";
