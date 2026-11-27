@@ -1670,9 +1670,9 @@ class FluxWorld:
             start_fc,
             end_fc,
             flux,
-            [start_pos[0]] + x + [end_pos[0]],
-            [start_pos[1]] + y + [end_pos[1]],
-            [start_pos[2]] + z + [end_pos[2]],
+            ([start_pos[0]] if start_pos else []) + x + ([end_pos[0]] if end_pos else []),
+            ([start_pos[1]] if start_pos else []) + y + ([end_pos[1]] if end_pos else []),
+            ([start_pos[2]] if start_pos else []) + z + ([end_pos[2]] if end_pos else []),
         )
         self.fluxons[new_fluxon.id] = new_fluxon
 
@@ -1707,79 +1707,16 @@ def read_flux_world(filename):
     flux_world = FluxWorld(filename)
 
     print("Parsing FLUX world data into memory...")
-    # Reading data from the file
-    with open(filename, "r") as file:
-        line_ids = []
-        line_start_fc = []
-        line_end_fc = []
-        line_flux_values = []
-        line_start_pos = []
-        line_end_pos = []
+    from fluxpype import worldio
 
-        vertex_line_ids = []
-        vertex_ids = []
-        vertex_positions = []
-        vertex_x_coords = []
-        vertex_y_coords = []
-        vertex_z_coords = []
-
-        for line in file:
-            tokens = line.strip().split()
-            if not tokens:
-                continue
-            if tokens[0] == "NEW":
-                flux_world.add_flux_concentration(
-                    int(tokens[1]), float(tokens[2]), float(tokens[3]), float(tokens[4]), float(tokens[5])
-                )
-            elif tokens[0] == "LINE":
-                if int(tokens[1]) > 0:
-                    line_ids.append(int(tokens[1]))
-                    line_start_fc.append(int(tokens[4]))
-                    line_end_fc.append(int(tokens[5]))
-                    line_flux_values.append(float(tokens[6]))
-                    line_start_pos.append([float(tokens[7]), float(tokens[8]), float(tokens[9])])
-                    line_end_pos.append([float(tokens[10]), float(tokens[11]), float(tokens[12])])
-            elif tokens[0] == "VERTEX":
-                vertex_line_ids.append(int(tokens[1]))
-                vertex_ids.append(int(tokens[2]))
-                vertex_positions.append(int(tokens[3]))
-                vertex_x_coords.append(float(tokens[4]))
-                vertex_y_coords.append(float(tokens[5]))
-                vertex_z_coords.append(float(tokens[6]))
-            elif "VNEIGHBOR" in tokens[0]:
-                break
+    parsed = worldio.read(filename)
+    for fc in parsed.concentrations:
+        flux_world.add_flux_concentration(*fc)
 
     print("Finished parsing file lines. Creating fluxon objects...")
 
-    line_ids = np.array(line_ids)
-    line_start_fc = np.array(line_start_fc)
-    line_end_fc = np.array(line_end_fc)
-    line_flux_values = np.array(line_flux_values)
-    line_start_pos = np.array(line_start_pos)
-    line_end_pos = np.array(line_end_pos)
-
-    vertex_line_ids = np.array(vertex_line_ids)
-    vertex_ids = np.array(vertex_ids)
-    vertex_positions = np.array(vertex_positions)
-    vertex_x_coords = np.array(vertex_x_coords)
-    vertex_y_coords = np.array(vertex_y_coords)
-    vertex_z_coords = np.array(vertex_z_coords)
-
-    # Create fluxon objects by parsing line and vertex data
-    for lid in line_ids:
-        line_indices = np.where(line_ids == lid)[0]
-        vertex_indices = np.where(vertex_line_ids == lid)[0]
-        flux_world.add_fluxon(
-            lid,
-            line_start_fc[line_indices][0],
-            line_end_fc[line_indices][0],
-            line_flux_values[line_indices][0],
-            line_start_pos[line_indices][0].tolist(),
-            line_end_pos[line_indices][0].tolist(),
-            vertex_x_coords[vertex_indices].tolist(),
-            vertex_y_coords[vertex_indices].tolist(),
-            vertex_z_coords[vertex_indices].tolist(),
-        )
+    for ln in parsed.lines:
+        flux_world.add_fluxon(ln.id, ln.fc0, ln.fc1, ln.flux, ln.start, ln.end, ln.x, ln.y, ln.z)
     print("Fluxons constructed.")
     print("Flux world loaded:", os.path.basename(filename))
     print(flux_world)

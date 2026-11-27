@@ -3,6 +3,8 @@
 # Import libraries
 import numpy
 
+from fluxpype import worldio
+
 
 def rdworld(filename):
 
@@ -45,98 +47,21 @@ def rdworld(filename):
             self.fx.fc0.append(fc0)
             self.fx.fc1.append(fc1)
             self.fx.fl.append(fl)
-            self.fx.x.append(numpy.array([r0[0]] + x + [r1[0]]))
-            self.fx.y.append(numpy.array([r0[1]] + y + [r1[1]]))
-            self.fx.z.append(numpy.array([r0[2]] + z + [r1[2]]))
+            self.fx.x.append(numpy.array(([r0[0]] if r0 else []) + x + ([r1[0]] if r1 else [])))
+            self.fx.y.append(numpy.array(([r0[1]] if r0 else []) + y + ([r1[1]] if r1 else [])))
+            self.fx.z.append(numpy.array(([r0[2]] if r0 else []) + z + ([r1[2]] if r1 else [])))
 
     # Let there be light
     w = world()
 
-    # Now actually go about reading the data
-    df = open(filename, "r")
-
-    # Initialize data storage
-    ln_id = []
-    ln_fc0 = []
-    ln_fc1 = []
-    ln_fl = []
-    ln_r0 = []
-    ln_r1 = []
-
-    vx_lid = []
-    vx_id = []
-    vx_pos = []
-    vx_x = []
-    vx_y = []
-    vx_z = []
-
-    for rl in df:
-        sl = rl.strip().split()
-
-        # Skip ahead for blank lines
-        if len(sl) == 0:
-            continue
-
-        # Read out flux concentrations
-        if sl[0] == "NEW":
-            w.add_fc(int(sl[1]), numpy.double(sl[2]), numpy.double(sl[3]), numpy.double(sl[4]), numpy.double(sl[5]))
-
-        # Read out fluxon data
-        if sl[0] == "LINE":
-            if int(sl[1]) > 0:
-                ln_id.append(int(sl[1]))
-                ln_fc0.append(int(sl[4]))
-                ln_fc1.append(int(sl[5]))
-                ln_fl.append(numpy.double(sl[6]))
-                ln_r0.append([numpy.double(sl[7]), numpy.double(sl[8]), numpy.double(sl[9])])
-                ln_r1.append([numpy.double(sl[10]), numpy.double(sl[11]), numpy.double(sl[12])])
-
-        # Read out vertex points
-        if sl[0] == "VERTEX":
-            vx_lid.append(int(sl[1]))
-            vx_id.append(int(sl[2]))
-            vx_pos.append(int(sl[3]))
-            vx_x.append(numpy.double(sl[4]))
-            vx_y.append(numpy.double(sl[5]))
-            vx_z.append(numpy.double(sl[6]))
-
-        # Exit on neighbor information
-        if "VNEIGHBOR" in sl[0]:
-            break
-
-    df.close()
-
-    # Convert lists into numpy arrays
-    ln_id = numpy.array(ln_id)
-    ln_fc0 = numpy.array(ln_fc0)
-    ln_fc1 = numpy.array(ln_fc1)
-    ln_fl = numpy.array(ln_fl)
-    ln_r0 = numpy.array(ln_r0)
-    ln_r1 = numpy.array(ln_r1)
-
-    vx_lid = numpy.array(vx_lid)
-    vx_id = numpy.array(vx_id)
-    vx_pos = numpy.array(vx_pos)
-    vx_x = numpy.array(vx_x)
-    vx_y = numpy.array(vx_y)
-    vx_z = numpy.array(vx_z)
-
-    # Parse the line and vertex lists and create fluxon objects
-    for lid in ln_id:
-        wl = numpy.where(ln_id == lid)[0]
-        wv = numpy.where(vx_lid == lid)[0]
-
-        w.add_fx(
-            lid,
-            ln_fc0[wl][0],
-            ln_fc1[wl][0],
-            ln_fl[wl][0],
-            ln_r0[wl, :][0].tolist(),
-            ln_r1[wl, :][0].tolist(),
-            vx_x[wv].tolist(),
-            vx_y[wv].tolist(),
-            vx_z[wv].tolist(),
-        )
+    # Parse with the shared reader (both the input and the core form of the world)
+    parsed = worldio.read(filename)
+    for fc in parsed.concentrations:
+        w.add_fc(fc[0], numpy.double(fc[1]), numpy.double(fc[2]), numpy.double(fc[3]), numpy.double(fc[4]))
+    for ln in parsed.lines:
+        r0 = ln.start if ln.start else None
+        r1 = ln.end if ln.end else None
+        w.add_fx(ln.id, ln.fc0, ln.fc1, numpy.double(ln.flux), r0, r1, ln.x, ln.y, ln.z)
 
     return w
 
