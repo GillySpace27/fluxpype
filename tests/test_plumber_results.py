@@ -173,3 +173,84 @@ def test_plots_are_assigned_to_the_stage_that_writes_them():
     assert plot_stage("batches/b/imgs/bmag/cr1_f1_radial_bmag.png") == "wind_plots"
     assert plot_stage("batches/b/imgs/world/cr1_f1_fluxlight_world.png") == "fluxlight"
     assert plot_stage("batches/b/data/cr1/some.png") is None
+
+
+# ---- A3-07: one headline rule from artifact events, shared by Results, Overview and MCP
+
+
+def _ctx(tmp_path):
+    return ProbeContext(str(tmp_path), "B", "2225", "500", "2", "hmi")
+
+
+def _event(path, kind="image", t=1.0):
+    return {"path": str(path), "kind": kind, "t": t, "source": "event"}
+
+
+def test_headline_artifact_event_wins_over_glob(tmp_path):
+    from fluxpype.plumber.results import pick_headline, task_headline
+
+    ctx = _ctx(tmp_path)
+    d = str(tmp_path)
+    t0 = time.time()
+    newest_glob = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_new.png")
+    reported = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_rep.png")
+    touch(reported, t0 - 50)
+    touch(newest_glob, t0)
+    arts = [_event(reported)]
+    rel = "batches/B/data/cr2225/light/cr2225_f500_hmi_fluxlight_rep.png"
+    assert pick_headline(arts, d) == rel
+    assert task_headline(ctx, t0 - 100, t0 + 10, arts) == rel
+    assert task_results(ctx, t0 - 100, t0 + 10, artifacts=arts)["headline"] == rel
+
+
+def test_headline_falls_back_to_glob_without_events(tmp_path):
+    from fluxpype.plumber.results import pick_headline, task_headline
+
+    ctx = _ctx(tmp_path)
+    t0 = time.time()
+    p = os.path.join(str(tmp_path), "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_a.png")
+    touch(p, t0)
+    rel = "batches/B/data/cr2225/light/cr2225_f500_hmi_fluxlight_a.png"
+    assert pick_headline([], str(tmp_path)) is None
+    assert pick_headline([{"path": p, "kind": "image", "source": "file"}], str(tmp_path)) is None  # globs are no events
+    assert task_headline(ctx, t0 - 10, t0 + 10, []) == rel
+    assert task_results(ctx, t0 - 10, t0 + 10)["headline"] == rel
+
+
+def test_fits_event_listed_but_never_headline(tmp_path):
+    ctx = _ctx(tmp_path)
+    d = str(tmp_path)
+    t0 = time.time()
+    png = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_a.png")
+    fits = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_pB.fits")
+    other = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f900_hmi_pB.fits")
+    for p in (png, fits, other):
+        touch(p, t0)
+    arts = [_event(png, t=1.0), _event(fits, "fits", t=2.0), _event(other, "fits", t=3.0)]
+    out = task_results(ctx, t0 - 10, t0 + 10, artifacts=arts)
+    assert out["headline"] == "batches/B/data/cr2225/light/cr2225_f500_hmi_fluxlight_a.png"
+    light = next(p for p in out["products"] if p["id"] == "fluxlight")
+    names = [f["name"] for f in light["files"]]
+    assert "cr2225_f500_hmi_pB.fits" in names
+    rep = next(p for p in out["products"] if p["id"] == "reported")  # an event is this task's by construction
+    assert [f["name"] for f in rep["files"]] == ["cr2225_f900_hmi_pB.fits"]
+
+
+def test_overview_results_and_mcp_agree(tmp_path):
+    from fluxpype.plumber.mcp_server import task_detail
+    from fluxpype.plumber.results import task_headline
+
+    ctx = _ctx(tmp_path)
+    d = str(tmp_path)
+    t0 = time.time()
+    a = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_a.png")
+    b = os.path.join(d, "batches", "B", "data", "cr2225", "light", "cr2225_f500_hmi_fluxlight_b.png")
+    touch(a, t0 - 20)
+    touch(b, t0)  # newer file, but the task reported a
+    arts = [_event(a)]
+    results = task_results(ctx, t0 - 100, t0 + 10, artifacts=arts)["headline"]
+    overview = task_headline(ctx, t0 - 100, t0 + 10, arts)
+    state = {"id": "t", "status": "ok", "artifacts": arts, "headline": os.path.join(d, results)}
+    mcp = task_detail({**state, "elapsed_s": 1.0, "stages": [], "relax": {}})["headline"]
+    assert results == overview
+    assert os.path.join(d, results) == mcp == a

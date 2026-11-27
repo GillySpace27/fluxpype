@@ -358,6 +358,7 @@ if __name__ == "__main__":
 
     for fits_path in write_thomson_fits(results, date=configs.get("observation_date"), observer_lon_deg=observer_lon):
         print(f"Wrote {fits_path}")
+        emit_event("artifact", path=str(fits_path), kind="fits")
 
     # Crops (R_sun) that fit inside the computed grid: the old 100/50/25/10 for the default fov, low-corona zooms for small fov.
     grid_fov = float(np.atleast_1d(getattr(results["fov"], "value", results["fov"]))[0])

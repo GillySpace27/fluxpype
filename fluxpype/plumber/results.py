@@ -136,18 +136,66 @@ def plot_catalog(
     return out
 
 
-def task_results(
-    ctx: Optional[ProbeContext], started: Optional[float], ended: Optional[float], posthoc=None
-) -> Dict[str, Any]:
-    """Products by stage plus the other plots for one task, with paths relative to ctx.data_dir."""
-    if ctx is None:
-        return {
-            "data_dir": None,
-            "products": [],
-            "plots": [],
-            "headline": None,
-            "catalog": plot_catalog(None, None, None),
-        }
+IMAGE_EXT = (".png", ".jpg", ".jpeg")
+
+
+def _relative(path: str, root: str) -> str:
+    """``path`` relative to the data folder when it sits inside it (events carry absolute paths), else unchanged."""
+    if os.path.isabs(path):
+        rel = os.path.relpath(path, root)
+        if not rel.startswith(".."):
+            return rel.replace(os.sep, "/")
+    return path
+
+
+def event_artifacts(artifacts: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """The artifact events of one task (state ``artifacts`` rows with source ``event``), oldest first."""
+    rows = [a for a in artifacts or [] if a.get("source") == "event" and a.get("path")]
+    return sorted(rows, key=lambda a: a.get("t") or 0)
+
+
+def pick_headline(artifacts: Optional[List[Dict[str, Any]]], root: Optional[str], fallback=None) -> Optional[str]:
+    """The one headline rule (A3-07), used by Results, Overview and MCP.
+
+    The newest image artifact event of the task wins: an event is a product of this task by construction. Only a run
+    without such an event falls back to ``fallback()`` (the glob rule over its folders). Returns a path relative to
+    ``root`` when the file sits inside it.
+    """
+    for a in reversed(event_artifacts(artifacts)):
+        if a.get("kind", "image") == "image" and a["path"].lower().endswith(IMAGE_EXT):
+            return _relative(a["path"], root) if root else a["path"]
+    return fallback() if fallback else None
+
+
+def _glob_headline(products: List[Dict[str, Any]], plots: List[Dict[str, Any]]) -> Optional[str]:
+    """Fallback rule: the newest FLUXlight image, else the newest plot image."""
+    light = next((p for p in products if p["id"] == "fluxlight"), None)
+    images = [f for f in (light["files"] if light else []) if f["name"].lower().endswith(IMAGE_EXT)]
+    images += [f for f in plots if f["name"].lower().endswith(IMAGE_EXT)]
+    return images[0]["path"] if images else None
+
+
+def task_headline(
+    ctx: Optional[ProbeContext],
+    started: Optional[float],
+    ended: Optional[float],
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+    posthoc=None,
+) -> Optional[str]:
+    """Headline of a task without building its catalog (cheap when an artifact event settles it)."""
+    root = ctx.data_dir if ctx else None
+
+    def fallback():
+        if ctx is None:
+            return None
+        products, plots = _collect(ctx, started, ended, posthoc)
+        return _glob_headline(products, plots)
+
+    return pick_headline(artifacts, root, fallback)
+
+
+def _collect(ctx: ProbeContext, started, ended, posthoc=None):
+    """Products by stage and the other plots, from the files on disk."""
     root = ctx.data_dir
     pats = ctx.patterns()
     seen = set()
@@ -181,15 +229,58 @@ def task_results(
             if f:
                 plots.append({**f, "stage": plot_stage(f["path"])})
     plots.sort(key=lambda f: f["mtime"], reverse=True)
+    return products, plots
 
-    headline = None
+
+def _add_reported(products, plots, ctx, started, ended, artifacts, posthoc=None):
+    """Put artifact-event files the globs did not find into the product list (FITS under FLUXlight, rest apart)."""
+    root = ctx.data_dir
+    have = {os.path.realpath(os.path.join(root, f["path"])) for p in products for f in p["files"]}
+    have |= {os.path.realpath(os.path.join(root, f["path"])) for f in plots}
+    extra = []
+    for a in event_artifacts(artifacts):
+        full = a["path"] if os.path.isabs(a["path"]) else os.path.join(root, a["path"])
+        real = os.path.realpath(full)
+        if real in have or not real.startswith(os.path.realpath(root) + os.sep):
+            continue
+        f = _file(real, root, started, ended, posthoc)
+        if not f:
+            continue
+        have.add(real)
+        f["reported"] = a.get("kind", "image")
+        extra.append(f)
     light = next((p for p in products if p["id"] == "fluxlight"), None)
-    images = [f for f in (light["files"] if light else []) if f["name"].lower().endswith((".png", ".jpg", ".jpeg"))]
-    images += [f for f in plots if f["name"].lower().endswith((".png", ".jpg", ".jpeg"))]
-    if images:
-        headline = images[0]["path"]
+    rest = []
+    for f in sorted(extra, key=lambda f: f["mtime"], reverse=True):
+        if light is not None and f["name"].lower().endswith(".fits") and for_this_nflux(f["name"], ctx.nflux, ctx.inst):
+            light["files"].append(f)
+        else:
+            rest.append(f)
+    if rest:
+        products.append({"id": "reported", "label": "Reported by the run", "files": rest, "more": 0})
+
+
+def task_results(
+    ctx: Optional[ProbeContext],
+    started: Optional[float],
+    ended: Optional[float],
+    posthoc=None,
+    artifacts: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Products by stage plus the other plots for one task, with paths relative to ctx.data_dir."""
+    if ctx is None:
+        return {
+            "data_dir": None,
+            "products": [],
+            "plots": [],
+            "headline": None,
+            "catalog": plot_catalog(None, None, None),
+        }
+    products, plots = _collect(ctx, started, ended, posthoc)
+    _add_reported(products, plots, ctx, started, ended, artifacts, posthoc)
+    headline = pick_headline(artifacts, ctx.data_dir, lambda: _glob_headline(products, plots))
     return {
-        "data_dir": root,
+        "data_dir": ctx.data_dir,
         "products": products,
         "plots": plots[:200],
         "headline": headline,

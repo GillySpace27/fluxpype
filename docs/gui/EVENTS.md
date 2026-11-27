@@ -54,7 +54,7 @@ Every line has:
 | `relax.step` | `step`, `stiffness` (percent), `fmax`, `f_av`, `fs_av`, `n_av`, `vertices` |
 | `relax.cycle` | `cycle`, `threshold` (the stiffness target the next check compares against), `stiffness`, `cum_time_s`, `steps`, `nc_curve`, `nc_proxi`, `broken` |
 | `metric` | `name`, `value`, `unit` |
-| `artifact` | `path`, `kind` (`image`) |
+| `artifact` | `path`, `kind` (`image` or `fits`) |
 | `log` | `level` (`warn`, `error`), `message` |
 
 ## Stage ids
