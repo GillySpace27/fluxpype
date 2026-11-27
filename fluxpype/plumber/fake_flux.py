@@ -35,6 +35,7 @@ import socket
 import sys
 import time
 
+from .. import stages as stage_manifest
 from . import config_io, paths
 from ..events import emit
 
@@ -111,6 +112,14 @@ class Fake:
             data = None
         return self.touch(rel, content=data) if data else self.touch(rel, size=2048)
 
+    def out(self, stage, key, **extra):
+        """Path of one file of a stage, from the stage manifest (A2-09)."""
+        a = self.a
+        f = stage_manifest.fields_for(
+            self.data_dir, self.batch, a.cr, a.nflux, self.inst, self.reduce, self.adapt_sel, **extra
+        )
+        return stage_manifest.path(stage, key, f)
+
     # -- stage plumbing
     def stage(self, name):
         self.open_stage = name
@@ -130,7 +139,6 @@ class Fake:
     def run(self):
         a = self.a
         cr, n, inst = a.cr, a.nflux, self.inst
-        world_dir = f"batches/{self.batch}/data/cr{cr}/world"
         self.say(f"Log file: {self.log_path}\n")
         self.say(f"Executing: perl fluxpype/science/magnetogram2wind.pdl {cr} {n} {a.adapt} {a.method}\n")
         self.event(
@@ -154,8 +162,7 @@ class Fake:
             t = time.time()
             self.stage("magnetogram")
             self.sleep(2.2)
-            mag = f"CR{cr}_r{self.reduce}_hmi.fits" if inst == "hmi" else f"CR{cr}_rf{self.adapt_sel}_adapt.fits"
-            self.touch(f"magnetograms/{mag}", size=38_000_000)
+            self.touch(self.out("magnetogram", "fits"), size=38_000_000)
             self.end("magnetogram", started=t)
 
             # 2 footpoints
@@ -170,17 +177,10 @@ class Fake:
                 self.say(f"\t\t    Placing footpoints:: iter: {i}/10. {n_actual + 40 - i * 14} footpoints")
                 self.sleep(0.5)
             self.say("Success!\n\n\t\tWriting Result...Success! File saved to:")
-            red = self.reduce
-            floc = (
-                f"floc_cr{cr}_r{red}_f{n}_hmi.dat"
-                if inst == "hmi"
-                else f"floc_cr{cr}_rf{self.adapt_sel}_f{n}_adapt.dat"
-            )
-            self.touch(f"batches/{self.batch}/data/cr{cr}/floc/{floc}", size=n_actual * 96)
+            floc = os.path.basename(self.out("footpoints", "floc"))
+            self.touch(self.out("footpoints", "floc"), size=n_actual * 96)
             for kind in ("open", "closed"):  # inputs for the post-hoc fieldmap plot
-                self.touch(
-                    f"batches/{self.batch}/data/cr{cr}/floc/{floc.replace('floc_', f'floc_{kind}_', 1)}", size=96
-                )
+                self.touch(self.out("footpoints", kind), size=96)
             self.say(f"\n\t\t\t {floc}\n\n\t\t\t```````````````````````````````\n")
             self.end("footpoints", started=t)
             self.event("metric", name="n_actual", value=n_actual, unit="fluxons")
@@ -202,7 +202,7 @@ class Fake:
                 )
             self.say("\n\t\tNeed to trace? True: Done!")
             self.sleep(1.5)
-            self.touch(f"pfss/pfss_cr{cr}_r{red}_{inst}.pkl", size=118_000_000)
+            self.touch(self.out("pfss", "pkl"), size=118_000_000)
             self.say(f"\t\tFootpoints:\t Open: {int(n_actual * 0.62)}, Closed: {int(n_actual * 0.38)}")
             self.say("\n\t\t\t```````````````````````````````\n")
             self.end("pfss", started=t)
@@ -213,7 +213,7 @@ class Fake:
             self.banner("(pdl) Converting PFSS Fieldlines into FLUX Fluxons")
             self.say("\n \n\tGenerating open fluxons from \n\t\tpfss_open.dat\n\t ")
             self.sleep(1.8)
-            self.touch(f"{world_dir}/cr{cr}_f{n}_{inst}.flux", size=n_actual * 3200)
+            self.touch(self.out("world", "flux"), size=n_actual * 3200)
             self.say("\n\tSaving the Initial World...\n\t    Saved to world.flux\n")
             self.say("\n\t\t\t```````````````````````````````\n \n\n\n")
             self.end("world", started=t)
@@ -243,7 +243,7 @@ class Fake:
                     if self.scenario == "crash":
                         os.kill(os.getpid(), signal.SIGKILL)
                 steps = self.relax(n_actual)
-                self.touch(f"{world_dir}/cr{cr}_f{n}_{inst}_relaxed_s{steps}.flux", size=n_actual * 3400)
+                self.touch(self.out("relax", "flux", steps=steps), size=n_actual * 3400)
                 self.say(f"\n\n\tSaving the World to cr{cr}_f{n}_{inst}_relaxed_s{steps}.flux")
                 if self.dropout:
                     self.dropout = False
@@ -253,7 +253,7 @@ class Fake:
             t = time.time()
             self.stage("world_plots")
             self.sleep(2.4)
-            self.image(f"batches/{self.batch}/data/cr{cr}/world/cr{cr}_f{n}_{inst}_relaxed.png", "world")
+            self.image(self.out("world_plots", "png"), "world")
             self.end("world_plots", started=t)
 
             # 7 fieldmap
@@ -262,7 +262,7 @@ class Fake:
             self.banner("(py) Plotting Magnetic Field Maps")
             self.say("\tMaking Magnetogram with Footpoints...\n\tPlotting...", end="")
             self.sleep(1.8)
-            self.image(f"batches/{self.batch}/data/cr{cr}/fieldmap/cr{cr}_f{n}_{inst}_fieldmap.png", "fieldmap")
+            self.image(self.out("fieldmap", "png"), "fieldmap")
             self.say("\n\t\t    Success!\n")
             self.end("fieldmap", started=t)
 
@@ -278,15 +278,10 @@ class Fake:
         self.say("\n\tRadial Expansion Factor (Fr) Calculation...Done! Saved to \n\tfr.dat")
         self.say("\n\n\tRadial Wind Speed Calculation...")
         self.sleep(3.0)
-        self.touch(
-            f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_radial_wind_{a.method}.dat", size=int(n) * 2400
-        )
+        self.touch(self.out("wind", "speed", method=a.method), size=int(n) * 2400)
         for suffix in ("bmag", "bmag_all", "fr"):  # inputs for the post-hoc wind plots
-            self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_radial_{suffix}.dat", size=256)
-        self.touch(
-            f"batches/{self.batch}/data/cr{cr}/wind/full_velocity_profiles/results_{a.method}_full_velocity.dat",
-            size=256,
-        )
+            self.touch(self.out("wind", "table", kind=suffix), size=256)
+        self.touch(self.out("wind", "full_velocity", method=a.method), size=256)
         self.say("\t\t\t```````````````````````````````\n\n\n\n")
         self.end("wind", started=t)
 
@@ -295,7 +290,7 @@ class Fake:
         self.stage("wind_plots")
         self.banner(f"(py) Plotting Solar Wind Maps for CR{cr}")
         self.sleep(3.2)
-        self.image(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_{a.method}_wind.png", "wind")
+        self.image(self.out("wind_plots", "png", method=a.method), "wind")
         self.say("\nDone with wind plotting!\n```````````````````````````````\n")
         self.end("wind_plots", started=t)
 
@@ -304,9 +299,7 @@ class Fake:
             t = time.time()
             self.stage("fluxlight")
             self.sleep(3.5)
-            path = self.image(
-                f"batches/{self.batch}/data/cr{cr}/light/cr{cr}_f{n}_{inst}_fluxlight_light_{a.method}_1.png", "light"
-            )
+            path = self.image(self.out("fluxlight", "png", method=a.method), "light")
             self.event("artifact", path=path, kind="image")
             self.end("fluxlight", started=t)
         else:
@@ -350,8 +343,7 @@ class Fake:
             img = 50.0 * np.exp(-np.clip(r - 1.0, 0, None) / 0.15) * (1 + 3 * blob) + 2.0
             return img.astype(np.float32)
 
-        rel = f"batches/{self.batch}/data/cr{a.cr}/light/cr{a.cr}_f{a.nflux}_{self.inst}_aia{channel}.fits"
-        model = self.touch(rel, content=b"")
+        model = self.touch(self.out("euv", "model_fits", channel=channel), content=b"")
         fits.writeto(model, scene(64), header(64), overwrite=True)
         pair = os.path.join(self.data_dir, "aia", f"aia_lev15_{channel}_20200601T000000.fits")
         os.makedirs(os.path.dirname(pair), exist_ok=True)
