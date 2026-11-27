@@ -207,4 +207,4 @@ Running jobs are detached and keep going; the next Plumber picks them up. Option
 
 ## Contributing
 
-This project welcomes contributions and suggestions. For details, visit the repository's [Contributor License Agreement (CLA)](https://cla.opensource.microsoft.com) and [Code of Conduct](https://opensource.microsoft.com/codeofconduct/) pages.
+Contributions and suggestions are welcome. Open an issue or a pull request on [GitHub](https://github.com/GillySpace27/fluxpype); please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
