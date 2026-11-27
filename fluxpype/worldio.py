@@ -1,6 +1,6 @@
 """One parser for the `.flux` world text, shared by the Python science readers (audit A2-06).
 
-Two dialects of the LINE record exist and both are accepted:
+Two dialects of the LINE record exist and both are accepted (io.c:257-259 reads the 12, 6 and 4 parameter forms):
 
     input form (make_world_sphere.pm, scenes/planar.py):  LINE <id> <fc0> <fc1> <flux>
     core form (Flux write_world):  LINE <id> <vstart> <vend> <fc0> <fc1> <flux> <x0> <y0> <z0> <x1> <y1> <z1> ...
@@ -39,12 +39,10 @@ class World:
     dialect: str = "input"  # "input" or "core", from the first LINE record
 
 
-def read(source: Union[str, "os.PathLike"]) -> World:
-    """Parse a world given as a path or as the text itself (text is anything with a newline or not a file)."""
-    if not isinstance(source, str) or ("\n" not in source and os.path.isfile(source)):
-        with open(source, "r") as fh:
-            return parse_text(fh.read())
-    return parse_text(source)
+def read(path: Union[str, "os.PathLike"]) -> World:
+    """Parse the world file at `path`. A missing file raises FileNotFoundError; for text use `parse_text`."""
+    with open(path, "r") as fh:
+        return parse_text(fh.read())
 
 
 def parse_text(text: str) -> World:
@@ -65,7 +63,7 @@ def parse_text(text: str) -> World:
             conc[c[0]] = c
         elif k == "LINE":
             lid = int(t[1])
-            if len(t) >= 13:  # core form
+            if len(t) >= 13:  # core form, 12 parameters (what Flux writes)
                 if not seen_line:
                     w.dialect = "core"
                 ln = Line(
@@ -76,11 +74,16 @@ def parse_text(text: str) -> World:
                     (float(t[7]), float(t[8]), float(t[9])),
                     (float(t[10]), float(t[11]), float(t[12])),
                 )
-            elif len(t) >= 5:  # input form
+            elif len(t) >= 7:  # core form, 6 parameters (io.c:258): no end points on the record
+                if not seen_line:
+                    w.dialect = "core"
+                ln = Line(lid, int(t[4]), int(t[5]), float(t[6]), None, None)
+                pending.append(ln)
+            elif len(t) == 5:  # input form, 4 parameters (io.c:259)
                 ln = Line(lid, int(t[2]), int(t[3]), float(t[4]), None, None)
                 pending.append(ln)
             else:
-                raise ValueError(f"unrecognised LINE record (expected 5 or at least 13 tokens): {raw.strip()!r}")
+                raise ValueError(f"unrecognised LINE record (expected 5, or 7 or more tokens): {raw.strip()!r}")
             seen_line = True
             if lid > 0:
                 w.lines.append(ln)

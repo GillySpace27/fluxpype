@@ -47,9 +47,9 @@ def rdworld(filename):
             self.fx.fc0.append(fc0)
             self.fx.fc1.append(fc1)
             self.fx.fl.append(fl)
-            self.fx.x.append(numpy.array(([r0[0]] if r0 else []) + x + ([r1[0]] if r1 else [])))
-            self.fx.y.append(numpy.array(([r0[1]] if r0 else []) + y + ([r1[1]] if r1 else [])))
-            self.fx.z.append(numpy.array(([r0[2]] if r0 else []) + z + ([r1[2]] if r1 else [])))
+            self.fx.x.append(numpy.array(([r0[0]] if r0 is not None else []) + x + ([r1[0]] if r1 is not None else [])))
+            self.fx.y.append(numpy.array(([r0[1]] if r0 is not None else []) + y + ([r1[1]] if r1 is not None else [])))
+            self.fx.z.append(numpy.array(([r0[2]] if r0 is not None else []) + z + ([r1[2]] if r1 is not None else [])))
 
     # Let there be light
     w = world()
@@ -59,8 +59,8 @@ def rdworld(filename):
     for fc in parsed.concentrations:
         w.add_fc(fc[0], numpy.double(fc[1]), numpy.double(fc[2]), numpy.double(fc[3]), numpy.double(fc[4]))
     for ln in parsed.lines:
-        r0 = ln.start if ln.start else None
-        r1 = ln.end if ln.end else None
+        r0 = ln.start
+        r1 = ln.end
         w.add_fx(ln.id, ln.fc0, ln.fc1, numpy.double(ln.flux), r0, r1, ln.x, ln.y, ln.z)
 
     return w

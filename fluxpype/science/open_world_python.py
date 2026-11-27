@@ -1670,9 +1670,9 @@ class FluxWorld:
             start_fc,
             end_fc,
             flux,
-            ([start_pos[0]] if start_pos else []) + x + ([end_pos[0]] if end_pos else []),
-            ([start_pos[1]] if start_pos else []) + y + ([end_pos[1]] if end_pos else []),
-            ([start_pos[2]] if start_pos else []) + z + ([end_pos[2]] if end_pos else []),
+            ([start_pos[0]] if start_pos is not None else []) + x + ([end_pos[0]] if end_pos is not None else []),
+            ([start_pos[1]] if start_pos is not None else []) + y + ([end_pos[1]] if end_pos is not None else []),
+            ([start_pos[2]] if start_pos is not None else []) + z + ([end_pos[2]] if end_pos is not None else []),
         )
         self.fluxons[new_fluxon.id] = new_fluxon
 
