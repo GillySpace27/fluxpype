@@ -4,6 +4,7 @@ Exits 0 when every check passes, 1 otherwise, so install scripts and grid jobs c
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,61 @@ def _run(cmd):
         return r.returncode, (r.stdout + r.stderr).strip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
+
+
+O2_MAKE = 'make everything CFLAGS="-I../include -g -fPIC -O2"'
+O2_ADVICE = (
+    f"libflux is built without optimization (-O0), which makes every relax about 1.5x slower with identical output. "
+    f"Rebuild: cd fluxon-mhd && {O2_MAKE}. Link-order trap: Perl puts -L/usr/local/lib first, so an old "
+    f"/usr/local/lib/libflux.a is linked silently instead of the new one; remove it first, or install to /usr/local"
+)
+_GCC_PRODUCER = re.compile(rb"GNU C[0-9A-Za-z+]* [\x20-\x7e]*")
+
+
+def libflux_opt_level(data):
+    """Optimization of a libflux.a image from its DWARF producer strings: 'O0', 'optimized' or None (cannot tell).
+
+    GCC records its command line in DW_AT_producer, so a producer with no -O1/-O2/-O3/-Os/-Og/-Ofast flag means -O0.
+    A build without -g, or one by clang (producer string carries no flags), cannot be read: return None.
+    """
+    producers = _GCC_PRODUCER.findall(data)
+    if not producers:
+        return None
+    levels = [re.search(rb"(?:^|\s)-O(?:[1-3sg]|fast)\b", p) for p in producers]
+    return "optimized" if any(levels) else "O0"
+
+
+def _libflux_candidates():
+    """libflux.a paths worth inspecting: $FL_PREFIX/lib first, then /usr/local/lib (Perl links it first)."""
+    dirs = [os.path.join(os.path.expanduser(os.environ[k]), "lib") for k in ("FL_PREFIX",) if os.environ.get(k)]
+    dirs.append("/usr/local/lib")
+    seen, out = set(), []
+    for d in dirs:
+        f = os.path.join(d, "libflux.a")
+        if f not in seen and os.path.isfile(f):
+            seen.add(f)
+            out.append(f)
+    return out
+
+
+def libflux_check(paths=None):
+    """(ok, detail, fix) for the libflux optimization level; ok=None is a warning. Never a hard failure."""
+    paths = _libflux_candidates() if paths is None else paths
+    if not paths:
+        return None, "libflux.a not found in $FL_PREFIX/lib or /usr/local/lib", f"hint: build with {O2_MAKE}"
+    results = []
+    for f in paths:
+        try:
+            with open(f, "rb") as fh:
+                results.append((f, libflux_opt_level(fh.read())))
+        except OSError:
+            results.append((f, None))
+    detail = "; ".join(f"{f}: {lvl or 'unknown'}" for f, lvl in results)
+    if any(lvl == "O0" for _, lvl in results):
+        return None, detail, O2_ADVICE
+    if all(lvl == "optimized" for _, lvl in results):
+        return True, detail, ""
+    return None, detail, f"hint: optimization level cannot be read; for speed build with {O2_MAKE}"
 
 
 def _flux_perl():
@@ -59,6 +115,9 @@ def checks():
         "if it says 'Permission denied' or names another user's path, remove stale PERL5LIB "
         "entries from your shell rc file",
     )
+
+    ok, detail, fix = libflux_check()
+    yield ("libflux optimization", ok, detail, fix)
 
     # Inline::Pdlpp (used by the footpoint/wind code) loads silently without Inline::C and then dies
     # with 'Base class package "Inline::C" is empty', so test the pair the way the pipeline loads them.
