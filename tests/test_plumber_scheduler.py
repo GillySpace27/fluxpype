@@ -35,7 +35,7 @@ def test_single_job_lifecycle(make_scheduler):
     assert t["exit_code"] == 0 and t["started"] <= t["ended"]
     state = sched.task_state(t["id"])
     assert state["status"] == "ok" and state["mode"] == "events"
-    assert [s["status"] for s in state["stages"]] == ["ok"] * 9 + ["skipped"]
+    assert [s["status"] for s in state["stages"]] == ["ok"] * 9 + ["skipped"] * 2
     assert all(s["verified"] in (True, None) for s in state["stages"])
     assert state["relax"]["n_points"] > 10 and state["relax"]["source"] == "event"
     assert {"job_state", "task_state", "queue_state"} <= set(seen)
@@ -301,7 +301,7 @@ def test_wind_only_profile_skips_the_first_seven_stages(make_scheduler, plumber_
     job = sched.create_job("t_wind", backend="fake", extra=FAST)
     finish(sched, job["id"])
     state = sched.task_state(job["tasks"][0]["id"])
-    assert [s["status"] for s in state["stages"]] == ["skipped"] * 7 + ["ok", "ok", "skipped"]
+    assert [s["status"] for s in state["stages"]] == ["skipped"] * 7 + ["ok", "ok", "skipped", "skipped"]
 
 
 def test_fluxlight_profile_reports_its_artifact(make_scheduler):
@@ -309,7 +309,7 @@ def test_fluxlight_profile_reports_its_artifact(make_scheduler):
     job = sched.create_job("t_light", backend="fake", extra=FAST)
     finish(sched, job["id"])
     state = sched.task_state(job["tasks"][0]["id"])
-    assert state["stages"][-1]["status"] == "ok"
+    assert state["stages"][-2]["status"] == "ok"  # the last stage is euv
     assert any(a["source"] == "event" and "fluxlight" in a["path"] for a in state["artifacts"])
 
 
