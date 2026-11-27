@@ -166,3 +166,6 @@ fluxpype/plumber/web/node_modules/
 !fluxpype/plumber/web/src/lib/
 !docs/gui/screenshots/
 !docs/gui/screenshots/*.png
+
+.DS_Store
+perltidy.ERR
