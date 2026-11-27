@@ -140,6 +140,61 @@ def test_ssh_unreachable_is_unknown_not_lost(tmp_path):
     assert st.cancelled and st.state == "exited" and st.signal == 15
 
 
+def _dead_task_run(tmp_path, backend_cls, launcher_pid, launcher_start, **cfg):
+    """A run folder whose task pid is dead, with a given launcher pid/token and no exit_code."""
+    from fluxpype.plumber import launcher
+
+    b = backend_cls(config(tmp_path, **cfg), transport=Recording())
+    t = spec(tmp_path)
+    rdir = tmp_path / "remote" / "j1" / "j1-01"
+    rdir.mkdir(parents=True)
+    os.makedirs(t.run_dir)
+    (rdir / "launch.json").write_text("{}")
+    with open(os.path.join(t.run_dir, "remote.json"), "w") as f:
+        json.dump({"backend": "box", "remote_dir": str(rdir)}, f)
+    pid = {"pid": 2**22 + 12345, "pid_start": "x", "launcher_pid": launcher_pid, "launcher_start": launcher_start}
+    (rdir / "pid").write_text(json.dumps(pid))
+    return b, rdir, Handle(t.task_id, t.run_dir), launcher
+
+
+def test_task_dead_but_launcher_still_writing_exit_code_is_not_lost(tmp_path):
+    """The window between the task being reaped and exit_code landing must not read as lost."""
+    from fluxpype.plumber import launcher
+
+    me = os.getpid()
+    b, rdir, h, _ = _dead_task_run(tmp_path, SSHBackend, me, launcher.process_start_token(me))
+    assert b.poll(h).state == "running"  # launcher (this process) alive, task gone, no exit_code yet
+    # same pid number but a different start time: a reused pid is not the launcher
+    (rdir / "pid").write_text(
+        json.dumps({"pid": 2**22 + 12345, "pid_start": "x", "launcher_pid": me, "launcher_start": "0"})
+    )
+    assert b.poll(h).state == "lost"
+    # launcher gone too, still no exit_code: genuinely lost
+    (rdir / "pid").write_text(json.dumps({"pid": 2**22 + 12345, "pid_start": "x", "launcher_pid": 2**22 + 12346}))
+    assert b.poll(h).state == "lost"
+
+
+def test_task_pid_reused_by_a_foreign_process_is_not_running(tmp_path):
+    from fluxpype.plumber import launcher
+
+    me = os.getpid()
+    b, rdir, h, _ = _dead_task_run(tmp_path, SSHBackend, 2**22 + 12346, None)
+    (rdir / "pid").write_text(json.dumps({"pid": me, "pid_start": "0", "launcher_pid": 2**22 + 12346}))
+    assert b.poll(h).state == "lost"  # pid exists but started at another time
+    (rdir / "pid").write_text(json.dumps({"pid": me, "pid_start": launcher.process_start_token(me)}))
+    assert b.poll(h).state == "running"
+
+
+def test_slurm_ignores_launcher_pids_and_trusts_the_queue(tmp_path):
+    """The launcher runs on a compute node: a matching local pid must not read as running."""
+    from fluxpype.plumber import launcher
+
+    me = os.getpid()
+    b, rdir, h, _ = _dead_task_run(tmp_path, SlurmBackend, me, launcher.process_start_token(me), squeue="true")
+    (rdir / "slurm_job_id").write_text("4242\n")
+    assert b.poll(h).state == "lost"  # queue empty (rc=0), no exit_code, launcher pid is foreign here
+
+
 def test_poll_without_a_remote_record_is_lost(tmp_path):
     b = SSHBackend(config(tmp_path), transport=Recording())
     assert b.poll(Handle("x", str(tmp_path / "nowhere"))).state == "lost"

@@ -92,7 +92,13 @@ def main(argv=None):
     started = time.time()
     write_json_atomic(
         os.path.join(run_dir, "pid"),
-        {"pid": proc.pid, "pid_start": process_start_token(proc.pid), "started": started, "launcher_pid": os.getpid()},
+        {
+            "pid": proc.pid,
+            "pid_start": process_start_token(proc.pid),
+            "started": started,
+            "launcher_pid": os.getpid(),
+            "launcher_start": process_start_token(os.getpid()),
+        },
     )
 
     def forward(signum, frame):
