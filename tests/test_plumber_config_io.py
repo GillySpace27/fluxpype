@@ -167,58 +167,59 @@ def test_instrument_names():
     assert c.task_instrument("0") == "hmi" and c.task_instrument("1") == "adapt"
 
 
-# ---------------------------------------------------------------- "Compare with AIA" keys (audit A4-09)
-
-AIA_KEYS = ("observation_date", "mag_file", "aia_channels")
+# ---------------------------------------------------------------- "Compare with AIA" key (audit A4-09)
 
 
-def test_aia_keys_default_to_unset_in_every_profile(shipped):
+def test_observation_date_defaults_to_unset_in_every_profile(shipped):
     for name in shipped.profiles:
         eff = shipped.effective(name)
-        assert all(k in eff for k in AIA_KEYS), name
-        assert eff["observation_date"].value == "None" and eff["mag_file"].value == "None"
+        assert eff["observation_date"].value == "None", name
 
 
-def test_aia_keys_defaults_leave_science_config_as_before():
+def test_observation_date_default_leaves_science_config_as_before():
     from fluxpype.config import convert_value
 
-    assert (
-        convert_value("None") is None
-    )  # observation_date / mag_file read as None: observer_lon and header date unchanged
-    assert convert_value("[193]") == [193]
+    # observation_date reads as None: observer_lon and header date unchanged
+    assert convert_value("None") is None
 
 
-def test_aia_overrides_validate_and_survive_all_three_parsers(shipped, tmp_path, monkeypatch):
+def test_observation_date_override_validates_and_survives_all_three_parsers(shipped, tmp_path, monkeypatch):
     import configparser
 
     from fluxpype import config as flux_config
 
-    eff = shipped.effective("light")
-    keys = set(eff)
-    ov = {
-        "observation_date": "2014-05-18T20:00:00",
-        "aia_channels": "[171, 193]",
-        "mag_file": "batches/b/mags/CR2150_r4_hmi.fits",
-    }
-    ok = {k: c.validate_override(keys, k, v) for k, v in ov.items()}
-    assert ok == ov
+    keys = set(shipped.effective("light"))
+    ok = c.validate_override(keys, "observation_date", "2014-05-18T20:00:00")
+    assert ok == "2014-05-18T20:00:00"
     for bad in ("2014-05-18;rm", "$(x)", "a" * 201):
         with pytest.raises(c.ConfigError):
             c.validate_override(keys, "observation_date", bad)
-    snap = c.make_snapshot(shipped.text, "light", ok, str(tmp_path))
+    snap = c.make_snapshot(shipped.text, "light", {"observation_date": ok}, str(tmp_path))
     # parser 1: config_io
-    got = c.parse(snap).effective("light")
-    assert got["observation_date"].value == "2014-05-18T20:00:00" and got["aia_channels"].value == "[171, 193]"
+    assert c.parse(snap).effective("light")["observation_date"].value == "2014-05-18T20:00:00"
     # parser 2: config.configurations (configparser + convert_value)
     p = tmp_path / "snap.ini"
     p.write_text(snap)
     monkeypatch.setenv("FLUXPYPE_CONFIG_FILE", str(p))
-    cfg = flux_config.configurations("light")
-    assert cfg["observation_date"] == "2014-05-18T20:00:00" and cfg["aia_channels"] == [171, 193]
-    assert cfg["mag_file"] == ov["mag_file"]
+    assert flux_config.configurations("light")["observation_date"] == "2014-05-18T20:00:00"
     # parser 3: the Perl side strips "#" comments and reads key = value with Config::IniFiles; check the same
-    # cleaned text still carries the values (Config::IniFiles itself is not installed in CI).
+    # cleaned text still carries the value (Config::IniFiles itself is not installed in CI).
     cleaned = "\n".join(line.split("#", 1)[0].rstrip() for line in snap.splitlines())
     raw = configparser.ConfigParser(interpolation=None)
     raw.read_string(cleaned)
     assert raw["light"]["observation_date"] == "2014-05-18T20:00:00"
+
+
+@pytest.mark.parametrize("good", ["2014-05-18", "2014-05-18T20:00:00", "2014-05-18 20:00:00", "None", "none"])
+def test_observation_date_accepts_real_dates_and_unset(shipped, good):
+    keys = set(shipped.effective("light"))
+    assert c.validate_override(keys, "observation_date", good) == good
+
+
+@pytest.mark.parametrize(
+    "bad", ["tomorrow", "2014-13-45", "2014-02-30T00:00:00", "20:00:00", "2014-05-18T25:00:00", "abc"]
+)
+def test_observation_date_rejects_non_dates(shipped, bad):
+    keys = set(shipped.effective("light"))
+    with pytest.raises(c.ConfigError, match="observation_date"):
+        c.validate_override(keys, "observation_date", bad)

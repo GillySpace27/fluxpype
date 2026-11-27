@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { instOf } from "../lib/format";
-import { useCache, useHealth, useStatus } from "../lib/hooks";
+import { useHealth, useStatus } from "../lib/hooks";
 import type { ProfileDetail, ProfileEntry } from "../lib/types";
 import { Badge, Checkbox } from "./ui";
 
@@ -12,19 +12,13 @@ import { Badge, Checkbox } from "./ui";
 export const COMMON = ["rotations", "fluxon_count", "adapts", "flow_method", "max_cycles", "relax_threshold", "do_steps", "light", "do_wind_calc"];
 
 /** The "Compare with AIA" section's settings; they get their own controls instead of plain rows. */
-export const AIA_KEYS = ["observation_date", "mag_file", "aia_channels"];
-export const AIA_CHANNELS = ["171", "193", "211"];
+export const AIA_KEYS = ["observation_date"];
 
 const valueOf = (detail: ProfileDetail, d: RunDraft, key: string) => d.overrides[key] ?? detail.entries.find((e) => e.key === key)?.value ?? "";
 const unset = (v: string) => ["", "none"].includes(v.trim().toLowerCase());
 
 /** The section applies when this run renders FLUXlight (light = 1) and the config has the keys it sets. */
 export const aiaSectionShown = (detail: ProfileDetail, d: RunDraft) => valueOf(detail, d, "light").trim() === "1" && AIA_KEYS.every((k) => detail.entries.some((e) => e.key === k && e.editable));
-
-/** "[171, 193]" or "193" to ["171", "193"]. */
-export const parseChannels = (v: string) => (v.match(/\d+/g) ?? []).filter((c) => AIA_CHANNELS.includes(c));
-/** Channels back to the config list syntax; none is the unset sentinel `None`. */
-export const formatChannels = (cs: string[]) => `[${AIA_CHANNELS.filter((c) => cs.includes(c)).join(", ")}]`;
 
 /** What a run will be launched with, before it exists. `picked` holds task keys; null means every task. */
 export interface RunDraft {
@@ -116,16 +110,20 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
   const set = (key: string, v: string) => onChange({ ...draft, overrides: { ...draft.overrides, [key]: v } });
   const firstCr = pickedTasks(detail, draft)[0]?.cr ?? detail.tasks[0]?.cr;
   const when = valueOf(detail, draft, "observation_date").trim();
+  // derived observer_lon for the entered time (or the rotation's midpoint when none is entered)
   const derive = useQuery({
     queryKey: ["aia-observer", firstCr, unset(when) ? "" : when],
     queryFn: () => api.get<{ time: string; observer_lon: number }>(`/api/aia/observer?${new URLSearchParams({ ...(firstCr ? { cr: firstCr } : {}), ...(unset(when) ? {} : { time: when }) })}`),
     enabled: aia && !!firstCr,
     retry: false,
   });
-  const cache = useCache();
-  const mags = (cache.data?.records ?? []).filter((r) => r.kind === "magnetogram");
-  const channels = parseChannels(valueOf(detail, draft, "aia_channels"));
-  const magFile = valueOf(detail, draft, "mag_file");
+  // the button's midpoint comes from the task's rotation alone, whatever time is typed in the field
+  const mid = useQuery({
+    queryKey: ["aia-observer-mid", firstCr],
+    queryFn: () => api.get<{ time: string; observer_lon: number }>(`/api/aia/observer?${new URLSearchParams({ cr: firstCr as string })}`),
+    enabled: aia && !!firstCr,
+    retry: false,
+  });
 
   const aiaSection = aia && (
     <section className="space-y-3" data-testid="compare-aia">
@@ -133,9 +131,9 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
       <label className="block">
         <span className="flex items-baseline justify-between text-xs">
           <span>Observation time (UTC)</span>
-          {derive.data && (
-            <button type="button" className="text-accent hover:underline" onClick={() => set("observation_date", derive.data.time)}>
-              use mid-rotation {derive.data.time.slice(0, 10)}
+          {mid.data && (
+            <button type="button" className="text-accent hover:underline" onClick={() => set("observation_date", mid.data.time)}>
+              use mid-rotation {mid.data.time.slice(0, 10)}
             </button>
           )}
         </span>
@@ -157,32 +155,6 @@ export function RunForm({ detail, draft, onChange, wide }: { detail: ProfileDeta
           <span className="text-faint">{derive.error ? "enter a valid ISO time" : "computing"}</span>
         )}
       </p>
-      <div>
-        <span className="text-xs">AIA channels</span>
-        <div className="mt-1 flex gap-4">
-          {AIA_CHANNELS.map((c) => (
-            <label key={c} className="flex items-center gap-1.5 text-[13px]">
-              <Checkbox
-                checked={channels.includes(c)}
-                label={`AIA ${c}`}
-                onChange={(on) => set("aia_channels", formatChannels(on ? [...channels, c] : channels.filter((x) => x !== c)))}
-              />
-              {c}
-            </label>
-          ))}
-        </div>
-      </div>
-      <label className="block text-xs">
-        <span>Magnetogram file (optional)</span>
-        <select className="input mt-1 font-mono" value={unset(magFile) ? "" : magFile} onChange={(ev) => set("mag_file", ev.target.value || "None")}>
-          <option value="">none (the pipeline picks its own)</option>
-          {mags.map((m) => (
-            <option key={m.id} value={m.path}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-      </label>
     </section>
   );
 

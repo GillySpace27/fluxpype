@@ -590,7 +590,8 @@ def create_app(
     @app.get("/api/aia/observer")
     def aia_observer(cr: Optional[int] = None, time: Optional[str] = None):
         """The "Compare with AIA" form's derived values: the observation time (``time``, else mid-rotation of ``cr``)
-        and the Carrington longitude of Earth's central meridian at that time, which FLUXlight uses as observer_lon."""
+        and the Carrington longitude of Earth's central meridian at that time, which FLUXlight uses as observer_lon.
+        The form's "use mid-rotation" button passes ``cr`` only."""
         from fluxpype.science.aia import task_time
         from fluxpype.science.observer_wcs import carrington_observer_lon
 
