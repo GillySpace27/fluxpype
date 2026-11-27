@@ -207,7 +207,7 @@ For a hand-written file without image LINE rows, add 4 vertices and 2 fluxons to
 | `world/cr<CR>_f<N>_<inst>.flux` | initial text world | `make_world_from_pfss.pm` |
 | `world/..._relaxed_s<k>.flux` | relaxed text world | `relax_pfss_world.pm` |
 | `world/<name>.light` | **Python pickle** (protocol 4), not a FLUX format | `fluxlight.py` `do_fluxlight`: path = `.flux` replaced by `.light`; cache of `simulate_thomson_scattering` results. |
-| `light/cr<CR>_fluxlight_light_<method>_<nz>[...].png` | renders | `fluxlight.py` |
+| `light/cr<CR>_f<N>_<inst>_fluxlight_light_<method>_<nz>[...].png` (older batches: `cr<CR>_fluxlight_light_...`) | renders | `fluxlight.py` |
 | `cr<CR>_f<N>_fluxlight_world.png`, `_world_zoom.png`, `_world_zoom_{x,-x,y,-y,z,-z}.png` | matplotlib 3-D plots | `open_world_python.py` `plot_all`-style method; zoom = axes limited to +/-3 (R_sun inferred) |
 | magnetogram FITS | HMI or ADAPT synoptic, reduced by `reduce` | `get_magnetograms.py` (filenames not checked) |
 

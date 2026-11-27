@@ -234,6 +234,7 @@ class FluxWorld:
         self.name = None
         self.cr = "unknown"
         self.nflx = "unknown"
+        self.inst = "unknown"
         self.areas_by_fluxon = None
         self.filename = filename or None
         self.flux_area_file = None
@@ -255,6 +256,9 @@ class FluxWorld:
             match_f = re.search(r"_f(\d+)_", filename)
             if match_f:
                 self.nflx = match_f.group(1)
+            match_i = re.search(r"_f\d+_(hmi|adapt)(?:_|\.)", filename)
+            if match_i:
+                self.inst = match_i.group(1)
 
             # The wind stage's *_radial_fr.dat is only needed by compute_cross_sectional_areas(method="file").
             # A world with no sibling wind/ folder (wind skipped, a scene, a copied world) must still load,

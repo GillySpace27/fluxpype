@@ -374,7 +374,7 @@ if ($do_wind_calc){
     $recompute = 1;
 
   ( $out_b, $out_fr, $out_wind, $out_b_all ) =
-    get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff );
+    get_wind( $use_world, $CR, $n_fluxons_wanted, $recompute, $flow_method, $plot_stiff, $inst );
   stage_end("wind");
 
 

@@ -136,7 +136,7 @@ sub file_has_content {
 
 sub get_wind {
 
-    my ( $this_world, $CR, $n_want, $recompute, $flow_method_in, $do_stiff) = @_;
+    my ( $this_world, $CR, $n_want, $recompute, $flow_method_in, $do_stiff, $inst) = @_;
 
 
     # Read configurations from disk
@@ -171,7 +171,9 @@ sub get_wind {
     my $do_wind_calc = 0;
 
     my $wind_out_dir   = $datdir . "/batches/$batch_name/data/cr" . $CR . '/wind';
-    my $prefix         = "$wind_out_dir/cr$CR\_f$n_fluxons_wanted";
+    # cr<CR>_f<N>_<inst>: the instrument keeps an HMI and an ADAPT task of one batch from overwriting each other (A7-01).
+    my $inst_str       = ( defined $inst and length $inst ) ? "\_$inst" : "";
+    my $prefix         = "$wind_out_dir/cr$CR\_f$n_fluxons_wanted$inst_str";
     my $out_b          = "$prefix\_radial_bmag.dat";
     my $out_b_all      = "$prefix$stiffness\_radial_bmag_all.dat";
     my $out_fr         = "$prefix\_radial_fr.dat";

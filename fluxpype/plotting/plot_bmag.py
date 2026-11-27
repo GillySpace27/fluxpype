@@ -32,6 +32,7 @@ Author:
 
 """
 
+from fluxpype import names
 import os.path
 import argparse
 import numpy as np
@@ -52,7 +53,13 @@ def plot_bmag(configs):
     # (hdr, cr, fname, adapt, doplot, reduce) = load_magnetogram_params(args.dat_dir)
     # CR = configs['cr'] #args.cr or configs["rotations"][0]
 
-    default_file = f"{configs['data_dir']}/batches/{configs['batch_name']}/data/cr{configs['cr']}/wind/cr{configs['cr']}_f{configs['nwant']}_radial_bmag.dat"
+    default_file = names.wind_dat_path(
+        f"{configs['data_dir']}/batches/{configs['batch_name']}/data/cr{configs['cr']}/wind",
+        configs["cr"],
+        configs["nwant"],
+        names.inst_name(configs.get("adapt", 0)),
+        "bmag",
+    )
 
     filename = configs.get("file", default_file)
 

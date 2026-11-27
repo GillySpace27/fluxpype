@@ -1,3 +1,4 @@
+from fluxpype import names
 import numpy as np
 from scipy import interpolate
 from scipy import integrate
@@ -364,8 +365,12 @@ def parse_args():
     parser.add_argument("--file", type=str, default=None)
     parser.add_argument("--adapt", type=int, default=0, help="Use ADAPT magnetograms")
     args = parser.parse_args()
-    filename = (
-        f"{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat"
+    filename = names.wind_dat_path(
+        f"{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind",
+        args.cr,
+        args.nwant,
+        names.inst_name(args.adapt),
+        "bmag_all",
     )
     print(filename.split("/data")[1].split("/")[1][-4:])
     configs = configurations(args=args)
