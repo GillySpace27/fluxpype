@@ -146,11 +146,9 @@ def calculate_directories(config):
     dat_dir = config.get("data_dir", os.path.join(basedir, "fluxpype", "data"))
 
     batch_dir = os.path.join(dat_dir, "batches", batch_name)
-    CR = config.get("cr", "")
 
     return {
         "batch_dir": os.path.expanduser(batch_dir),
-        "flocdir": os.path.join(batch_dir, f"cr{CR}/floc"),
         "pipe_dir": os.path.join(basedir, "fluxpype", "fluxpype"),
         "pdl_dir": os.path.join(basedir, "pdl", "PDL"),
         "datdir": os.path.expanduser(dat_dir),
@@ -182,7 +180,6 @@ def update_magdir_paths(config):
             "magfile": magfile,
             "flocfile": flocfile,
             "magpath": os.path.join(config["mag_dir"], magfile),
-            "flocpath": os.path.join(config["flocdir"], flocfile),
         }
     )
     return config

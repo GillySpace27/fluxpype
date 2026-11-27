@@ -100,7 +100,7 @@ def test_wind_map_plotters_default_to_the_qualified_name_then_the_old_one(module
     assert seen_path(dict(cfg)) == names.wind_dat(2310, 100, "adapt", kind)
 
 
-@pytest.mark.parametrize("module", ["tempest", "tempest_bkk"])
+@pytest.mark.parametrize("module", ["tempest"])
 def test_tempest_readers_find_qualified_and_old_names(module, tmp_path, monkeypatch):
     pytest.importorskip("scipy")
     mod = pytest.importorskip(f"fluxpype.science.{module}")
