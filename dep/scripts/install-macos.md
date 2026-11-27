@@ -14,7 +14,7 @@ First, install the homebrew package, which will require being logged in as an ad
 Make sure at the end of this to follow the instructions for adding homebrew to your path
 ```shell
 (echo; echo 'eval "$(/opt/homebrew/bin/brew shellenv)"') >> /Users/<USERNAME>/.zprofile
-eval "$(/opt/homebrew)
+eval "$(/opt/homebrew/bin/brew shellenv)"
 ```
 
 Next, use homebrew as an admin user to install perl.
