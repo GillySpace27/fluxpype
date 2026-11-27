@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
+from .. import flux_seed
 from .checks import comparable
 
 FORCES = ("f_pressure_equi2b", "f_curvature", "f_vertex4", "b_eqa")
@@ -202,7 +203,9 @@ def relax(
     t0 = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     # FLUX prints its own messages on stderr. Sharing a pipe with the cycle records split a record line in every
     # run, so stderr goes to its own file next to the log and the pipe carries only the driver's output.
+    env, seed = flux_seed.child_env()
     with open(log, "w") as logf, open(log + ".stderr", "w") as errf:
+        logf.write(f"# {flux_seed.describe(seed)}\n")
         proc = (popen or subprocess.Popen)(
             args,
             stdin=subprocess.PIPE,
@@ -210,6 +213,7 @@ def relax(
             stderr=errf,
             text=True,
             cwd=str(Path(out).parent),
+            env=env,
         )
         if run_id:
             _register(

@@ -10,7 +10,8 @@ on:
 
 env:
   # The commit the goldens were made from (tests/data/realflux/golden.json). Bump it together with the goldens.
-  FLUXON_MHD_SHA: 3f65ebdd42871bb46a850a90c5ec9a13280aa517
+  # 3fbce8b = 3f65ebd plus the A1-05 fix (r_cl = 0 in new_vertex), on GillySpace27/fluxon-mhd branch claude/project-thread-x8066y-a1-05.
+  FLUXON_MHD_SHA: 3fbce8b8001d8eb643455b8978f922bc5cb0da31
 
 jobs:
   realflux:

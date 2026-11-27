@@ -26,6 +26,7 @@
  "0  # Download new data (0 for off, 1 for on)": "int\t0",
  "0  # Force re-computation of existing data (0 for off, 1 for on)": "int\t0",
  "0  # Only plot the data without computation (0 for off, 1 for on)": "int\t0",
+ "0  # Random seed for the FLUX Perl processes: 0 = fixed (a run repeats); jd = seed from the Julian date (each run differs); or an integer to repeat a jd run. The seed used is logged. Env FLUXPYPE_FLUX_SEED overrides.": "int\t0",
  "0  # Verbose logging: 0=off, 1=on; 2+= show sunpy/astropy INFO (e.g. missing metadata)": "int\t0",
  "0 # Force re-computation of existing wind data (0 for off, 1 for on)": "int\t0",
  "07": "str\t'07'",

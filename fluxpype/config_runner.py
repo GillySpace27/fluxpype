@@ -32,6 +32,7 @@ from tqdm import tqdm
 from rich.panel import Panel
 from rich.console import Console
 
+from fluxpype import flux_seed
 from fluxpype.events import emit as emit_event
 from fluxpype.console import (
     init_log,
@@ -312,6 +313,9 @@ def _run_pdl_script(rotation, fluxon_count, adaptation, method):
             )
         else:
             emit("Flux not loadable and flux_perl_lib not found. Execution may fail.", style="yellow")
+
+    env, seed = flux_seed.apply(env, configs)
+    emit(f"FLUX random seed: {flux_seed.describe(seed)}", style="dim")
 
     command = [
         perl,
