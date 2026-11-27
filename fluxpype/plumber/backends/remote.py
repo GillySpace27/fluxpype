@@ -29,6 +29,13 @@ MIRRORED = ("events.jsonl", "run.log", "stdout.log")  # copied into the local ru
 CHUNK = 4 * 1024 * 1024
 START_GRACE_S = 60.0
 
+# Shell helpers for the poll script. up PID TOKEN: the pid exists and, when the launcher recorded a start
+# token, started at that time (so a reused pid is not mistaken for the task or the launcher).
+ALIVE_HELPERS = r"""field() { sed -n -E "s/.*\"$1\": *\"?([^\",}]*).*/\1/p" pid 2>/dev/null; }
+tok() { t=$(sed 's/^.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f20); [ -n "$t" ] || t=$(ps -o lstart= -p "$1" 2>/dev/null); echo "$t"; }
+up() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && { [ -z "$2" ] || [ "$(tok "$1")" = "$2" ]; }; }
+"""
+
 
 class TransportError(Exception):
     """The remote machine could not be reached (as opposed to a command failing there)."""
@@ -147,6 +154,7 @@ def _json(text: str) -> Optional[dict]:
 
 class SSHBackend:
     kind = "ssh"
+    watch_launcher = True  # Slurm: the launcher runs on a compute node, so only the queue can say
 
     def __init__(self, config: RemoteConfig, transport: Transport = None):
         self.config = config
@@ -313,13 +321,17 @@ class SSHBackend:
 
     def _poll_script(self, rdir: str) -> str:
         sizes = "".join(f"echo @@size:{n}; wc -c < {n} 2>/dev/null\n" for n in MIRRORED)
+        launcher = ' || up "$l" "$ls0"' if self.watch_launcher else ""
         return (
             f"cd {_q(rdir)} 2>/dev/null || {{ echo @@norun; echo @@end; exit 0; }}\n"
             "echo @@pid; cat pid 2>/dev/null; echo\n"
-            "echo @@exit_code; cat exit_code 2>/dev/null; echo\n"
             "[ -e cancelled ] && echo @@cancelled\n"
-            "p=$(sed -n 's/.*\"pid\": *\\([0-9][0-9]*\\).*/\\1/p' pid 2>/dev/null)\n"
-            'echo @@alive; [ -n "$p" ] && kill -0 "$p" 2>/dev/null && echo yes\n'
+            f"{ALIVE_HELPERS}"
+            "p=$(field pid); ps0=$(field pid_start); l=$(field launcher_pid); ls0=$(field launcher_start)\n"
+            # ssh only: the launcher outlives the task until it has written exit_code, so it counts as alive too
+            f'echo @@alive; {{ up "$p" "$ps0"{launcher}; }} && echo yes\n'
+            # read exit_code after the liveness checks: if both are dead, exit_code is already on disk
+            "echo @@exit_code; cat exit_code 2>/dev/null; echo\n"
             "echo @@age; echo $(( $(date +%s) - $(date -r launch.json +%s 2>/dev/null || echo 0) ))\n"
             f"{sizes}{self._poll_extra()}echo @@end\n"
         )
@@ -377,6 +389,7 @@ class SlurmBackend(SSHBackend):
     """Submit each task with ``sbatch``; ``squeue`` tells queued from running, ``scancel`` cancels."""
 
     kind = "slurm"
+    watch_launcher = False
 
     def sbatch_script(self, task: TaskSpec, rdir: str) -> str:
         c = self.config
