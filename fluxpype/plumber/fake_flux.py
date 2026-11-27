@@ -19,6 +19,8 @@ about a minute). Scenarios exercise the plumber's failure and fallback paths:
 * ``timeout``         the task timeout fires in relaxation: ``run.end`` with status timeout, exit 124
 * ``crash``           SIGKILLs its launcher, then itself: no exit code, no ``run.end``
 * ``launcher_lost``   SIGKILLs its launcher, then finishes ok normally (``run.end`` decides the outcome)
+* ``euv``             runs the ``euv`` stage after FLUXlight: writes a synthetic model FITS and a synthetic AIA FITS on one
+                      helioprojective header, the AIA image being the model image times 2 (A4-03; needs numpy, astropy)
 
 Used by ``flux-plumb --demo`` and by the tests; stdlib only.
 """
@@ -310,11 +312,52 @@ class Fake:
         else:
             self.event("stage.end", stage="fluxlight", status="skipped", elapsed_s=0, detail="light=0")
 
+        if self.scenario == "euv":
+            self.euv_stage()
+
         elapsed = time.time() - self.t0
         self.say("-" * 98)
         self.say(f"\tProgram Complete for CR{cr} in {elapsed * self.speed:.1f} Seconds, press RETURN to exit...")
         self.say("-" * 98)
         return self.finish(0)
+
+    def euv_stage(self, channel=193):
+        """The ``euv`` stage: a model image and a stand-in AIA image of the same scene, AIA = 2 x model."""
+        import numpy as np
+        from astropy.io import fits
+
+        a = self.a
+        t = time.time()
+        self.stage("euv")
+        self.sleep(1.0)
+
+        def header(npix, fov=1.3):
+            h = fits.Header()
+            scale = 2 * fov * 960.0 / (npix - 1)
+            for k, ctype in ((1, "HPLN-TAN"), (2, "HPLT-TAN")):
+                h[f"CTYPE{k}"], h[f"CUNIT{k}"], h[f"CRPIX{k}"] = ctype, "arcsec", (npix + 1) / 2
+                h[f"CRVAL{k}"], h[f"CDELT{k}"] = 0.0, scale
+            h["DATE-OBS"] = "2020-06-01T00:00:00"
+            h["HGLN_OBS"], h["HGLT_OBS"], h["DSUN_OBS"] = 0.0, 0.0, 1.496e11
+            h["RSUN_REF"], h["RSUN_OBS"] = 6.957e8, 960.0
+            h["BUNIT"] = "DN s-1 pix-1"
+            return h
+
+        def scene(npix, fov=1.3):
+            x, y = np.meshgrid(*[np.linspace(-fov, fov, npix)] * 2)
+            r = np.hypot(x, y)
+            blob = np.exp(-((x - 0.4) ** 2 + (y + 0.2) ** 2) / 0.02)
+            img = 50.0 * np.exp(-np.clip(r - 1.0, 0, None) / 0.15) * (1 + 3 * blob) + 2.0
+            return img.astype(np.float32)
+
+        rel = f"batches/{self.batch}/data/cr{a.cr}/light/cr{a.cr}_f{a.nflux}_{self.inst}_aia{channel}.fits"
+        model = self.touch(rel, content=b"")
+        fits.writeto(model, scene(64), header(64), overwrite=True)
+        pair = os.path.join(self.data_dir, "aia", f"aia_lev15_{channel}_20200601T000000.fits")
+        os.makedirs(os.path.dirname(pair), exist_ok=True)
+        fits.writeto(pair, 2.0 * scene(256), header(256), overwrite=True)
+        self.event("artifact", path=model, kind="fits", pair=pair)
+        self.end("euv", started=t)
 
     def finish(self, code, message=None):
         if message:

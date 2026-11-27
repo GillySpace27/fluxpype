@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import parse_qs, quote, urlsplit
 
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
@@ -30,7 +32,7 @@ from .presets import PresetError
 from .proposals import TOOLS as PROPOSAL_TOOLS, ProposalError, ProposalStore
 from .monitor import STAGES, first_match_for_context
 from .notify import Notifier, clean_id
-from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError
+from .scheduler import RUN_ID_RE, Scheduler, SchedulerConflict, SchedulerError, SchedulerNotFound
 from .sysmon import SysMon
 
 COOKIE = "flux_plumber"
@@ -125,6 +127,22 @@ def icon_version() -> str:
     return h.hexdigest()[:10]
 
 
+# Fields of a task state that move with the clock alone. The page computes them from `started` and
+# `last_change`, so they must not make a push (A4-07).
+CLOCK_FIELDS = ("observed_at", "elapsed_s")
+
+
+def state_change_key(state: Dict[str, Any]) -> str:
+    """What decides whether a task_state frame is worth sending: the state without its clock-driven fields."""
+    s = {k: v for k, v in clean(state).items() if k not in CLOCK_FIELDS}
+    src = s.get("sources")
+    if isinstance(src, dict):
+        s["sources"] = {
+            k: ({kk: vv for kk, vv in v.items() if kk != "age_s"} if isinstance(v, dict) else v) for k, v in src.items()
+        }
+    return json.dumps(s, sort_keys=True, default=str)
+
+
 def clean(obj: Any) -> Any:
     """JSON-safe copy: NaN and infinities become null (browsers reject them)."""
     if isinstance(obj, float):
@@ -158,6 +176,32 @@ def tail_file(path: str, size: int, offset: int, limit: int) -> Dict[str, Any]:
 
 def reply(obj: Any, status: int = 200) -> JSONResponse:
     return JSONResponse(clean(obj), status_code=status)
+
+
+# One status, one stable machine-readable `code` (A3-08). Every error body is {"detail": text, "code": code}: clients
+# branch on `code`, people read `detail`. 404 is for an unknown id only; 409 is for a state conflict only.
+ERROR_CODES = {
+    400: "invalid",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    405: "method_not_allowed",
+    409: "conflict",
+    410: "gone",
+    415: "unsupported",
+    422: "invalid",
+    429: "busy",
+    500: "internal",
+    503: "unavailable",
+}
+
+
+def error_code(status: int) -> str:
+    return ERROR_CODES.get(status, "internal" if status >= 500 else "invalid")
+
+
+def error_reply(status: int, detail: Any, headers: Optional[Dict[str, str]] = None) -> JSONResponse:
+    return JSONResponse({"detail": detail, "code": error_code(status)}, status_code=status, headers=headers)
 
 
 class ExternalRunIn(BaseModel):
@@ -524,9 +568,9 @@ def create_app(
         if path.startswith("/api/"):
             request.state.role = role_of(request.cookies, request.headers)
             if request.state.role is None:
-                return JSONResponse({"detail": f"missing or wrong token; open {token_hint}"}, status_code=401)
+                return error_reply(401, f"missing or wrong token; open {token_hint}")
             if request.method not in ("GET", "HEAD", "OPTIONS") and not origin_ok(request.headers):
-                return JSONResponse({"detail": "cross-origin request refused"}, status_code=403)
+                return error_reply(403, "cross-origin request refused")
             client = client_of(request) or None
             # a second lock behind the CLI: the Ask bar's MCP server may only read and store proposals
             if (
@@ -540,7 +584,7 @@ def create_app(
                     and path.endswith("/withdraw")
                 )
             ):
-                return JSONResponse({"detail": "the Ask bar is read-only; a person clicks a card"}, status_code=403)
+                return error_reply(403, "the Ask bar is read-only; a person clicks a card")
             if client == "mcp-heartbeat":  # the MCP server is up and reaches us: not a tool call, so no flash
                 agent_alive()
             elif client in ("mcp", "ask"):  # an AI agent via the MCP server, or the Ask bar's own copy of it
@@ -582,8 +626,19 @@ def create_app(
             caches[data_dir] = Cache(data_dir)
         return caches[data_dir]
 
-    def fail(e: Exception, code: int = 400):
+    def fail(e: Exception, code: Optional[int] = None):
+        """Raise the HTTP error for `e`. Without `code` the class decides: not found 404, conflict 409, else 400."""
+        if code is None:
+            code = 404 if isinstance(e, SchedulerNotFound) else 409 if isinstance(e, SchedulerConflict) else 400
         raise HTTPException(status_code=code, detail=str(e))
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException):  # also Starlette's own 404/405
+        return error_reply(exc.status_code, exc.detail, exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(request: Request, exc: RequestValidationError):
+        return error_reply(422, jsonable_encoder(exc.errors()))
 
     def spark(task_id: str, n: int = 60) -> List[float]:
         t = sched.store.get_task(task_id)
@@ -709,9 +764,10 @@ def create_app(
     sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
 
     @app.get("/api/system")
-    def system(procs: bool = False):
-        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes."""
-        return reply(sysmon.snapshot(procs))
+    def system(procs: bool = False, since: Optional[float] = None):
+        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes.
+        `since` (a sample time) trims `history` to the newer samples, so a poll sends one sample, not 120."""
+        return reply(sysmon.snapshot(procs, since))
 
     class AskIn(BaseModel):
         question: str = Field(min_length=1, max_length=2000)
@@ -1179,7 +1235,7 @@ def create_app(
         try:
             return reply(sched.retry_job(job_id, by=by))
         except SchedulerError as e:
-            fail(e, 409)
+            fail(e)
 
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(job_id: str, request: Request):
@@ -1190,7 +1246,7 @@ def create_app(
         try:
             sched.delete_job(job_id)
         except SchedulerError as e:
-            fail(e, 409)
+            fail(e)
         return reply({"deleted": job_id})
 
     def job_or_404(job_id: str) -> Dict[str, Any]:
@@ -1280,6 +1336,31 @@ def create_app(
         if not t:
             raise HTTPException(404, "unknown task")
         return reply({"task_id": task_id, "job_id": t["job_id"], **results_for(t)})
+
+    @app.get("/api/tasks/{task_id}/compare")
+    def task_compare(task_id: str, channel: Optional[str] = None, size: int = 512, arrays: bool = True):
+        """FLUXlight against AIA for one channel (A4-03): both images at a display size, the shared WCS, the summary
+        numbers aia.compare gives, and the shared stretch. Without an AIA file on disk it says so and sends the model.
+        """
+        from . import compare
+
+        t = sched.store.get_task(task_id)
+        if not t:
+            raise HTTPException(404, "unknown task")
+        if channel is not None and not channel.isdigit():
+            raise HTTPException(400, "channel is an AIA wavelength such as 193")
+        res = results_for(t)
+        try:
+            state = sched.task_state(task_id)
+        except Exception:  # noqa: BLE001
+            state = {}
+        try:
+            body = compare.for_task(
+                res["products"], state.get("artifacts"), res["data_dir"], channel, size, cr=t.get("cr"), arrays=arrays
+            )
+        except Exception as e:  # noqa: BLE001 - a bad FITS header should read as a message, not a 500
+            raise HTTPException(422, f"could not compare these images: {e}")
+        return reply({"task_id": task_id, "cr": t.get("cr"), **body})
 
     @app.get("/api/jobs/{job_id}/files")
     def job_files(job_id: str):
@@ -1854,8 +1935,7 @@ def create_app(
         if wait and store.last_seq() <= since:
             who = clean_id(request.headers.get("x-flux-session")) or (request.client.host if request.client else "?")
             if waits.get(who, 0) >= 4 or sum(waits.values()) >= 64:
-                busy = {"detail": "too many waiting requests"}
-                return JSONResponse(busy, status_code=429, headers={"Retry-After": "5"})
+                return error_reply(429, "too many waiting requests", {"Retry-After": "5"})
             waits[who] = waits.get(who, 0) + 1
             try:
                 end = time.monotonic() + wait
@@ -2264,8 +2344,7 @@ def create_app(
     def push_states() -> None:
         for t in sched.store.tasks_with_status("running"):
             state = sched.task_state(t["id"])
-            # observed_at changes every poll; compare without it
-            key = json.dumps({k: v for k, v in clean(state).items() if k != "observed_at"}, sort_keys=True, default=str)
+            key = state_change_key(state)  # clock-driven fields (elapsed_s, age_s, observed_at) are left out
             if last_state.get(t["id"]) != key:
                 last_state[t["id"]] = key
                 hub.publish("task_state", state)

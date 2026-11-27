@@ -88,6 +88,16 @@ CURRENT_CALL: "contextvars.ContextVar[Tuple[str, str]]" = contextvars.ContextVar
 SUPERSEDES: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("flux_supersedes", default=None)
 
 
+def _code(resp: "httpx.Response") -> str:
+    """The server's stable error code (not_found, conflict, invalid, busy, ...), or "" from an older server."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) else ""
+
+
 def _detail(resp: "httpx.Response") -> str:
     try:
         body = resp.json()
@@ -168,7 +178,8 @@ class PlumberClient:
         if resp.status_code == 403:
             raise PlumberError(f"Plumber refused the request (HTTP 403): {_detail(resp)}")
         if resp.status_code >= 400:
-            raise PlumberError(_detail(resp))
+            code = _code(resp)
+            raise PlumberError(f"{_detail(resp)} [{code}]" if code else _detail(resp))
         return resp
 
     def get(self, path: str, **params) -> Any:
@@ -1215,6 +1226,30 @@ def build_server(
         )
         caption = f"{state.get('id')} artifact {art['index']} of {len(arts)}: {art['name']} ({note})"
         return [Image(data=data, format=fmt), cap(caption)]
+
+    @tool(
+        "How close a task's FLUXlight EUV image is to AIA, for one channel: the numbers /api/tasks/{id}/compare gives "
+        "(pixels compared, model over AIA total, median log10 ratio, log correlation, the shared WCS) and one picture, "
+        "FLUXlight | AIA | log ratio. If the AIA file is not on the machine it says so and sends the model image only; "
+        "it never makes one up.",
+        ro,
+        True,
+    )
+    async def get_comparison(task_id: str, channel: Optional[str] = None, max_edge: int = 512) -> list:
+        body = await get(
+            f"/api/tasks/{ident(task_id, 'task_id')}/compare", channel=channel, size=clamp(max_edge, 64, 1024)
+        )
+        info = {k: v for k, v in body.items() if k not in ("model", "aia", "stretch")}
+        for k in ("model", "aia"):
+            if body.get(k):
+                info[k] = {kk: v for kk, v in body[k].items() if kk != "data"}
+        out: list = [dumps(info)]
+        if body.get("available"):
+            from .compare import side_by_side_png
+
+            png = await anyio.to_thread.run_sync(side_by_side_png, body)
+            out.append(Image(data=png, format="png"))
+        return out
 
     return server
 

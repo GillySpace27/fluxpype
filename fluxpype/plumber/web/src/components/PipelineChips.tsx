@@ -15,6 +15,7 @@ const SHORT: Record<string, string> = {
   wind: "Wind",
   wind_plots: "Plots",
   fluxlight: "Light",
+  euv: "EUV",
 };
 
 const SOURCE_NOTE: Record<string, string> = {
@@ -40,7 +41,7 @@ export function stageTip(s: Stage) {
   );
 }
 
-/** The ten pipeline stages as chips. Filled when the state comes from events, outlined when it was inferred. */
+/** The pipeline stages as chips. Filled when the state comes from events, outlined when it was inferred. */
 export function PipelineChips({ stages, className, selected, onSelect, fill, reused }: { stages: Stage[]; className?: string; selected?: string; onSelect?: (id: string) => void; fill?: Record<string, number>; reused?: Set<string> }) {
   // with onSelect the chips are radio buttons: one stage at a time, arrow keys move between them
   const move = (e: React.KeyboardEvent, i: number) => {
@@ -52,7 +53,7 @@ export function PipelineChips({ stages, className, selected, onSelect, fill, reu
     (e.currentTarget.closest("[role=radiogroup]")?.querySelectorAll<HTMLElement>("[role=radio]")[j])?.focus();
   };
   return (
-    <ol className={cn("grid grid-cols-5 gap-1.5 sm:grid-cols-10", className)} aria-label="Pipeline stages" role={onSelect ? "radiogroup" : undefined}>
+    <ol className={cn("grid grid-cols-6 gap-1.5 sm:grid-cols-11", className)} aria-label="Pipeline stages" role={onSelect ? "radiogroup" : undefined}>
       {stages.map((s, i) => {
         const inferred = s.source !== "event" && s.source !== "none";
         const tone =

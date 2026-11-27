@@ -108,12 +108,12 @@ class SysMon:
         return s
 
     # --------------------------------------------------------------- the full picture
-    def snapshot(self, procs: bool = False) -> Dict[str, Any]:
+    def snapshot(self, procs: bool = False, since: Optional[float] = None) -> Dict[str, Any]:
         cur = self.sample()
         out: Dict[str, Any] = {
             "psutil": psutil is not None,
             "now": cur,
-            "history": list(self.hist),
+            "history": [h for h in self.hist if since is None or h["t"] > since],
             "cpu_count": os.cpu_count(),
             "load": list(os.getloadavg()),
             "gpu": self._gpu[1],

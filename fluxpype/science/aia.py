@@ -127,8 +127,9 @@ def compare(model_path, aia_path, channel=193, out=None, png=True):
 
     with fits.open(model_path) as h:
         ext = f"SYN_A{channel}"
-        model = h[ext].data.astype(float)
-        mhdr = h[ext].header
+        hdu = h[ext] if ext in h else h[0]  # a fluxlight_euv cube, or one per-channel file from light_fits
+        model = hdu.data.astype(float)
+        mhdr = hdu.header
     aia = sunpy.map.Map(aia_path)
     target = WCS(mhdr)
     with warnings.catch_warnings():

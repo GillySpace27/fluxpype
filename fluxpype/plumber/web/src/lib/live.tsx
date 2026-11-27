@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "../components/ui";
 import { api, TAB_ID } from "./api";
 import { eventDetail, eventTitle, notifyEnabled, toastWorthy } from "./events";
-import type { EventPage, PlumberEvent, TaskState } from "./types";
+import type { EventPage, Job, Overview, PlumberEvent, TaskState } from "./types";
 
 const KEEP = 500; // events held in memory; older pages load on demand
 
@@ -203,8 +203,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           }
           case "task_state": {
             const s = msg.data as TaskState;
+            const prev = qc.getQueryData<TaskState>(["task", s.id]);
             qc.setQueryData(["task", s.id], s);
-            soon([["overview"], ["job", s.job_id], ["relax", s.id]]);
+            // a push means something changed: patch the cached copies instead of refetching them (A4-07)
+            qc.setQueryData<Overview>(["overview"], (o) => (o ? { ...o, running: o.running.map((r) => (r.id === s.id ? s : r)) } : o));
+            qc.setQueryData<Job>(["job", s.job_id], (j) => (j?.states?.[s.id] ? { ...j, states: { ...j.states, [s.id]: s } } : j));
+            const keys: unknown[][] = [];
+            if (!prev || prev.status !== s.status) keys.push(["overview"], ["job", s.job_id]); // rows move between lists
+            if (!prev || prev.relax.n_points !== s.relax.n_points || prev.relax.cycles !== s.relax.cycles) keys.push(["relax", s.id]); // a delta fetch
+            if (keys.length) soon(keys);
             break;
           }
           case "job_state":

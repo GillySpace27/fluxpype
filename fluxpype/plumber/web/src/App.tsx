@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { CachePage } from "./pages/Cache";
+import { ComparePage } from "./pages/Compare";
 import { JobDetail } from "./pages/JobDetail";
 import { JobsPage } from "./pages/Jobs";
 import { NewRun } from "./pages/NewRun";
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="jobs/new" element={<NewRun />} />
         <Route path="jobs/:id" element={<JobDetail />} />
         <Route path="jobs/:id/:taskId" element={<JobDetail />} />
+        <Route path="jobs/:id/:taskId/compare" element={<ComparePage />} />
         <Route path="scenes" element={<ScenesPage />} />
         <Route path="cache" element={<CachePage />} />
         <Route path="run" element={<Navigate to="/jobs" replace />} />
