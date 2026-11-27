@@ -66,7 +66,7 @@ Sources: `repo/README.md`, `repo/doc/flux.md`, wiki `Home.md`, `User_Manual.md`,
 | Perl/PDL | `use PDL; use Flux;` objects Flux::World, ::Concentration, ::Fluxon, ::Vertex (tied hashes) | `repo/pdl/Flux` |
 | PDL autoload scripts | `simple_relaxer`, `make_world_sphere`, `fluxon_placement_hilbert`, etc. | `repo/pdl/PDL/*.pdl` |
 | Python (repo) | `rdworld.py`, `plt-world.py`, `plt-relax.py`, `vizworld.py` | `repo/py` |
-| Build | top `Makefile` targets everything/install/condaflux | `repo/Makefile` |
+| Build | top `Makefile` targets everything/install/condaflux (never run `make condaflux` or `make condauninstall`: both run `lib/uninstall_condaflux.sh`, which can `rm -rf` the first PERL5LIB/PDLLIB folder containing "flux" with no prompt, and they fail on Ubuntu; instead activate the conda env so its perl is first on PATH and run `( unset PL_PREFIX PERL5LIB PDLLIB; FL_PREFIX="$CONDA_PREFIX" make everything )` from the fluxon-mhd checkout) | `repo/Makefile` |
 
 Key Flux::World methods (World.pm POD): `read_world($f)` (`.gz` gunzipped via /tmp), `str2world($s)`,
 `write_world($f)` (`.gz` gzipped), `string`, `fluxon_ids`, `fluxons(@ids)`, `vertex_ids`, `vertices`,
@@ -212,7 +212,7 @@ For a hand-written file without image LINE rows, add 4 vertices and 2 fluxons to
 | `world/cr<CR>_f<N>_<inst>.flux` | initial text world | `make_world_from_pfss.pm` |
 | `world/..._relaxed_s<k>.flux` | relaxed text world | `relax_pfss_world.pm` |
 | `world/<name>.light` | **Python pickle** (protocol 4), not a FLUX format | `fluxlight.py` `do_fluxlight`: path = `.flux` replaced by `.light`; cache of `simulate_thomson_scattering` results. |
-| `light/cr<CR>_fluxlight_light_<method>_<nz>[...].png` | renders | `fluxlight.py` |
+| `light/cr<CR>_f<N>_<inst>_fluxlight_light_<method>_<nz>[...].png` (older batches: `cr<CR>_fluxlight_light_...`) | renders | `fluxlight.py` |
 | `cr<CR>_f<N>_fluxlight_world.png`, `_world_zoom.png`, `_world_zoom_{x,-x,y,-y,z,-z}.png` | matplotlib 3-D plots | `open_world_python.py` `plot_all`-style method; zoom = axes limited to +/-3 (R_sun inferred) |
 | magnetogram FITS | HMI or ADAPT synoptic, reduced by `reduce` | `get_magnetograms.py` (filenames not checked) |
 

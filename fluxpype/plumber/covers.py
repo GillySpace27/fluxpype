@@ -68,7 +68,12 @@ def find(ctx: Optional[ProbeContext]) -> Optional[Tuple[str, str]]:
 def _find(ctx: ProbeContext) -> Optional[Tuple[str, str]]:
     pats = ctx.patterns()
     n = str(ctx.nflux)
-    light = [p for p in _glob(pats["fluxlight"]) if p.lower().endswith(IMG) and for_this_nflux(os.path.basename(p), n)]
+    inst = ctx.inst
+    light = []
+    for pat in pats["fluxlight"]:  # new name first, the old one only when no file carries the new
+        light = [p for p in _glob([pat]) if p.lower().endswith(IMG) and for_this_nflux(os.path.basename(p), n, inst)]
+        if light:
+            break
     if light:
         return _newest(light), "image"
     batch = os.path.join(ctx.data_dir, "batches", ctx.batch)
@@ -76,7 +81,9 @@ def _find(ctx: ProbeContext) -> Optional[Tuple[str, str]]:
     plots = [
         p
         for p in _glob([os.path.join(batch, "imgs", "**", "*")])
-        if p.lower().endswith(IMG) and tag in os.path.basename(p).lower() and for_this_nflux(os.path.basename(p), n)
+        if p.lower().endswith(IMG)
+        and tag in os.path.basename(p).lower()
+        and for_this_nflux(os.path.basename(p), n, inst)
     ]
     if plots:
         best = min(_rank_plot(p) for p in plots)
@@ -84,12 +91,12 @@ def _find(ctx: ProbeContext) -> Optional[Tuple[str, str]]:
     beside = [
         p
         for p in _glob([os.path.join(batch, "data", tag, "**", "*")])
-        if p.lower().endswith(IMG) and for_this_nflux(os.path.basename(p), n)
+        if p.lower().endswith(IMG) and for_this_nflux(os.path.basename(p), n, inst)
     ]
     if beside:
         return _newest(beside), "image"
     for key in ("relax", "world"):
-        world = _newest([p for p in _glob(pats[key]) if for_this_nflux(os.path.basename(p), n)])
+        world = _newest([p for p in _glob(pats[key]) if for_this_nflux(os.path.basename(p), n, inst)])
         if world:
             return world, "flux"
     mag = _newest(_glob(pats["magnetogram"]))

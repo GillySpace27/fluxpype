@@ -34,6 +34,7 @@ Dependencies:
     argparse, os.path, matplotlib.pyplot, numpy
 """
 
+from fluxpype import names
 import argparse
 import os.path
 import matplotlib.pyplot as plt
@@ -116,12 +117,20 @@ def multiplot_bmag_all(args, r1=1, r2=-1, do_r2=False, maxlist=None, do_stiff=Fa
 
     # Parse the arguments and directories
     batch = args.batch
-    relaxed_filename = (
-        args.file
-        or f"{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_radial_bmag_all.dat"
+    relaxed_filename = args.file or names.wind_dat_path(
+        f"{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind",
+        args.cr,
+        args.nwant,
+        names.inst_name(getattr(args, "adapt", 0)),
+        "bmag_all",
     )
-    stiff_filename = (
-        f"{args.dat_dir}/batches/{batch}/data/cr{args.cr}/wind/cr{args.cr}_f{args.nwant}_stiff_radial_bmag_all.dat"
+    stiff_filename = names.wind_dat_path(
+        f"{args.dat_dir}/batches/{args.batch}/data/cr{args.cr}/wind",
+        args.cr,
+        args.nwant,
+        names.inst_name(getattr(args, "adapt", 0)),
+        "bmag_all",
+        stiff=True,
     )
 
     if do_stiff:

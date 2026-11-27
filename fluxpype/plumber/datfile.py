@@ -51,7 +51,7 @@ KINDS: List[Dict[str, Any]] = [
     {
         "id": "bmag",
         "label": "Open-fluxon end field",
-        "pattern": r"^cr\d+_f\d+_radial_bmag\.dat$",
+        "pattern": r"^cr\d+_f\d+(?:_(?:hmi|adapt))?_radial_bmag\.dat$",
         "writer": "map_fluxon_b.pm:114 (wcols); column names as unpacked in plot_bmag.py:57",
         "columns": [
             ("fluxon", ""),
@@ -70,7 +70,7 @@ KINDS: List[Dict[str, Any]] = [
     {
         "id": "bmag_all",
         "label": "Radial profiles of B",
-        "pattern": r"^cr\d+_f\d+(?:_stiff)?_radial_bmag_all\.dat$",
+        "pattern": r"^cr\d+_f\d+(?:_(?:hmi|adapt))?(?:_stiff)?_radial_bmag_all\.dat$",
         "writer": "map_fluxon_b_all.pm:31 (header), :92 (rows)",
         "columns": None,  # the file has a header line
         "plot": {**_PROFILE, "y": 9, "logy": True},
@@ -82,7 +82,7 @@ KINDS: List[Dict[str, Any]] = [
     {
         "id": "fr",
         "label": "Expansion factor profiles",
-        "pattern": r"^cr\d+_f\d+_radial_fr\.dat$",
+        "pattern": r"^cr\d+_f\d+(?:_(?:hmi|adapt))?_radial_fr\.dat$",
         "writer": "map_fluxon_fr.pm:79",
         "columns": [
             ("fluxon", ""),
@@ -101,7 +101,7 @@ KINDS: List[Dict[str, Any]] = [
     {
         "id": "wind",
         "label": "Wind solution per fluxon",
-        "pattern": r"^cr\d+_f\d+_radial_wind_(?:parker|wsa|ghosts|tempest|cranmer|schonfeld)\.dat$",
+        "pattern": r"^cr\d+_f\d+(?:_(?:hmi|adapt))?_radial_wind_(?:parker|wsa|ghosts|tempest|cranmer|schonfeld)\.dat$",
         "writer": "map_fluxon_flow_parallel_master.pm:455 (wcols); names as read in plot_wind_map_square.py:398",
         "columns": [
             ("fluxon", ""),

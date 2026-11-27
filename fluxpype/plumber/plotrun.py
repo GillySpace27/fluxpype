@@ -16,6 +16,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from .. import names
 from . import config_io, launcher, paths
 from .backends.local import poll_run_dir
 from .monitor import ProbeContext
@@ -174,13 +175,16 @@ def resolve_needs(entry: Dict[str, Any], ctx: ProbeContext) -> Tuple[Dict[str, s
     found, missing = {}, []
     for name, tmpl in (entry.get("needs") or {}).items():
         rel = _fill(tmpl, v)
-        hits = [
-            p
-            for p in glob.glob(os.path.join(glob.escape(ctx.data_dir), rel))
-            if os.path.isfile(p) and _inside(p, ctx.data_dir)
-        ]
-        if hits:
-            found[name] = sorted(hits, key=_natural)[-1]
+        old = names.legacy_template(tmpl)  # a batch written before A7-01 has the old file name
+        for cand in [rel] + ([_fill(old, v)] if old else []):
+            hits = [
+                p
+                for p in glob.glob(os.path.join(glob.escape(ctx.data_dir), cand))
+                if os.path.isfile(p) and _inside(p, ctx.data_dir)
+            ]
+            if hits:
+                found[name] = sorted(hits, key=_natural)[-1]
+                break
         else:
             missing.append(rel)
     return found, missing
@@ -196,15 +200,29 @@ def resolve_command(entry: Dict[str, Any], ctx: ProbeContext, python: str, input
     return argv
 
 
+def _fill_pattern(pattern: str, ctx: ProbeContext) -> str:
+    return pattern.replace("{cr}", str(ctx.cr)).replace("{nflux}", str(ctx.nflux)).replace("{inst}", str(ctx.inst))
+
+
 def _pattern(entry: Dict[str, Any], ctx: ProbeContext) -> str:
-    return entry["pattern"].replace("{cr}", str(ctx.cr)).replace("{nflux}", str(ctx.nflux))
+    return _fill_pattern(entry["pattern"], ctx)
+
+
+def pattern_candidates(entry: Dict[str, Any], ctx: ProbeContext) -> List[str]:
+    """The entry's file glob for this task: the current name, then the pre-A7-01 name when the entry has one."""
+    old = names.legacy_template(entry["pattern"])
+    return [_fill_pattern(entry["pattern"], ctx)] + ([_fill_pattern(old, ctx)] if old else [])
 
 
 def targets(entry: Dict[str, Any], ctx: ProbeContext) -> List[str]:
-    """Existing files (absolute) the plot is written to, confined to the data folder."""
+    """Existing files (absolute) the plot is written to, confined to the data folder (new name, else the old one)."""
     batch_dir = os.path.join(ctx.data_dir, "batches", ctx.batch)
-    pat = os.path.normpath(os.path.join(glob.escape(batch_dir), _pattern(entry, ctx)))
-    return sorted(p for p in glob.glob(pat) if os.path.isfile(p) and _inside(p, ctx.data_dir))
+    for cand in pattern_candidates(entry, ctx):
+        pat = os.path.normpath(os.path.join(glob.escape(batch_dir), cand))
+        hits = sorted(p for p in glob.glob(pat) if os.path.isfile(p) and _inside(p, ctx.data_dir))
+        if hits:
+            return hits
+    return []
 
 
 def _rel(path: str, root: str) -> str:

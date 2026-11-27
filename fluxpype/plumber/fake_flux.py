@@ -276,9 +276,11 @@ class Fake:
         self.say("\n\tRadial Expansion Factor (Fr) Calculation...Done! Saved to \n\tfr.dat")
         self.say("\n\n\tRadial Wind Speed Calculation...")
         self.sleep(3.0)
-        self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{a.method}_wind.dat", size=int(n) * 2400)
+        self.touch(
+            f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_radial_wind_{a.method}.dat", size=int(n) * 2400
+        )
         for suffix in ("bmag", "bmag_all", "fr"):  # inputs for the post-hoc wind plots
-            self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_radial_{suffix}.dat", size=256)
+            self.touch(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_radial_{suffix}.dat", size=256)
         self.touch(
             f"batches/{self.batch}/data/cr{cr}/wind/full_velocity_profiles/results_{a.method}_full_velocity.dat",
             size=256,
@@ -291,7 +293,7 @@ class Fake:
         self.stage("wind_plots")
         self.banner(f"(py) Plotting Solar Wind Maps for CR{cr}")
         self.sleep(3.2)
-        self.image(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{a.method}_wind.png", "wind")
+        self.image(f"batches/{self.batch}/data/cr{cr}/wind/cr{cr}_f{n}_{inst}_{a.method}_wind.png", "wind")
         self.say("\nDone with wind plotting!\n```````````````````````````````\n")
         self.end("wind_plots", started=t)
 
@@ -301,7 +303,7 @@ class Fake:
             self.stage("fluxlight")
             self.sleep(3.5)
             path = self.image(
-                f"batches/{self.batch}/data/cr{cr}/light/cr{cr}_fluxlight_light_{a.method}_1.png", "light"
+                f"batches/{self.batch}/data/cr{cr}/light/cr{cr}_f{n}_{inst}_fluxlight_light_{a.method}_1.png", "light"
             )
             self.event("artifact", path=path, kind="image")
             self.end("fluxlight", started=t)
