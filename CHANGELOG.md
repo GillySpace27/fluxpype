@@ -28,6 +28,8 @@ parentheses.
 
 ### Added
 
+- `flux_seed` setting: `0` fixed (default), `jd` from the Julian date, or an integer; sets the FLUX Perl seeds and logs
+  them (A1-05, #122).
 - FLUXlight vs AIA side-by-side compare view, `GET /api/tasks/{id}/compare` and MCP `get_comparison` (A4-03, #114).
 - FLUXlight EUV renderer, synthetic AIA DN/s, GHOSTS port, Cranmer and Gilly loop model, KD-tree neighbour seeds and
   full-precision worlds (#85).
@@ -46,6 +48,8 @@ parentheses.
 
 ### Fixed
 
+- FLUX relax is repeatable run to run on simple-4 and planar_shear2: realflux CI builds the GillySpace27 fork with
+  `r_cl = 0` in `new_vertex` (fluxon-mhd 3fbce8b); planar_shear2 and twisted goldens moved (A1-05, #122).
 - Magnetogram to FLUXlight path unblocked for the SBIR run: PFSS empty-line handling, AIA header, FLUXlight about 6x
   faster (#86).
 - FLUXlight loads input-form worlds through one world parser (A2-06, #102).
@@ -64,8 +68,9 @@ parentheses.
 
 ### Known issues
 
-- FLUX relax is not bit-repeatable run to run (A1-05): an uninitialized `r_cl` in fluxon-mhd's `new_vertex`. The fix
-  goes into the GillySpace27 fork with a seed toggle; until it lands, a realflux golden can fail and pass on re-run.
+- FLUX relax still has other uninitialized reads in fluxon-mhd (`passno` in `expand_lengthwise`, a hull workspace in
+  `f_pressure_equi2b`); the `twisted` fixture can still differ run to run under heap perturbation. Not fixed (core
+  freeze).
 
 ## 0.4.0 (2026-11-13)
 
