@@ -853,6 +853,37 @@ def test_the_ask_bar_proposes_a_scene_edit_and_a_person_saves_it(rig, monkeypatc
     assert rig.ok("get_scene_history", scene_id="arc-v2")["versions"][-1]["author"] == "ask"
 
 
+def test_scene_validate_and_preview_routes_match_the_mcp_tools(rig):
+    for name, pairing in (("arc_a", [0, 1, 2, 3]), ("arc_b", [1, 0, 3, 2])):
+        rig.ok("create_scene", spec={"name": name, "n_lines": 4, "lid_height": 4, "pairing": pairing})
+    spec_a = rig.tc.get("/api/scenes/arc_a", headers=H).json()["spec"]
+    before = rig.tc.get("/api/scenes", headers=H).json()
+    # valid scene: same JSON as the MCP tool, with and without a fair-pair check
+    r = rig.tc.post("/api/scenes/validate", json={"spec": spec_a, "compare_with": "arc_b"}, headers=H)
+    assert r.status_code == 200 and r.json() == rig.ok("validate_scene", spec=spec_a, compare_with="arc_b")
+    assert r.json()["ok"] and r.json()["report"]["lines"] == 4 and r.json()["fair_pair_with"]["fair"] is True
+    r = rig.tc.post("/api/scenes/validate", json={"spec": spec_a}, headers=H)
+    assert r.json() == rig.ok("validate_scene", scene_id="arc_a") and "fair_pair_with" not in r.json()
+    # invalid scene: 200 with ok false and a clear problem, same as the tool
+    bad_spec = {"name": "x1", "n_lines": 3, "lid_height": 1.0}
+    bad = rig.tc.post("/api/scenes/validate", json={"spec": bad_spec}, headers=H)
+    assert bad.status_code == 200 and bad.json()["ok"] is False and "lid_height" in bad.json()["problem"]
+    assert bad.json() == rig.ok("validate_scene", spec=bad_spec)
+    assert (
+        rig.tc.post("/api/scenes/validate", json={"spec": spec_a, "compare_with": "nope"}, headers=H).status_code == 404
+    )
+    assert rig.tc.post("/api/scenes/validate", json={}, headers=H).status_code == 422
+    # preview: same JSON as the tool, and a 400 with the problem for an invalid spec
+    p = rig.tc.post("/api/scenes/preview", json={"spec": {"name": "pv", "n_lines": 3}}, headers=H)
+    assert p.status_code == 200 and p.json() == rig.ok("preview_scene", spec={"name": "pv", "n_lines": 3})
+    assert p.json()["lines"] == 3 and p.json()["rows"][0]["chord"] == 2.0 and p.json()["pairing"] == [0, 1, 2]
+    pb = rig.tc.post("/api/scenes/preview", json={"spec": bad_spec}, headers=H)
+    assert pb.status_code == 400 and "lid_height" in pb.json()["detail"]
+    # read-only: nothing was saved by any of the above, and the routes need the token
+    assert rig.tc.get("/api/scenes", headers=H).json() == before
+    assert rig.tc.post("/api/scenes/validate", json={"spec": spec_a}).status_code == 401
+
+
 def test_scene_tools_validate_preview_relax_and_read_results(rig):
     for name, lid in (("arc_a", 4), ("arc_b", 4)):
         rig.ok(

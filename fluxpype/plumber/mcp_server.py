@@ -33,7 +33,7 @@ except ImportError as _e:  # pragma: no cover - exercised only without the extra
     raise SystemExit(2)
 
 from . import notify, paths, proposals
-from ..scenes import checks as scene_checks, store as scene_store
+from ..scenes import design as scene_design, store as scene_store
 from .launcher import process_alive
 
 LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
@@ -990,31 +990,11 @@ def build_server(
         spec: Optional[Dict[str, Any]] = None, scene_id: Optional[str] = None, compare_with: Optional[str] = None
     ) -> str:
         sp = await scene_spec(spec, scene_id)
+        other = (await get(f"/api/scenes/{ident(compare_with, 'compare_with')}"))["spec"] if compare_with else None
         try:
-            made = await anyio.to_thread.run_sync(scene_store.prepare, sp)
+            return dumps(await anyio.to_thread.run_sync(scene_design.validate, sp, other, compare_with or ""))
         except scene_store.SceneError as e:
-            return dumps({"ok": False, "problem": str(e)})
-        rep = made["report"]
-        out: Dict[str, Any] = {
-            "ok": True,
-            "name": made["spec"].name,
-            "content_hash": made["spec"].content_hash(),
-            "pairing": made["spec"].pairs(),
-            "report": {
-                k: rep[k]
-                for k in ("lines", "vertices", "net_flux", "max_height", "min_line_separation", "photosphere", "lid")
-            },
-            "note": "Connectivity is hand-set and these are construction checks only; nothing here says how the world relaxes.",
-        }
-        if compare_with:
-            other = (await get(f"/api/scenes/{ident(compare_with, 'compare_with')}"))["spec"]
-            try:
-                text_b = (await anyio.to_thread.run_sync(scene_store.prepare, other))["text"]
-            except scene_store.SceneError as e:
-                raise ToolError(f"{compare_with}: {e}")
-            why = scene_checks.comparable(made["text"], text_b)
-            out["fair_pair_with"] = {"scene": compare_with, "fair": not why, "why_not": why}
-        return dumps(out)
+            raise ToolError(str(e))
 
     @tool(
         "The compiled world of a scene in brief, without saving it: header lines (photosphere, lid), the bounding box, "
@@ -1026,10 +1006,9 @@ def build_server(
     async def preview_scene(spec: Optional[Dict[str, Any]] = None, scene_id: Optional[str] = None) -> str:
         sp = await scene_spec(spec, scene_id)
         try:
-            made = await anyio.to_thread.run_sync(scene_store.prepare, sp)
+            return dumps(await anyio.to_thread.run_sync(scene_design.preview, sp))
         except scene_store.SceneError as e:
             raise ToolError(str(e))
-        return dumps({"name": made["spec"].name, "pairing": made["spec"].pairs(), **scene_checks.preview(made["text"])})
 
     @tool(
         "The result of a scene relaxation task (`task_id`) or a table of a whole scene job (`job_id`, one row per task: "

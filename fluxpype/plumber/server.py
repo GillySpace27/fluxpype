@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from pydantic import BaseModel, Field, ValidationError
 
 from . import config_io, covers, external_runs, handoff, paths, plotrun, scene_jobs
-from ..scenes import store as scene_store
+from ..scenes import design as scene_design, store as scene_store
 from .agent_log import AgentLog
 from .backends.fake import SCENARIOS
 from .cache import Cache, CacheError
@@ -253,6 +253,11 @@ class DataDirIn(BaseModel):
 
 class SceneIn(BaseModel):
     spec: Dict[str, Any]
+
+
+class SceneValidateIn(BaseModel):
+    spec: Dict[str, Any]
+    compare_with: Optional[str] = None  # a saved scene id: also say whether the two are a fair pair
 
 
 class SceneEditBody(BaseModel):
@@ -1059,6 +1064,29 @@ def create_app(
     def scene_create(body: SceneIn):
         try:
             return reply(scene_store.save(sched.data_dir(), body.spec), 201)
+        except scene_store.SceneError as e:
+            fail(e)
+
+    @app.post("/api/scenes/validate")
+    def scene_validate(body: SceneValidateIn):
+        """Read-only: compile an unsaved spec and run its construction checks (same function as the MCP tool). An
+        invalid spec answers 200 with ok false and the problem; nothing is saved."""
+        other = None
+        if body.compare_with:
+            row = scene_store.get(sched.data_dir(), body.compare_with)
+            if not row:
+                raise HTTPException(404, "unknown scene in compare_with")
+            other = row["spec"]
+        try:
+            return reply(scene_design.validate(body.spec, other, body.compare_with or ""))
+        except scene_store.SceneError as e:
+            fail(e)
+
+    @app.post("/api/scenes/preview")
+    def scene_preview(body: SceneIn):
+        """Read-only: the compiled world of an unsaved spec in brief (same function as the MCP tool)."""
+        try:
+            return reply(scene_design.preview(body.spec))
         except scene_store.SceneError as e:
             fail(e)
 

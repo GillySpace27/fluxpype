@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Boxes, ChevronDown, Play } from "lucide-react";
+import { Boxes, ChevronDown, Play, Plus } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from "../components/ui";
@@ -154,17 +154,121 @@ function SceneCard({ s, open, onToggle, others }: { s: SceneRow; open: boolean; 
   );
 }
 
+interface ValidateOut {
+  ok: boolean;
+  problem?: string;
+  name?: string;
+  content_hash?: string;
+  report?: Record<string, unknown>;
+  fair_pair_with?: { scene: string; fair: boolean; why_not: string[] | string | null };
+  note?: string;
+}
+interface PreviewOut {
+  name: string;
+  lines: number;
+  rows: Record<string, unknown>[];
+  [k: string]: unknown;
+}
+
+const STARTER = JSON.stringify({ name: "my-arcade", n_lines: 4, lid_height: 4 }, null, 2);
+
+/** Write or paste a scene spec (the same JSON as create_scene), check it and see its compiled world, then save it.
+ *  Validate and Preview are read-only and cost no Claude turn. */
+function NewScene({ others }: { others: SceneRow[] }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState(STARTER);
+  const [cmp, setCmp] = useState("");
+  let spec: Record<string, unknown> | null = null;
+  let parseErr = "";
+  try {
+    const v = JSON.parse(text);
+    if (v && typeof v === "object" && !Array.isArray(v)) spec = v;
+    else parseErr = "A scene is a JSON object.";
+  } catch (e) {
+    parseErr = e instanceof Error ? e.message : String(e);
+  }
+  const check = useMutation({ mutationFn: () => api.post<ValidateOut>("/api/scenes/validate", { spec, ...(cmp ? { compare_with: cmp } : {}) }) });
+  const view = useMutation({ mutationFn: () => api.post<PreviewOut>("/api/scenes/preview", { spec }) });
+  const save = useMutation({
+    mutationFn: () => api.post<{ id: string }>("/api/scenes", { spec }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["scenes"] }),
+  });
+  const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  return (
+    <Card className="mb-3 p-4">
+      <p className="text-sm font-medium">New scene</p>
+      <p className="mt-0.5 text-xs text-muted">Edit the scene file, check it and look at the compiled world. Nothing is saved until you press Save.</p>
+      <textarea
+        aria-label="Scene file (JSON)"
+        className="input mt-2 h-48 w-full font-mono text-[12px]"
+        spellCheck={false}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      {parseErr && <p className="text-xs text-fail">Not valid JSON: {parseErr}</p>}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <label className="text-[11px] text-muted">
+          Fair pair with{" "}
+          <select className="input h-7 text-[12px]" value={cmp} onChange={(e) => setCmp(e.target.value)}>
+            <option value="">none</option>
+            {others.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="btn btn-sm" disabled={!spec || check.isPending} onClick={() => check.mutate()}>
+          Validate
+        </button>
+        <button className="btn btn-sm" disabled={!spec || view.isPending} onClick={() => view.mutate()}>
+          Preview
+        </button>
+        <button className="btn btn-sm" disabled={!spec || save.isPending} onClick={() => save.mutate()}>
+          Save
+        </button>
+      </div>
+      {check.data &&
+        (check.data.ok ? (
+          <div className="mt-2 text-xs">
+            <p className="text-ok">Valid: {check.data.name}</p>
+            <pre className="mt-1 max-h-48 overflow-auto rounded bg-raised p-2 text-[11.5px]">{JSON.stringify(check.data.report, null, 1)}</pre>
+            {check.data.fair_pair_with && (
+              <p className="mt-1">
+                {check.data.fair_pair_with.fair ? "A fair pair" : "Not a fair pair"} with {check.data.fair_pair_with.scene}
+                {check.data.fair_pair_with.fair ? "." : `: ${JSON.stringify(check.data.fair_pair_with.why_not)}`}
+              </p>
+            )}
+            {check.data.note && <p className="mt-1 text-muted">{check.data.note}</p>}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-fail">{check.data.problem}</p>
+        ))}
+      {check.isError && <p className="mt-2 text-xs text-fail">{msg(check.error)}</p>}
+      {view.data && <pre className="mt-2 max-h-72 overflow-auto rounded bg-raised p-2 text-[11.5px]">{JSON.stringify(view.data, null, 1)}</pre>}
+      {view.isError && <p className="mt-2 text-xs text-fail">{msg(view.error)}</p>}
+      {save.data && <p className="mt-2 text-xs text-ok">Saved as {save.data.id}.</p>}
+      {save.isError && <p className="mt-2 text-xs text-fail">{msg(save.error)}</p>}
+    </Card>
+  );
+}
+
 export function ScenesPage() {
   const { data, error, refetch } = useQuery({ queryKey: ["scenes"], queryFn: () => api.get<{ scenes: SceneRow[] }>("/api/scenes"), refetchInterval: 10_000 });
   const [open, setOpen] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   if (error) return <ErrorNote error={error} retry={() => refetch()} />;
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Scenes" sub="Planar worlds saved from the Ask bar or the API: a scene file and its compiled .flux, in the data folder." />
+      <PageHeader title="Scenes" sub="Planar worlds saved from the Ask bar, the form below or the API: a scene file and its compiled .flux, in the data folder." />
+      <button className="btn btn-sm mb-3" onClick={() => setCreating(!creating)} aria-expanded={creating}>
+        <Plus className="h-3.5 w-3.5" /> New scene
+      </button>
+      {creating && <NewScene others={data?.scenes ?? []} />}
       {!data ? (
         <Skeleton className="h-24" />
       ) : data.scenes.length === 0 ? (
-        <EmptyState icon={<Boxes className="h-5 w-5" />} title="No scenes yet" body="Ask Plum for a planar arcade over a polarity inversion line, and run the card she proposes." />
+        <EmptyState icon={<Boxes className="h-5 w-5" />} title="No scenes yet" body="Press New scene to write one, or ask Plum for a planar arcade over a polarity inversion line and run the card she proposes." />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {data.scenes.map((s) => (
