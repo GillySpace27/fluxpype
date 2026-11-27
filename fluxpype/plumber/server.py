@@ -125,6 +125,22 @@ def icon_version() -> str:
     return h.hexdigest()[:10]
 
 
+# Fields of a task state that move with the clock alone. The page computes them from `started` and
+# `last_change`, so they must not make a push (A4-07).
+CLOCK_FIELDS = ("observed_at", "elapsed_s")
+
+
+def state_change_key(state: Dict[str, Any]) -> str:
+    """What decides whether a task_state frame is worth sending: the state without its clock-driven fields."""
+    s = {k: v for k, v in clean(state).items() if k not in CLOCK_FIELDS}
+    src = s.get("sources")
+    if isinstance(src, dict):
+        s["sources"] = {
+            k: ({kk: vv for kk, vv in v.items() if kk != "age_s"} if isinstance(v, dict) else v) for k, v in src.items()
+        }
+    return json.dumps(s, sort_keys=True, default=str)
+
+
 def clean(obj: Any) -> Any:
     """JSON-safe copy: NaN and infinities become null (browsers reject them)."""
     if isinstance(obj, float):
@@ -709,9 +725,10 @@ def create_app(
     sysmon = SysMon(volumes, job_groups, ask_mod.token_rate, lambda: ask_mod.plan(str(sched.home)))
 
     @app.get("/api/system")
-    def system(procs: bool = False):
-        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes."""
-        return reply(sysmon.snapshot(procs))
+    def system(procs: bool = False, since: Optional[float] = None):
+        """CPU, memory, network, disk, GPU and storage for the sidebar monitor; procs=1 adds the busiest processes.
+        `since` (a sample time) trims `history` to the newer samples, so a poll sends one sample, not 120."""
+        return reply(sysmon.snapshot(procs, since))
 
     class AskIn(BaseModel):
         question: str = Field(min_length=1, max_length=2000)
@@ -2264,8 +2281,7 @@ def create_app(
     def push_states() -> None:
         for t in sched.store.tasks_with_status("running"):
             state = sched.task_state(t["id"])
-            # observed_at changes every poll; compare without it
-            key = json.dumps({k: v for k, v in clean(state).items() if k != "observed_at"}, sort_keys=True, default=str)
+            key = state_change_key(state)  # clock-driven fields (elapsed_s, age_s, observed_at) are left out
             if last_state.get(t["id"]) != key:
                 last_state[t["id"]] = key
                 hub.publish("task_state", state)
