@@ -36,9 +36,11 @@ FLUX has two halves: the **core** (a C library with Perl/PDL bindings, in
    > its `perl` is first on `PATH`:
    >
    > ```sh
-   > unset PL_PREFIX PERL5LIB PDLLIB
-   > FL_PREFIX="$CONDA_PREFIX" make everything
+   > ( unset PL_PREFIX PERL5LIB PDLLIB; FL_PREFIX="$CONDA_PREFIX" make everything )
    > ```
+   >
+   > The parentheses run it in a subshell, so your own shell keeps its
+   > `PERL5LIB` and `PDLLIB`.
    >
    > With `PL_PREFIX` empty, `Makefile:24` passes an empty `INSTALL_BASE`, so
    > `Flux.pm` is installed into that Perl's own site directory (already on its
