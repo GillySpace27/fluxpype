@@ -111,7 +111,9 @@ def test_world_input_prefers_the_highest_step(tmp_path):
 def test_missing_inputs_are_listed(tmp_path):
     g = plotrun.generatable(entry("bmag_scatter"), make_ctx(tmp_path))
     assert g["can_generate"] is False
-    assert g["missing_inputs"] == ["batches/B/data/cr2150/wind/cr2150_f1000_radial_bmag.dat"]
+    assert g["missing_inputs"] == [
+        "batches/B/data/cr2150/wind/cr2150_f1000_hmi_radial_bmag.dat"
+    ]  # the new name (A7-01)
     assert plotrun.generatable(entry("world_relaxed_narrow"), make_ctx(tmp_path))["can_generate"] is False
 
 

@@ -234,6 +234,7 @@ class FluxWorld:
         self.name = None
         self.cr = "unknown"
         self.nflx = "unknown"
+        self.inst = "unknown"
         self.areas_by_fluxon = None
         self.filename = filename or None
         self.flux_area_file = None
@@ -255,16 +256,26 @@ class FluxWorld:
             match_f = re.search(r"_f(\d+)_", filename)
             if match_f:
                 self.nflx = match_f.group(1)
+            match_i = re.search(r"_f\d+_(hmi|adapt)(?:_|\.)", filename)
+            if match_i:
+                self.inst = match_i.group(1)
 
             # The wind stage's *_radial_fr.dat is only needed by compute_cross_sectional_areas(method="file").
             # A world with no sibling wind/ folder (wind skipped, a scene, a copied world) must still load,
             # so a missing file leaves flux_area_file None and that method raises if it is ever asked for.
+            # A7-01: the file is cr{CR}_f{N}_{inst}_radial_fr.dat (or the old cr{CR}_f{N}_radial_fr.dat). Skip the sibling
+            # instrument's table, and prefer this world's own qualified name over an old-style one.
             try:
-                self.flux_area_file = [
-                    join(self.dat_dir, pp)
-                    for pp in listdir(self.dat_dir)
+                from fluxpype import names
+
+                cands = [
+                    pp
+                    for pp in sorted(listdir(self.dat_dir))
                     if (pp.endswith("_radial_fr.dat") and self.cr in pp and self.nflx in pp)
-                ][0]
+                    and names.is_this_task(pp, self.nflx, self.inst)
+                ]
+                cands.sort(key=lambda pp: names.inst_in_name(pp) is None)  # stable: qualified names first
+                self.flux_area_file = join(self.dat_dir, cands[0])
             except Exception:
                 self.flux_area_file = None
 

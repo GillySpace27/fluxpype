@@ -136,7 +136,7 @@ sub file_has_content {
 
 sub get_wind {
 
-    my ( $this_world, $CR, $n_want, $recompute, $flow_method_in, $do_stiff) = @_;
+    my ( $this_world, $CR, $n_want, $recompute, $flow_method_in, $do_stiff, $inst) = @_;
 
 
     # Read configurations from disk
@@ -171,7 +171,9 @@ sub get_wind {
     my $do_wind_calc = 0;
 
     my $wind_out_dir   = $datdir . "/batches/$batch_name/data/cr" . $CR . '/wind';
-    my $prefix         = "$wind_out_dir/cr$CR\_f$n_fluxons_wanted";
+    # cr<CR>_f<N>_<inst>: the instrument keeps an HMI and an ADAPT task of one batch from overwriting each other (A7-01).
+    my $inst_str       = ( defined $inst and length $inst ) ? "\_$inst" : "";
+    my $prefix         = "$wind_out_dir/cr$CR\_f$n_fluxons_wanted$inst_str";
     my $out_b          = "$prefix\_radial_bmag.dat";
     my $out_b_all      = "$prefix$stiffness\_radial_bmag_all.dat";
     my $out_fr         = "$prefix\_radial_fr.dat";
@@ -252,7 +254,7 @@ sub get_wind {
         if ( !-e $out_wind || !file_has_content($out_wind)) { $do_wind_map = 1; }
 
         # Pass the image into the main function
-        if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want); }
+        if ($do_wind_map) { map_fluxon_flow_parallel_master( $out_wind, \@fluxons, $flow_method, $CR, $n_want, undef, $inst ); }
         else { print "Skipped on Line 256\n\n";}
 
         # #run the python script to plot the angles
@@ -284,7 +286,8 @@ if ($0 eq __FILE__) {
     my ($highest_file, $highest_number) = find_highest_numbered_file_with_string($world_dir, $search_string);
 
     my $this_world = read_world($highest_file);
-    get_wind($this_world)
+    # The search string above is the HMI world, so the wind tables get the matching _hmi name (A7-01).
+    get_wind( $this_world, undef, undef, undef, undef, undef, "hmi" );
 
 }
 

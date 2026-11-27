@@ -42,6 +42,7 @@ import os.path as path
 from scipy.interpolate import griddata
 from scipy.stats import norm
 from scipy.optimize import curve_fit
+from fluxpype import names
 from fluxpype.pipe_helper import (
     configurations,
     load_fits_magnetogram,
@@ -377,7 +378,9 @@ def plot_wind_map_latitude(configs):
     dat_dir = configs.get("data_dir")
     nwant = configs.get("nwant")
     CR = configs.get("cr")
-    dat_file = configs.get("file", f"{dat_dir}/batches/{batch}/data/cr{CR}/wind/cr{CR}_f{nwant}_radial_wind.dat")
+    dat_file = configs.get("file") or names.wind_dat_path(
+        f"{dat_dir}/batches/{batch}/data/cr{CR}/wind", CR, nwant, names.inst_name(configs.get("adapt", 0)), "wind"
+    )
     all_vmin, all_vmax = configs.get("all_vmin", 450), configs.get("all_vmax", 700)
 
     # Load the wind file
