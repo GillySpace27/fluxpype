@@ -30,6 +30,7 @@ TOOLS = [
     ("set_queue", "write", "Pause or resume the queue, change how many tasks run at once"),
     ("cache_summary", "read", "See what is in the data cache"),
     ("get_task_image", "read", "Look at one of a task's images"),
+    ("get_comparison", "read", "Compare a task's FLUXlight EUV image with AIA"),
     ("create_preset", "write", "Save a new preset (runs nothing)"),
     ("list_scenes", "read", "List the saved scenes"),
     ("get_scene", "read", "Read one scene file"),

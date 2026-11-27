@@ -66,6 +66,18 @@
     "scene"
    ]
   },
+  "get_comparison": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "channel",
+    "max_edge",
+    "task_id"
+   ]
+  },
   "get_external_run": {
    "annotations": {
     "destructive_hint": false,
@@ -430,6 +442,18 @@
     "ops",
     "scene",
     "supersedes"
+   ]
+  },
+  "get_comparison": {
+   "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false,
+    "read_only_hint": true
+   },
+   "args": [
+    "channel",
+    "max_edge",
+    "task_id"
    ]
   },
   "get_external_run": {

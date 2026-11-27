@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleDashed, Pause, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { cn } from "../lib/cn";
 import { duration } from "../lib/format";
 import { jobDataBase, runActive, useGeneratePlots, usePlotRuns, useTaskResults } from "../lib/hooks";
@@ -26,6 +27,7 @@ const ABOUT: Record<string, string> = {
   wind: "Computes the solar wind along each open fluxon.",
   wind_plots: "Plots the wind solutions and field maps.",
   fluxlight: "Renders FLUXlight images from the relaxed world.",
+  euv: "Compares the FLUXlight EUV image with the AIA image of the same time.",
 };
 const PRODUCT: Record<string, string> = { relax: "relaxed_world" }; // stage id -> results product id (the rest match)
 const EMPTY: Record<string, string> = {
@@ -201,6 +203,7 @@ export function StagePanel({ task, stageId, relaxNode, onSelect }: { task: TaskS
           </div>
         )}
         <PlotRunPanel runs={runs} focus={logFocus} />
+        {stageId === "euv" && <Link className="btn btn-sm w-fit" to={`/jobs/${task.job_id}/${task.id}/compare`}>Open the side-by-side view</Link>}
         {(stageId === "wind" || stageId === "wind_plots" || stageId === "fluxlight") && (
           <RerunPanel task={task} group={stageId === "fluxlight" ? "light" : "wind"} blocked={generating} onLight={(settings) => generate.mutate({ plots: ["light_triplot"], settings })} />
         )}

@@ -54,16 +54,17 @@ Every line has:
 | `relax.step` | `step`, `stiffness` (percent), `fmax`, `f_av`, `fs_av`, `n_av`, `vertices` |
 | `relax.cycle` | `cycle`, `threshold` (the stiffness target the next check compares against), `stiffness`, `cum_time_s`, `steps`, `nc_curve`, `nc_proxi`, `broken` |
 | `metric` | `name`, `value`, `unit` |
-| `artifact` | `path`, `kind` (`image` or `fits`) |
+| `artifact` | `path`, `kind` (`image` or `fits`), optional `pair` (for a model FITS, the AIA FITS it is compared with) |
 | `log` | `level` (`warn`, `error`), `message` |
 
 ## Stage ids
 
 In pipeline order: `magnetogram`, `footpoints`, `pfss`, `world`, `relax`,
-`world_plots`, `fieldmap`, `wind`, `wind_plots`, `fluxlight`.
+`world_plots`, `fieldmap`, `wind`, `wind_plots`, `fluxlight`, `euv`.
 
 * The first seven are all reported `skipped` (detail `wind_only`) when `wind_only` is set.
 * `fluxlight` is reported `skipped` (detail `light=0`) unless `light` is set.
+* `euv` (the FLUXlight against AIA comparison) is emitted only by a run that writes the pair; elsewhere it stays pending.
 * When relaxation finds an existing relaxed world, `relax` ends `ok` with detail
   `reused relaxed world`. Other stages that find cached output are not
   distinguished from fresh work in v1; the plumber's file probes show what exists.

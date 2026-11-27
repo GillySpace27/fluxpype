@@ -18,6 +18,7 @@ SCENARIOS = (
     "timeout",
     "crash",
     "launcher_lost",
+    "euv",
 )
 
 
