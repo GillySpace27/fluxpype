@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from urllib.parse import parse_qs, quote, urlsplit
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -366,6 +367,10 @@ def create_app(
                 task.cancel()
 
     app = FastAPI(title="Fluxpype Plumber", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    # Compress the big JSON lists (overview, queue, jobs shrink about 30x). Small bodies stay as they are;
+    # event streams and images/archives are never recompressed (Starlette's default exclusion list covers
+    # text/event-stream, png, jpeg, gif, webp, zip, gzip on current versions; the websocket is not HTTP).
+    app.add_middleware(GZipMiddleware, minimum_size=2048)
     allowed = {h.lower() for h in allowed_hosts}
     sched = scheduler
     caches: Dict[str, Cache] = {}
