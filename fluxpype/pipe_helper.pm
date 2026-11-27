@@ -590,10 +590,6 @@ sub calculate_directories {
     my $batch_name = $config_ref->{'batch_name'};
     $batch_name =~ s/^\s+|\s+$//g;
 
-    if ($config_ref->{'adapt'} && index($batch_name, "adapt") == -1) {
-        $batch_name .= "_adapt";
-    }
-
     my $pipedir = catdir("fluxpype", "fluxpype");
     my $pdldir = catdir("pdl", "PDL");
 
