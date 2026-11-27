@@ -158,8 +158,15 @@ def test_cached_light_results_get_their_instrument_back(tmp_path):
 
     world_file = _world_file(tmp_path, "adapt")
     old_world = types.SimpleNamespace(cr="2310", nflx="100")  # pickled before the world carried .inst
-    results = {"world": old_world, "light_path": str(tmp_path / "light"), "nz": 1}
     touch(world_file)
+    results = {
+        "world": old_world,
+        "light_path": str(tmp_path / "light"),
+        "nz": 1,
+        "cache_key": __import__("fluxpype.science.light_fits", fromlist=["x"]).cache_key(
+            world_file, fluxlight.render_params()
+        ),  # A7-03: a cache needs its key
+    }
     with open(world_file.replace(".flux", ".light"), "wb") as f:
         pickle.dump(results, f)
     got = fluxlight.do_fluxlight(world_file)

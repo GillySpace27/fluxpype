@@ -499,6 +499,7 @@ def main(argv=None):
     ap.add_argument("--flux-per-fluxon", type=float, default=DEFAULTS["flux_per_fluxon"], help="Mx")
     ap.add_argument("--out", default=None)
     ap.add_argument("--png", action="store_true")
+    ap.add_argument("--channel-fits", default=None, help="DIR: also write cr{CR}_f{N}_{inst}_aia{ch}.fits per channel")
     a = ap.parse_args(argv)
     responses = {}
     for spec in a.response:
@@ -519,6 +520,14 @@ def main(argv=None):
     out = a.out or a.world.replace(".flux", "_euv.fits")
     hdus.writeto(out, overwrite=True)
     print(f"wrote {out}: {info}")
+    if a.channel_fits:
+        from fluxpype import names
+        from fluxpype.science.light_fits import write_euv_fits
+
+        base = os.path.basename(a.world)
+        cr, nf = _cr_from_name(a.world), (names._TASK_IN_NAME.search(base) or [None, None])[1]
+        for p in write_euv_fits(hdus, a.channel_fits, cr, nf, names.inst_in_name(base), a.world):
+            print(f"wrote {p}")
     if a.png:
         quicklook_png(hdus, out.replace(".fits", ".png"))
         names = [h.name for h in hdus if h.name.startswith("SYN_")]

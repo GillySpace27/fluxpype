@@ -51,6 +51,11 @@ def light_png(cr, nflux, inst: Optional[str], tail: str) -> str:
     return f"{stem(cr, nflux, inst)}_fluxlight_{tail}.png"
 
 
+def light_fits(cr, nflux, inst: Optional[str], channel: str) -> str:
+    """Name of a FLUXlight FITS image (audit A7-03): ``cr{CR}_f{N}_{inst}_{channel}.fits``, one file per channel."""
+    return f"{stem(cr, nflux, inst)}_{channel}.fits"
+
+
 def legacy_template(tmpl: str) -> Optional[str]:
     """The pre-A7-01 spelling of a wind/FLUXlight template or glob with ``{nflux}``/``{inst}`` fields, or None."""
     if "_f{nflux}_{inst}_fluxlight_" in tmpl:

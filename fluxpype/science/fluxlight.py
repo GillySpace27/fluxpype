@@ -85,6 +85,29 @@ fov = configs.get("fov", def_fov)
 observer_lon = configs.get("observer_lon", None)  # Carrington deg; None = pole-on (old default)
 
 
+# Render arguments that are not config values; part of the cache key so they cannot change without a re-render.
+RENDER_FIXED = dict(lower_bound=1.05, upper_bound=100.0, scale=20)
+
+
+def render_params():
+    """Everything that decides the pixel values besides the world file (A7-03): observer geometry (observer_lon, the
+    observation date that sets the header), resolution (nxy, nz, fov), method and its influence length, the fixed
+    render arguments, and the channels written as FITS."""
+    from fluxpype.science.light_fits import THOMSON_CHANNELS
+
+    return dict(
+        method=method,
+        influence_length=str(influence_length),
+        nz=nz,
+        nxy=nxy,
+        fov=str(fov),
+        observer_lon=None if observer_lon is None else float(observer_lon),
+        observation_date=configs.get("observation_date"),
+        channels=[c for c, _ in THOMSON_CHANNELS.values()],
+        **RENDER_FIXED,
+    )
+
+
 def _light_path(results, tail):
     """Image path in the light folder; the name carries the world's rotation, fluxon count and instrument (A7-01)."""
     w = results["world"]
@@ -94,10 +117,27 @@ def _light_path(results, tail):
 def do_fluxlight(flux_world_file, save=True, force=False):
     results_file = flux_world_file.replace(".flux", ".light")
 
+    from fluxpype.science.light_fits import cache_key
+
+    key = cache_key(flux_world_file, render_params())
+    cached = None
     if os.path.exists(results_file) and not force:
+        try:
+            with open(results_file, "rb") as f:
+                cached = pickle.load(f)
+        except Exception as e:  # truncated or unreadable cache: a miss, not a crash
+            print(f"Cached Fluxlight results in {results_file} are unreadable ({type(e).__name__}); re-rendering")
+            cached = None
+        if cached is not None and not (isinstance(cached, dict) and cached.get("cache_key") == key):
+            # A7-03: the cache is keyed on world sha + render parameters; a cache without that key (written before
+            # A7-03) or with another one is not reused.
+            print(
+                f"Cached Fluxlight results in {results_file} do not match this world and render parameters; re-rendering"
+            )
+            cached = None
+    if cached is not None:
         print(f"Loading cached Fluxlight results from {results_file}")
-        with open(results_file, "rb") as f:
-            results = pickle.load(f)
+        results = cached
         # A cache written before A7-01 holds a world with no instrument; the file name still has it.
         w = results.get("world") if isinstance(results, dict) else None
         if w is not None and getattr(w, "inst", None) in (None, "", "unknown"):
@@ -124,13 +164,13 @@ def do_fluxlight(flux_world_file, save=True, force=False):
         nz=nz,
         fov=fov,
         flux_world=flux_world,
-        lower_bound=1.05,
-        upper_bound=100.0,
+        lower_bound=RENDER_FIXED["lower_bound"],
+        upper_bound=RENDER_FIXED["upper_bound"],
         # The fluxel density is vectorized over each image row; joblib then only adds the cost of pickling the
         # world to every worker (measured: 40 s with joblib vs 22 s serial before vectorizing, audit A2-02/A5-09).
         parallel=(method != "fluxel"),
         influence_length=influence_length,
-        scale=20,
+        scale=RENDER_FIXED["scale"],
         method=method,
         observer_lon=None if observer_lon is None else np.deg2rad(float(observer_lon)),
         # voronoi_blur=0.04,
@@ -141,10 +181,13 @@ def do_fluxlight(flux_world_file, save=True, force=False):
     results["fov"] = fov
     results["world"] = flux_world
     results["light_path"] = light_path
+    results["cache_key"] = key
     print("Fluxlight Complete.")
     # Cache results to disk
-    with open(results_file, "wb") as f:
+    tmp = f"{results_file}.tmp"  # atomic: a reader or a crash never leaves a truncated cache
+    with open(tmp, "wb") as f:
         pickle.dump(results, f)
+    os.replace(tmp, results_file)
     print(f"Saved Fluxlight results to {results_file}")
     return results
 
@@ -309,6 +352,12 @@ if __name__ == "__main__":
 
     force = "--force" in sys.argv
     results = do_fluxlight(the_world_file, force=force)
+
+    # A7-03: the images as FITS with a helioprojective WCS, next to the PNGs below.
+    from fluxpype.science.light_fits import write_thomson_fits
+
+    for fits_path in write_thomson_fits(results, date=configs.get("observation_date"), observer_lon_deg=observer_lon):
+        print(f"Wrote {fits_path}")
 
     # Crops (R_sun) that fit inside the computed grid: the old 100/50/25/10 for the default fov, low-corona zooms for small fov.
     grid_fov = float(np.atleast_1d(getattr(results["fov"], "value", results["fov"]))[0])

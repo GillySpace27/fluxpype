@@ -136,16 +136,18 @@ def compare(model_path, aia_path, channel=193, out=None, png=True):
         rep = aia.reproject_to(target, algorithm="adaptive", return_footprint=False)
     a = np.asarray(rep.data, float)
     ok = np.isfinite(a) & (a > 0) & (model > 0)
+    # Constant images give a NaN correlation by design; cranmer_wind/tempest set np.seterr(...="raise") at import and
+    # leak it process-wide (pytest -n auto workers), so state the error handling here rather than inherit it.
     with np.errstate(divide="ignore", invalid="ignore"):
         lr = np.where(ok, np.log10(model / a), np.nan)
-    summary = dict(
-        pixels_compared=int(ok.sum()),
-        model_over_aia_total=float(model[ok].sum() / a[ok].sum()) if ok.any() else float("nan"),
-        median_log_ratio=float(np.nanmedian(lr)) if ok.any() else float("nan"),
-        log_correlation=(
-            float(np.corrcoef(np.log10(model[ok]), np.log10(a[ok]))[0, 1]) if ok.sum() > 2 else float("nan")
-        ),
-    )
+        summary = dict(
+            pixels_compared=int(ok.sum()),
+            model_over_aia_total=float(model[ok].sum() / a[ok].sum()) if ok.any() else float("nan"),
+            median_log_ratio=float(np.nanmedian(lr)) if ok.any() else float("nan"),
+            log_correlation=(
+                float(np.corrcoef(np.log10(model[ok]), np.log10(a[ok]))[0, 1]) if ok.sum() > 2 else float("nan")
+            ),
+        )
     out = out or model_path.replace(".fits", f"_vs_aia{channel}.fits")
     hdus = [fits.PrimaryHDU()]
     for name, img in (("AIA_REPROJ", a), ("MODEL", model), ("LOG_RATIO", lr)):
