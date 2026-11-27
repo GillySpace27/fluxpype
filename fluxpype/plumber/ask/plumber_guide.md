@@ -9,12 +9,27 @@ Plumber is a local web app (and an MCP server for AI agents) that queues, runs a
 - **Overview**: what is running, what is waiting (and why), what just finished, errors that need attention, and the latest job events.
 - **Presets**: saved run recipes (profiles from config.ini). A preset expands to tasks, one per combination of rotation (CR), fluxon count, magnetogram source (HMI or ADAPT) and wind method.
 - **Runs** (the job list, at /jobs): what is running (stage strip, elapsed time, a stall badge), what is queued and why each task waits (queue paused, all run slots busy, CPU budget full, waiting for a job that writes the same output, or starts next), an Activity column of job events, and every submitted job; a job holds tasks. Queued tasks are the only future runs: Plumber has no scheduled runs. The job page shows each task's stages, the relaxation chart, the log, and the files the task wrote.
+- **New run** (/jobs/new): the Run form for one job; `do_wind_calc` is one of its common fields.
+- **Scenes** (/scenes): saved scenes, their versions and results.
 - **Cache**: the data folder: magnetograms, footpoints, PFSS traces, worlds (.flux), wind files and plots, with previews (FITS renders, .flux and .dat viewers) and a trash.
 - **Settings**: the data folder, backends, update, and agent connection.
 
 ## Pipeline stages, in order
 
 Magnetogram, Footpoints, PFSS trace, World, Relaxation, World plots, Field map, Wind, Wind plots, FLUXlight. A stage whose output already exists is reused ("skipped").
+
+## Speed and skipping stages
+
+- To run magnetogram to FLUXlight without the wind, set `do_wind_calc = 0` and `light = 1`. The wind and wind plots then show as skipped (`science/magnetogram2wind.pdl:360,382,390`) and FLUXlight still runs, with no `wind/` folder needed (`science/open_world_python.py:261-269`). `recompute = 1` turns the wind back on (`science/magnetogram2wind.pdl:201-206`), so do not combine it with a wind-free run. A submit_job override can only set `do_wind_calc` if the chosen profile has it; a preset may set it.
+- A failed FLUXlight stage is not caused by a missing wind file: FLUXlight uses the `halfplane` area method (`science/thomson_scattering_flux.py:142`), which never reads `wind/`.
+- FLUXlight's default `light_method` is `fluxel`, which is vectorized; do not suggest a joblib or parallelism setting for it (`science/fluxlight.py:116-118`).
+- To change relaxation speed, set `relax_concurrency`; `concurrency` does not affect relaxation when `relax_concurrency` is defined (`science/relax_pfss_world.pm:190-192`).
+
+## Known gaps (still open; say so instead of working around them silently)
+
+- `relax_concurrency` is 33 in `[DEFAULT]` (`config.ini:46`), so a profile that does not set it relaxes with 33 forked workers, and the scheduler books `max(relax_concurrency, concurrency)` slots (`plumber/scheduler.py:407`). More workers than cores can be slower than fewer. Only `quickstart` and the demo profiles set their own.
+- Stage caches are keyed on rotation, fluxon count and instrument only. Changing a relax setting under an existing `batch_name` silently reuses the old relaxed world ("Skipped relaxation!", `science/relax_pfss_world.pm:263`); use a new `batch_name`, or `recompute = 1` (which also forces the wind stage on). The FLUXlight result (`.light` pickle) is likewise keyed on the world path, not on render settings (`science/fluxlight.py:86-92`).
+- Plumber has no side-by-side FLUXlight and AIA view; comparison with AIA is done by hand outside Plumber.
 
 ## Backends
 
